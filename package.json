@@ -1,0 +1,35 @@
+{
+  "name": "neoform",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && wrangler dev --local --port 8787",
+    "build": "vite build && node scripts/shell-version.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/domain.test.ts tests/sync.test.ts tests/targets.test.ts tests/load-conventions.test.ts tests/recovery.test.ts tests/progression-cap.test.ts tests/store-status.test.ts tests/timer.test.ts tests/release-regressions.test.ts tests/release-core-merge.test.ts tests/release-core-store.test.ts tests/release-api-race.test.ts",
+    "test:api": "vitest run tests/api.test.ts tests/release-api-identity.test.ts",
+    "test:browser": "playwright test",
+    "db:migrate": "wrangler d1 migrations apply neoform --local",
+    "dev:qa": "wrangler dev --local --port 8787 --persist-to .qa-state",
+    "format": "prettier --write src worker tests scripts *.ts *.json *.jsonc *.html public/*.js public/*.webmanifest"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "^5.0.3",
+    "wrangler": "latest"
+  }
+}

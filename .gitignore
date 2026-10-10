@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.wrangler/
+.qa-state/
+.dev.vars
+test-results/
+playwright-report/
+*.log
+.local-state/
+wrangler.production.jsonc
+CLOUD-URL.txt
+evidence/worker-bundle/
+evidence/browser-report/
+evidence/**/browser-report/
+evidence/**/browser-artifacts/
+evidence/**/*.zip
