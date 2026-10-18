@@ -1,4 +1,5 @@
 node_modules/
+/.ai-runtime/
 dist/
 .wrangler/
 .qa-state/
@@ -14,3 +15,18 @@ evidence/browser-report/
 evidence/**/browser-report/
 evidence/**/browser-artifacts/
 evidence/**/*.zip
+
+/worker/ai-local.ts
+
+# Private local state, source-review scratch and generated evidence never ship.
+.planning/
+evidence/
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.ci-production.json

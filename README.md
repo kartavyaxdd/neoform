@@ -1,6 +1,16 @@
 # NEOFORM
 
-Private, intentional hypertrophy training. React + TypeScript + Vite, Cloudflare Worker API, D1 SQLite, original styling. No paid services. No deployment performed by this implementation run.
+V2 opens to a compact Workout tab, with a single-exercise logger, privacy-enhanced demonstration sheets, and an editable Gemini program maker. Curated source metadata is in `public/video-sources.json`.
+
+AI uses **Gemini only**, pinned to live-qualified `gemini-3.5-flash-lite`. More → Gemini AI accepts, replaces and removes each account's own Google API key. The server stores AES-GCM ciphertext with account-bound authenticated data; an ignored persistent `.dev.vars` master is required. Keys are never returned, included in app backups or saved in browser storage. Google charges and quotas may apply; no billing settings were changed. There is no automatic model/provider, Codex, subscription or preset fallback. **Genuine production-provider generation is verified:** a bounded two-day program was generated and independently validated in 3329 ms with real positive usage. See `evidence/GEMINI-FINAL-VERIFIED.md`; older 3.8 overload/timeout evidence is historical.
+
+The ephemeral `worker/ai-local.ts` is ignored and must remain untracked. Production bundling removes its local-only import, and cloud launch additionally requires the empty-module alias. Run `npm run security:check` after building to check the deployment graph and client assets without reading the runtime module. AI preview saves require durable device persistence or server acknowledgement; failed saves keep an editable, exportable preview. Offline tabs keep separate pending copies and merge compatible changes after reload; Settings can export every pending tab copy.
+
+Gemini is called directly by the authenticated Worker, not a sidecar or agent. It makes one stateless model interaction (`store:false`), with structured JSON output and no tools, then validates known exercises, equipment, limitations, repetitions and volume independently. Durable D1 quotas default to 3 attempts/account/15 minutes and 10 total/day, concurrency 1; cancellation is account-scoped and timeout-bounded. Run `npm run ai:setup` once to generate the ignored server master, apply migrations in the intended persistence directory, then restart Wrangler to load new bindings. Legacy CLI/subscription scripts remain historical experiments only; the Worker does not dispatch to them and their services were stopped.
+
+`npm test`, `npm run test:api`, and `npm run test:browser` cover core, authenticated API, encrypted key isolation and browser behavior without invoking a provider. Synthetic fixtures are explicitly named; `gemini-real-output-replay.spec.ts` separately replays captured genuine provider output into an isolated QA account to verify editable preview, explicit save/activation and reload readback. That replay is not a live authenticated upstream call. Genuine attempts use the opt-in `scripts/gemini-live-proof.mjs` with the exact authorized account email/ID; it reads only that encrypted key record and never reads or writes personal programs. Do not copy an owner's key into QA. Current real provider evidence is `evidence/gemini/live-provider-proof.json`.
+
+Private, intentional hypertrophy training. React + TypeScript + Vite, Cloudflare Worker API, D1 SQLite, original styling. Optional Gemini API usage may incur charges. No deployment performed by this implementation run.
 
 ## Local launch
 
@@ -30,7 +40,7 @@ To keep browser reports separate during concurrent review, set `NEOFORM_QA_OUTPU
 
 ## Hosting handoff — parent only
 
-`wrangler.jsonc` uses a placeholder D1 UUID for local development. Parent must provision a permanent free-plan D1 database in an authorized existing Cloudflare account, replace that binding UUID, run remote migrations, then deploy the built Worker and static assets. The implementer must not deploy or accept temporary account policies. No secrets belong in client assets or git. No environment secrets are required for local use; the D1 binding is server only. Choose HTTPS in production; session cookies are Secure on HTTPS. Review platform usage quotas before launch. Deployment and remote-runtime validation remain the parent's responsibility.
+`wrangler.jsonc` uses a placeholder D1 UUID for local development. Parent must provision a permanent free-plan D1 database in an authorized existing Cloudflare account, replace that binding UUID, run remote migrations, then deploy the built Worker and static assets. The implementer must not deploy or accept temporary account policies. No secrets belong in client assets or git. The workout app requires no provider secrets; optional Gemini requires a server-only `GEMINI_KEY_MASTER` secret and per-account encrypted keys. Choose HTTPS in production; session cookies are Secure on HTTPS. Review platform usage quotas before launch. Deployment and remote-runtime validation remain the parent's responsibility.
 
 ## Backup and restore
 

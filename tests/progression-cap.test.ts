@@ -17,6 +17,13 @@ const history = (weight: number) =>
       done: true,
     }));
     const s = completeSession(startSession("Upper", [e]));
+    s.feedback = {
+      pump: 3,
+      soreness: 1,
+      fatigue: 1,
+      pain: false,
+      reported: true,
+    };
     s.startedAt = n;
     return s;
   });

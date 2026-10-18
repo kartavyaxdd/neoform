@@ -1,3 +1,11 @@
+import { Button, Field, Num, Modal } from "./ui";
+import { WorkoutHome } from "./WorkoutHome";
+import { VideoInfo } from "./VideoInfo";
+import { HevyImport } from "./HevyImport.jsx";
+import { GeminiKeySettings } from "./GeminiKeySettings";
+import { AiWizard } from "./AiWizard";
+import { SessionLogger } from "./CompactLogger";
+import { FinishSessionFeedback, SessionFeedbackFields, MuscleFeedbackFields, FeedbackSummary, PhaseControls, PhasePreview, MuscleReview, DecisionEvidence } from "./TrainingFeedback";
 import {
   cloneElement,
   isValidElement,
@@ -34,15 +42,18 @@ import {
   X,
 } from "lucide-react";
 import * as D from "./domain";
+import {TrainingExposure} from "./TrainingExposure";
 import {
   change,
   clearLocal,
+  initialize,
   login,
   logout,
   request,
   resolveConflict,
   sync,
   useStore,
+  exportPendingCopies,
 } from "./store";
 type Page =
   | "overview"
@@ -53,11 +64,11 @@ type Page =
   | "insights"
   | "settings";
 const nav: [Page, string, typeof Activity][] = [
-  ["overview", "Overview", Activity],
-  ["train", "Training", Dumbbell],
-  ["history", "Journal", BookOpen],
+  ["overview", "Dashboard", Activity],
+  ["train", "Workout", Dumbbell],
+  ["history", "History", BookOpen],
   ["exercises", "Exercises", Layers],
-  ["insights", "Insights", TrendingUp],
+  ["insights", "Progress", TrendingUp],
 ];
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 const duration = (s: number) =>
@@ -67,132 +78,6 @@ const niceDate = (s: string) =>
     month: "short",
     day: "numeric",
   });
-function Button({
-  children,
-  onClick,
-  variant = "",
-  disabled = false,
-  type = "button",
-  title,
-}: {
-  children: ReactNode;
-  onClick?: () => void;
-  variant?: string;
-  disabled?: boolean;
-  type?: "button" | "submit";
-  title?: string;
-}) {
-  return (
-    <button
-      type={type}
-      className={"btn " + variant}
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </button>
-  );
-}
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {isValidElement<{ "aria-label"?: string }>(children)
-        ? cloneElement(children, { "aria-label": label })
-        : children}
-    </label>
-  );
-}
-function Num({
-  label,
-  value,
-  onChange,
-  min = 0,
-  max = 2000,
-  step = 1,
-}: {
-  label: string;
-  value: number;
-  onChange: (n: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}) {
-  const [text, setText] = useState(String(Number(value.toFixed(2))));
-  useEffect(() => setText(String(Number(value.toFixed(2)))), [value]);
-  return (
-    <input
-      aria-label={label}
-      type="number"
-      inputMode={step < 1 ? "decimal" : "numeric"}
-      min={min}
-      max={max}
-      step={step}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        const n = Number(e.target.value);
-        if (
-          e.target.value !== "" &&
-          Number.isFinite(n) &&
-          n >= min &&
-          n <= max &&
-          (step < 1 || Number.isInteger(n))
-        )
-          onChange(n);
-      }}
-      onBlur={() => setText(String(Number(value.toFixed(2))))}
-    />
-  );
-}
-function Modal({
-  title,
-  children,
-  close,
-}: {
-  title: string;
-  children: ReactNode;
-  close: () => void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
-    const dialog = ref.current;
-    dialog?.showModal();
-    return () => {
-      dialog?.close();
-      if (trigger?.isConnected) trigger.focus();
-    };
-  }, []);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog?.open && !dialog.contains(document.activeElement))
-      dialog
-        .querySelector<HTMLElement>("input,select,textarea,button")
-        ?.focus();
-  }, [title]);
-  return (
-    <dialog
-      ref={ref}
-      className="modal"
-      onCancel={close}
-      aria-labelledby="modal-title"
-    >
-      <div className="modal-head">
-        <h2 id="modal-title">{title}</h2>
-        <button
-          className="icon-button"
-          aria-label="Close dialog"
-          onClick={close}
-        >
-          <X size={20} />
-        </button>
-      </div>
-      <div className="modal-body">{children}</div>
-    </dialog>
-  );
-}
 function Brand() {
   return (
     <div className="brand">
@@ -349,6 +234,9 @@ function Auth() {
     </div>
   );
 }
+function PublicWorkspaceNotice() {
+  return <p className="banner public-workspace-notice" role="note">Public workspace: anyone with this URL can view/change data<span className="caption"> · Cloud sync · Do not enter private information.</span></p>;
+}
 function Onboarding() {
   const store = useStore(),
     [name, setName] = useState(""),
@@ -372,6 +260,7 @@ function Onboarding() {
   return (
     <main className="onboarding">
       <Brand />
+      {store.accessMode === "public-workspace" && <PublicWorkspaceNotice />}
       <p className="eyebrow">01 / A PLACE TO BEGIN</p>
       <h1>
         Make it <em>your training.</em>
@@ -496,7 +385,7 @@ export default function App() {
   const store = useStore(),
     s = store.box.data,
     [page, setPage] = useState<Page>(
-      () => (localStorage.getItem("neoform:page") as Page) || "overview",
+      () => (localStorage.getItem("neoform:page") as Page) || "train",
     ),
     [modal, setModal] = useState<{ title: string; content: ReactNode } | null>(
       null,
@@ -512,12 +401,15 @@ export default function App() {
   }, [store.user?.id]);
   const exercises = [...D.catalog, ...s.customExercises];
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [store.user?.id, !!s.profile]);
+  useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
     document
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
         "content",
-        s.settings.theme === "dark" ? "#171c1b" : "#eeeee7",
+        s.settings.theme === "dark" ? "#141518" : "#f5f5f7",
       );
   }, [s.settings.theme]);
   useEffect(() => {
@@ -602,6 +494,8 @@ export default function App() {
         <ProgramBuilder
           program={p}
           exercises={exercises}
+          sessions={s.sessions}
+          experience={s.profile?.experience}
           save={(p) => {
             if (
               change((s) => ({
@@ -615,6 +509,91 @@ export default function App() {
       ),
     });
   }
+  function createMenu() {
+    setModal({
+      title: "Create",
+      content: (
+        <div className="create-menu">
+          {store.accessMode === "public-workspace" ? <p>AI is unavailable in public mode. Private Gemini keys are never used. Create programs manually or use an editable starter template.</p> :
+          <Button
+            onClick={() =>
+              setModal({
+                title: "AI program maker",
+                content: <AiWizard close={close} />,
+              })
+            }
+          >
+            <Flame size={20} />
+            AI program
+          </Button>}
+          <Button
+            onClick={() =>
+              editProgram({
+                ...D.starterProgram("balanced"),
+                name: "My program",
+                workouts: [
+                  { id: D.uid(), name: "Workout A", day: "", exercises: [] },
+                ],
+              })
+            }
+          >
+            <Layers size={20} />
+            New program
+          </Button>
+          <Button
+            onClick={() => {
+              close();
+              start();
+            }}
+          >
+            <Plus size={20} />
+            Empty Workout
+          </Button>
+        </div>
+      ),
+    });
+  }
+  function SessionOptions() {
+    const optionStore = useStore(),
+      data = optionStore.box.data;
+    const s = { ...data, draft: data.draft! };
+    return (
+      <>
+        <Button onClick={() => void sync()}>Sync now</Button>
+        <p className="caption">{optionStore.status}</p>
+        {s.draft && (
+          <section className="panel session-notes">
+            <Field label="Session name">
+              <input
+                value={s.draft.name}
+                maxLength={120}
+                onChange={(e) => {
+                  if (e.target.value)
+                    change((s) => ({
+                      ...s,
+                      draft: { ...s.draft!, name: e.target.value },
+                    }));
+                }}
+              />
+            </Field>
+            <Field label="Session notes">
+              <textarea
+                placeholder="Anything worth remembering?"
+                maxLength={2000}
+                value={s.draft.notes}
+                onChange={(e) =>
+                  change((s) => ({
+                    ...s,
+                    draft: { ...s.draft!, notes: e.target.value },
+                  }))
+                }
+              />
+            </Field>
+          </section>
+        )}
+      </>
+    );
+  }
   function start(w?: D.Workout, p?: D.Program) {
     if (s.draft) {
       go("session");
@@ -623,28 +602,16 @@ export default function App() {
       );
       return;
     }
-    const entries = (w?.exercises || []).map((t) => {
-      const e = exercises.find((e) => e.id === t.exerciseId)!;
-      const entry = D.createEntry(e, t, p?.currentWeek === p?.deloadWeek);
-      const previous = [...s.sessions]
-        .sort(
-          (a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt,
-        )
-        .flatMap((s) => s.exercises)
-        .find(
-          (x) =>
-            x.exerciseId === e.id &&
-            D.comparableKey(x, e) === D.comparableKey(entry, e),
-        );
-      return {
-        ...entry,
-        sets: entry.sets.map((set, i) => ({
-          ...set,
-          weight:
-            previous?.sets.filter((t) => t.kind === "working")[i]?.weight || 0,
-        })),
-      };
-    });
+    if (p && D.programPhase(p) === "active-rest") {
+      setModal({title: "Active rest", content: <div className="training-coaching"><p>No hard workout is started in active rest. This program is paused for lifting; take time off or choose easy activity without a hard-set target.</p><p>To resume programmed lifting, explicitly edit the phase and save your mesocycle. Completed history stays unchanged.</p><Button onClick={() => editProgram(p)}>Review phase</Button></div>});
+      return;
+    }
+    const entries = w && p
+      ? D.prepareWorkout(w, p, exercises, s.sessions, s.profile?.experience)
+      : (w?.exercises ?? []).flatMap(t => {
+          const ex = exercises.find(e => e.id === t.exerciseId);
+          return ex ? [D.createEntry(ex, t)] : [];
+        });
     change((s) => ({
       ...s,
       draft: D.startSession(w?.name || "Open session", entries, p),
@@ -714,12 +681,14 @@ export default function App() {
     setModal({
       title: "Close the loop",
       content: (
-        <FinishSession
+        <FinishSessionFeedback
           draft={draft}
-          finish={(feedback) => {
+          exercises={exercises}
+          finish={(feedback, muscleFeedback) => {
             const logged = D.completeSession({
               ...draft,
               feedback,
+              muscleFeedback,
               duration: Math.min(
                 86400,
                 Math.max(0, (Date.now() - draft.startedAt) / 1000),
@@ -749,6 +718,11 @@ export default function App() {
         <p>Opening your workspace…</p>
       </main>
     );
+  if (!store.user && store.accessMode === "single-user-local")
+    return <main className="loading"><Brand /><h1>Single-user / this PC</h1>
+      <p role="alert">{store.error || "Local setup required. Check SINGLE_USER_ID and restart the local server."}</p>
+      <p>Your existing account and pending device changes have not been removed.</p>
+      <Button onClick={() => void initialize()}>Retry local setup</Button></main>;
   if (!store.user) return <Auth />;
   if (!s.profile) return <Onboarding />;
   const thisWeek = new Date();
@@ -758,7 +732,7 @@ export default function App() {
     (x) => new Date(x.date + "T12:00:00") >= thisWeek && x.date <= D.today(),
   );
   const activeProgram = s.programs.find((x) => !x.archived);
-  const weekVolume = D.volume(weekSessions, exercises);
+  const weekVolume = D.directVolume(weekSessions, exercises);
   const totalSets = Object.values(weekVolume).reduce((a, b) => a + b, 0);
   const seconds = D.restRemaining(s.timer, Date.now());
   const title =
@@ -776,7 +750,7 @@ export default function App() {
                 ? "Your preferences"
                 : "Exercise library";
   return (
-    <div className="app-shell">
+    <div className={"app-shell page-" + page}>
       <a className="skip-link" href="#main-content">
         Skip to workspace
       </a>
@@ -804,7 +778,7 @@ export default function App() {
           <div className="private">
             <ShieldCheck size={18} />
             <span>
-              Private by default<small>Built around your training.</small>
+              {store.accessMode === "public-workspace" ? "Public shared workspace" : "Private by default"}<small>Built around your training.</small>
             </span>
           </div>
           <button
@@ -812,7 +786,7 @@ export default function App() {
             onClick={() => go("settings")}
           >
             <Settings size={20} />
-            Settings
+            More
           </button>
           <div className="account">
             <span className="avatar">
@@ -822,13 +796,13 @@ export default function App() {
               <b>{s.profile.name}</b>
               <small>{s.profile.experience} lifter</small>
             </div>
-            <button
+            {!store.user.accessMode && <button
               aria-label="Sign out"
               className="icon-button"
               onClick={() => void logout().catch((e) => setNotice(e.message))}
             >
               <LogOut size={18} />
-            </button>
+            </button>}
           </div>
         </div>
       </aside>
@@ -879,18 +853,21 @@ export default function App() {
           </div>
         </header>
         <main className="workspace" id="main-content" tabIndex={-1}>
+          {store.accessMode === "public-workspace" && <PublicWorkspaceNotice />}
           {store.error && (
             <div className="banner error" role="alert">
               {store.error}
               {store.status === "Sign in again to sync" ||
-              store.status.startsWith("Account changed") ? (
+              store.status.startsWith("Account changed") ? store.accessMode === "public-workspace" ? (
+                <Button onClick={() => void initialize()}>Reopen workspace</Button>
+              ) : (
                 <Button
                   onClick={() =>
                     setModal({
                       title: "Restore account access",
                       content: (
                         <Reauthenticate
-                          email={store.user!.email}
+                          email={store.user!.email || ""}
                           close={close}
                         />
                       ),
@@ -1197,241 +1174,43 @@ export default function App() {
             </>
           )}
           {page === "train" && (
-            <>
-              <PageHeading
-                eyebrow="PLAN THE WORK"
-                title="A structure that fits you."
-                text="Build, adapt and repeat. Your mesocycle stays in your hands."
-                action={
-                  <Button
-                    variant="primary"
-                    onClick={() =>
-                      editProgram({
-                        ...D.starterProgram("balanced"),
-                        name: "My mesocycle",
-                        workouts: [
-                          {
-                            id: D.uid(),
-                            name: "Workout A",
-                            day: "Monday",
-                            exercises: [],
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    <Plus size={18} />
-                    New program
-                  </Button>
-                }
-              />
-              {s.draft && (
-                <div className="banner">
-                  <span>
-                    <b>{s.draft.name}</b> · Active draft saved
-                  </span>
-                  <Button variant="primary" onClick={() => go("session")}>
-                    Resume <Play size={16} />
-                  </Button>
-                </div>
-              )}
-              <div className="template-grid">
-                {(["balanced", "upper-lower", "minimal"] as const).map(
-                  (style, i) => (
-                    <button
-                      key={style}
-                      className="template-card"
-                      onClick={() => editProgram(D.starterProgram(style))}
-                    >
-                      <span className="eyebrow">STARTER / 0{i + 1}</span>
-                      <h3>
-                        {
-                          [
-                            "Balanced foundations",
-                            "Upper / Lower",
-                            "Dumbbell foundations",
-                          ][i]
-                        }
-                      </h3>
-                      <p>
-                        {
-                          [
-                            "3 days · full body",
-                            "4 days · split focus",
-                            "2 days · minimal equipment",
-                          ][i]
-                        }
-                      </p>
-                      <span className="text-button">
-                        Customize template <Plus size={16} />
-                      </span>
-                    </button>
-                  ),
-                )}
-              </div>
-              <div className="stack">
-                {s.programs.length ? (
-                  s.programs.map((p) => (
-                    <section
-                      className={
-                        "panel program-card " + (p.archived ? "archived" : "")
-                      }
-                      key={p.id}
-                    >
-                      <div className="section-heading">
-                        <div>
-                          <p className="eyebrow">
-                            {p.archived
-                              ? "ARCHIVED MESOCYCLE"
-                              : `WEEK ${p.currentWeek} / ${p.weeks} · ${p.currentWeek === p.deloadWeek ? "DELOAD" : "BUILD PHASE"}`}
-                          </p>
-                          <h2>{p.name}</h2>
-                          <p>{p.description}</p>
-                        </div>
-                        <div className="actions wrap">
-                          <Button onClick={() => editProgram(p)}>Edit</Button>
-                          <Button
-                            onClick={() => {
-                              const copy = {
-                                ...structuredClone(p),
-                                id: D.uid(),
-                                name: p.name + " · copy",
-                                archived: false,
-                                workouts: p.workouts.map((w) => ({
-                                  ...w,
-                                  id: D.uid(),
-                                  exercises: w.exercises.map((t) => ({
-                                    ...t,
-                                    id: D.uid(),
-                                  })),
-                                })),
-                              };
-                              change((s) => ({
-                                ...s,
-                                programs: [...s.programs, copy],
-                              }));
-                            }}
-                          >
-                            Duplicate
-                          </Button>
-                          <Button
-                            onClick={() =>
-                              change((s) => ({
-                                ...s,
-                                programs: s.programs.map((x) =>
-                                  x.id === p.id
-                                    ? { ...x, archived: !x.archived }
-                                    : x,
-                                ),
-                              }))
-                            }
-                          >
-                            {p.archived ? "Restore" : "Archive"}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="cycle-strip">
-                        {Array.from({ length: p.weeks }, (_, i) => {
-                          const w = D.weeklyTarget(p, i + 1);
-                          return (
-                            <button
-                              key={i}
-                              className={
-                                "cycle-week " +
-                                (p.currentWeek === i + 1 ? "selected" : "")
-                              }
-                              onClick={() =>
-                                confirm(
-                                  "Switch training week?",
-                                  `Week ${i + 1}: ${w.sets} planned sets, ${w.deload ? "half-volume deload with 4 RIR" : "suggested " + w.rir + " RIR"}. No completed history is changed. Edit specific exercise RIR targets in the builder.`,
-                                  () =>
-                                    change((s) => ({
-                                      ...s,
-                                      programs: s.programs.map((x) =>
-                                        x.id === p.id
-                                          ? { ...x, currentWeek: i + 1 }
-                                          : x,
-                                      ),
-                                    })),
-                                )
-                              }
-                            >
-                              <small>W{i + 1}</small>
-                              <b>{w.sets} sets</b>
-                              <span>
-                                {w.deload ? "Deload" : `${w.rir} RIR guide`}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="workout-grid">
-                        {p.workouts.map((w, i) => (
-                          <div key={w.id} className="workout-card">
-                            <p className="eyebrow">{w.day || `DAY ${i + 1}`}</p>
-                            <h3>{w.name}</h3>
-                            <p>
-                              {w.exercises.length} exercises ·{" "}
-                              {w.exercises.reduce((n, e) => n + e.sets, 0)} base
-                              sets
-                            </p>
-                            <div className="exercise-preview">
-                              {w.exercises.slice(0, 3).map((t) => (
-                                <span key={t.id}>
-                                  {
-                                    exercises.find((e) => e.id === t.exerciseId)
-                                      ?.name
-                                  }
-                                  <small>
-                                    {t.sets} × {t.min}–{t.max}
-                                  </small>
-                                </span>
-                              ))}
-                              {w.exercises.length > 3 && (
-                                <small>+ {w.exercises.length - 3} more</small>
-                              )}
-                            </div>
-                            <Button
-                              variant="primary wide"
-                              disabled={p.archived}
-                              onClick={() => start(w, p)}
-                            >
-                              Start {w.name}
-                              <Play size={16} />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ))
-                ) : (
-                  <Empty
-                    title="Your program, your rules."
-                    action={
-                      <Button onClick={() => start()}>
-                        Start an open session
-                      </Button>
-                    }
-                  >
-                    Use a starter template or build a mesocycle from scratch.
-                  </Empty>
-                )}
-              </div>
-            </>
+            <WorkoutHome
+              state={s}
+              start={start}
+              edit={editProgram}
+              create={createMenu}
+              history={() => go("history")}
+              library={() => go("exercises")}
+              detail={sessionDetail}
+            />
           )}
           {page === "session" &&
             (s.draft ? (
               <>
-                <PageHeading
-                  eyebrow="ONE SET AT A TIME"
-                  title={s.draft.name}
-                  text={`${duration(Math.max(0, (tick - s.draft.startedAt) / 1000))} elapsed · ${s.draft.exercises.flatMap((e) => e.sets).filter((t) => t.done).length} sets logged`}
-                  action={
-                    <Button variant="primary" onClick={finish}>
-                      Finish session <Check size={18} />
-                    </Button>
-                  }
-                />
+                <header className="session-bar">
+                  <button
+                    className="icon-button"
+                    aria-label="Session options"
+                    onClick={() =>
+                      setModal({
+                        title: "Session options",
+                        content: <SessionOptions />,
+                      })
+                    }
+                  >
+                    <MoreHorizontal size={21} />
+                  </button>
+                  <span aria-label="Workout duration">
+                    {duration(Math.max(0, (tick - s.draft.startedAt) / 1000))}
+                  </span>
+                  <span className="slim-rest">
+                    <Clock size={16} />
+                    {duration(seconds)}
+                  </span>
+                  <Button variant="primary" onClick={finish}>
+                    Finish session
+                  </Button>
+                </header>
                 <SessionLogger
                   session={s.draft}
                   exercises={exercises}
@@ -1517,34 +1296,6 @@ export default function App() {
                     Discard session
                   </Button>
                 </div>
-                <section className="panel session-notes">
-                  <Field label="Session name">
-                    <input
-                      value={s.draft.name}
-                      maxLength={120}
-                      onChange={(e) => {
-                        if (e.target.value)
-                          change((s) => ({
-                            ...s,
-                            draft: { ...s.draft!, name: e.target.value },
-                          }));
-                      }}
-                    />
-                  </Field>
-                  <Field label="Session notes">
-                    <textarea
-                      placeholder="Anything worth remembering?"
-                      maxLength={2000}
-                      value={s.draft.notes}
-                      onChange={(e) =>
-                        change((s) => ({
-                          ...s,
-                          draft: { ...s.draft!, notes: e.target.value },
-                        }))
-                      }
-                    />
-                  </Field>
-                </section>
               </>
             ) : (
               <Empty
@@ -1640,6 +1391,7 @@ export default function App() {
                     title: ex.name,
                     content: (
                       <>
+                        <VideoInfo exercise={ex} />
                         <span className="tag">
                           {ex.muscle} · {ex.equipment}
                         </span>
@@ -1706,15 +1458,16 @@ export default function App() {
               state={s}
               exercises={exercises}
               weekStart={thisWeek}
+              onReviewProgram={editProgram}
               onApplyDeload={(p) =>
                 confirm(
                   "Accept a deload?",
-                  `Set ${p.name} to its planned deload week ${p.deloadWeek}. New workouts use half the sets and 4 RIR. Your active draft stays as logged.`,
+                  `Set ${p.name} to deload. New workouts use the conservative reduced set/rep dose and easier effort shown in the program preview. Existing drafts and completed history stay unchanged.`,
                   () =>
                     change((s) => ({
                       ...s,
                       programs: s.programs.map((x) =>
-                        x.id === p.id ? { ...x, currentWeek: x.deloadWeek } : x,
+                        x.id === p.id ? { ...x, currentWeek: x.deloadWeek, phase: "deload" as const } : x,
                       ),
                     })),
                 )
@@ -1724,7 +1477,7 @@ export default function App() {
           {page === "settings" && (
             <Preferences
               state={s}
-              userEmail={store.user.email}
+              userEmail={store.user.email || ""}
               setNotice={setNotice}
               confirm={confirm}
               open={setModal}
@@ -1738,24 +1491,28 @@ export default function App() {
         </main>
       </div>
       <nav className="bottom-nav" aria-label="Mobile navigation">
-        {nav.map(([p, label, Icon]) => (
+        {(
+          [
+            ["overview", "Dashboard", Activity],
+            ["train", "Workout", Dumbbell],
+            ["create", "Create", Plus],
+            ["insights", "Progress", TrendingUp],
+            ["settings", "More", MoreHorizontal],
+          ] as const
+        ).map(([p, label, Icon]) => (
           <button
             key={p}
+            aria-label={label}
             className={
-              page === p || (p === "train" && page === "session")
+              (p === "create" ? "create-tab " : "") +
+              (page === p || (p === "train" && page === "session")
                 ? "active"
-                : ""
+                : "")
             }
-            onClick={() => go(p)}
+            onClick={() => (p === "create" ? createMenu() : go(p))}
           >
-            <Icon size={20} />
-            <span>
-              {label === "Overview"
-                ? "Home"
-                : label === "Exercises"
-                  ? "Library"
-                  : label}
-            </span>
+            <Icon size={22} />
+            <span>{p === "create" ? "" : label}</span>
           </button>
         ))}
       </nav>
@@ -2128,10 +1885,14 @@ function ExerciseEditor({
 function ProgramBuilder({
   program,
   exercises,
+  sessions,
+  experience,
   save,
 }: {
   program: D.Program;
   exercises: D.Exercise[];
+  sessions: D.Session[];
+  experience?: NonNullable<D.State["profile"]>["experience"];
   save: (p: D.Program) => void;
 }) {
   const [p, setP] = useState(structuredClone(program)),
@@ -2206,11 +1967,8 @@ function ProgramBuilder({
           />
         </Field>
       </div>
-      <p className="caption">
-        The planned deload halves set counts (rounded up) and uses 4 RIR. Other
-        weeks preserve your explicit exercise targets. Weekly RIR guides are
-        suggestions.
-      </p>
+      <PhaseControls program={p} onChange={setP} />
+      <PhasePreview program={p} exercises={exercises} sessions={sessions} experience={experience} />
       <div className="builder-workouts">
         {p.workouts.map((w, wi) => (
           <section className="builder-workout" key={w.id}>
@@ -2409,453 +2167,6 @@ function ProgramBuilder({
     </form>
   );
 }
-function SessionLogger({
-  session: s,
-  exercises,
-  unit,
-  previous = [],
-  setSession,
-  remove,
-  swap,
-  onDone,
-  history = false,
-}: {
-  session: D.Session;
-  exercises: D.Exercise[];
-  unit: "kg" | "lb";
-  previous?: D.Session[];
-  setSession: (s: D.Session) => void;
-  remove: (title: string, fn: () => void) => void;
-  swap?: (e: D.Entry) => void;
-  onDone?: (id: string, e: D.Entry) => void;
-  history?: boolean;
-}) {
-  const [effort, setEffort] = useState<"RIR" | "RPE">("RIR");
-  const decisions = useStore().box.data.decisions;
-  const updateEntry = (e: D.Entry) =>
-    setSession({
-      ...s,
-      exercises: s.exercises.map((x) => (x.id === e.id ? e : x)),
-    });
-  const updateSet = (e: D.Entry, set: D.SetLog) =>
-    updateEntry({ ...e, sets: e.sets.map((x) => (x.id === set.id ? set : x)) });
-  return (
-    <div className="logger">
-      <div className="logger-guide">
-        <span>Loads in {unit}; machine labels stay raw · RIR = reps left</span>
-        <button
-          className="text-button"
-          onClick={() => setEffort(effort === "RIR" ? "RPE" : "RIR")}
-        >
-          Use {effort === "RIR" ? "RPE" : "RIR"}
-        </button>
-      </div>
-      {!s.exercises.length && (
-        <Empty title="Choose your first movement.">
-          Add an exercise below, then log one set at a time.
-        </Empty>
-      )}
-      {s.exercises.map((e, ei) => {
-        const ex = exercises.find((x) => x.id === e.exerciseId)!;
-        const prior = [...previous]
-          .sort(
-            (a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt,
-          )
-          .flatMap((s) => s.exercises)
-          .find(
-            (x) =>
-              D.comparableKey(x, ex) === D.comparableKey(e, ex) &&
-              x.exerciseId === e.exerciseId,
-          );
-        const rec = D.recommend(
-          e.exerciseId,
-          previous,
-          exercises,
-          e.target || { min: 8, max: 12 },
-        );
-        const recKey = `${e.id}:${previous.length}`;
-        return (
-          <section className="panel log-exercise" key={e.id}>
-            <div className="log-heading">
-              <span className="exercise-number">
-                {String(ei + 1).padStart(2, "0")}
-              </span>
-              <div>
-                <h2>{ex.name}</h2>
-                <p>
-                  {ex.muscle} · {e.equipment || ex.equipment} ·{" "}
-                  {D.conventionLabels[e.convention || ex.convention]}
-                  {e.superset ? ` · Superset ${e.superset}` : ""}
-                </p>
-              </div>
-              <div className="actions">
-                {swap && (
-                  <Button variant="ghost" onClick={() => swap(e)}>
-                    Swap
-                  </Button>
-                )}
-                <button
-                  className="icon-button danger-text"
-                  aria-label={`Remove ${ex.name}`}
-                  onClick={() =>
-                    remove("Remove exercise?", () =>
-                      setSession({
-                        ...s,
-                        exercises: s.exercises.filter((x) => x.id !== e.id),
-                      }),
-                    )
-                  }
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            {e.target && (
-              <p className="target-hint">
-                Target: {e.target.min}–{e.target.max} reps · {e.target.rir} RIR
-                · {e.target.rest}s rest{" "}
-                {e.superset
-                  ? "· Alternate exercises in group " + e.superset
-                  : ""}
-              </p>
-            )}
-            {prior && (
-              <div className="previous">
-                <span>LAST TIME</span>
-                <b>
-                  {prior.sets
-                    .filter((t) => t.done && t.kind !== "warmup")
-                    .map(
-                      (t) =>
-                        `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`,
-                    )
-                    .join(" / ") || "Warmups only"}
-                </b>
-                <small>
-                  {(e.convention || ex.convention) === "machine-label"
-                    ? "label"
-                    : unit}
-                </small>
-              </div>
-            )}
-            <div className="set-table">
-              <div className="set-header">
-                <span>SET</span>
-                <span>
-                  {(e.convention || ex.convention) === "machine-label"
-                    ? "LABEL"
-                    : unit.toUpperCase()}
-                </span>
-                <span>REPS</span>
-                <span>{effort}</span>
-                <span>LOG</span>
-                <span />
-              </div>
-              {e.sets.map((set, i) => (
-                <div
-                  className={"set-row " + (set.done ? "completed" : "")}
-                  key={set.id}
-                >
-                  <select
-                    aria-label={`${ex.name} set ${i + 1} type`}
-                    value={set.kind}
-                    onChange={(ev) =>
-                      updateSet(e, {
-                        ...set,
-                        kind: ev.target.value as D.SetLog["kind"],
-                      })
-                    }
-                  >
-                    <option value="working">{i + 1} · W</option>
-                    <option value="warmup">{i + 1} · WU</option>
-                    <option value="drop">{i + 1} · D</option>
-                  </select>
-                  <Num
-                    label={`${ex.name} set ${i + 1} weight`}
-                    value={D.displayLoad(
-                      set.weight,
-                      e.convention || ex.convention,
-                      unit,
-                    )}
-                    step={0.01}
-                    max={unit === "kg" ? 2000 : 4409}
-                    onChange={(n) =>
-                      updateSet(e, {
-                        ...set,
-                        weight: D.canonicalLoad(
-                          n,
-                          e.convention || ex.convention,
-                          unit,
-                        ),
-                      })
-                    }
-                  />
-                  <Num
-                    label={`${ex.name} set ${i + 1} reps`}
-                    value={set.reps}
-                    min={1}
-                    max={100}
-                    onChange={(n) => updateSet(e, { ...set, reps: n })}
-                  />
-                  <Num
-                    label={`${ex.name} set ${i + 1} ${effort}`}
-                    value={effort === "RIR" ? set.rir : 10 - set.rir}
-                    max={10}
-                    step={0.5}
-                    onChange={(n) =>
-                      updateSet(e, {
-                        ...set,
-                        rir: effort === "RIR" ? n : 10 - n,
-                      })
-                    }
-                  />
-                  <button
-                    className={"complete-set " + (set.done ? "checked" : "")}
-                    aria-label={`${set.done ? "Undo" : "Complete"} ${ex.name} set ${i + 1}`}
-                    aria-pressed={set.done}
-                    onClick={() =>
-                      onDone
-                        ? onDone(set.id, e)
-                        : updateSet(e, { ...set, done: !set.done })
-                    }
-                  >
-                    <Check size={20} />
-                  </button>
-                  <button
-                    className="icon-button remove-set"
-                    aria-label={`Remove ${ex.name} set ${i + 1}`}
-                    onClick={() =>
-                      remove("Remove set?", () =>
-                        updateEntry({
-                          ...e,
-                          sets: e.sets.filter((x) => x.id !== set.id),
-                        }),
-                      )
-                    }
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="ghost wide add-set"
-              disabled={e.sets.length >= 40}
-              onClick={() => {
-                const last = e.sets.at(-1);
-                updateEntry({
-                  ...e,
-                  sets: [
-                    ...e.sets,
-                    {
-                      id: D.uid(),
-                      weight: last?.weight || 0,
-                      reps: last?.reps || 8,
-                      rir: last?.rir ?? 2,
-                      kind: "working",
-                      done: history,
-                    },
-                  ],
-                });
-              }}
-            >
-              <Plus size={16} />
-              Add set
-            </Button>
-            <Field label={`${ex.name} notes`}>
-              <input
-                placeholder="Setup, cues, how it felt…"
-                maxLength={2000}
-                value={e.notes}
-                onChange={(ev) => updateEntry({ ...e, notes: ev.target.value })}
-              />
-            </Field>
-            {!history && (
-              <details className="coach">
-                <summary>
-                  <TrendingUp size={16} />
-                  Progression note <ChevronRight size={14} />
-                </summary>
-                <p>{rec.reason}</p>
-                {rec.weight !== undefined && (
-                  <p>
-                    <b>
-                      {fmt(
-                        D.displayLoad(
-                          rec.weight,
-                          e.convention || ex.convention,
-                          unit,
-                        ),
-                      )}{" "}
-                      {(e.convention || ex.convention) === "machine-label"
-                        ? "label"
-                        : unit}{" "}
-                      × {rec.reps} reps
-                    </b>{" "}
-                    · optional next target
-                  </p>
-                )}
-                <div className="actions wrap">
-                  <Button
-                    disabled={!["load", "reps"].includes(rec.action)}
-                    onClick={() => {
-                      updateEntry({
-                        ...e,
-                        sets: e.sets.map((t) =>
-                          !t.done && t.kind === "working"
-                            ? {
-                                ...t,
-                                weight: rec.weight ?? t.weight,
-                                reps: rec.reps ?? t.reps,
-                              }
-                            : t,
-                        ),
-                      });
-                      change((s) => ({
-                        ...s,
-                        decisions: [
-                          ...s.decisions.slice(-999),
-                          { key: recKey, choice: "accept", at: Date.now() },
-                        ],
-                      }));
-                    }}
-                  >
-                    Accept for unlogged sets
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      change((s) => ({
-                        ...s,
-                        decisions: [
-                          ...s.decisions.slice(-999),
-                          { key: recKey, choice: "defer", at: Date.now() },
-                        ],
-                      }))
-                    }
-                  >
-                    Defer
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      change((s) => ({
-                        ...s,
-                        decisions: [
-                          ...s.decisions.slice(-999),
-                          { key: recKey, choice: "decline", at: Date.now() },
-                        ],
-                      }))
-                    }
-                  >
-                    Decline
-                  </Button>
-                </div>
-                {decisions.some((d) => d.key === recKey) && (
-                  <p className="caption" role="status">
-                    Choice recorded:{" "}
-                    {decisions.filter((d) => d.key === recKey).at(-1)!.choice}.
-                  </p>
-                )}
-                <p className="caption">
-                  Deterministic guidance, not a diagnosis. Review targets
-                  against your program. Decline/defer records your choice
-                  without changing sets.
-                </p>
-              </details>
-            )}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-function Feedback({
-  value,
-  onChange,
-}: {
-  value: D.Session["feedback"];
-  onChange: (f: D.Session["feedback"]) => void;
-}) {
-  return (
-    <>
-      <div className="feedback-grid">
-        {(["pump", "soreness", "fatigue"] as const).map((key) => (
-          <Field key={key} label={key.charAt(0).toUpperCase() + key.slice(1)}>
-            <select
-              value={value[key]}
-              onChange={(e) =>
-                onChange({ ...value, [key]: Number(e.target.value) })
-              }
-            >
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>
-                  {n} ·{" "}
-                  {key === "pump"
-                    ? ["Minimal", "Mild", "Moderate", "Strong", "Very strong"][
-                        n - 1
-                      ]
-                    : ["Minimal", "Mild", "Moderate", "High", "Very high"][
-                        n - 1
-                      ]}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ))}
-      </div>
-      <label className="check-line">
-        <input
-          type="checkbox"
-          checked={value.pain}
-          onChange={(e) => onChange({ ...value, pain: e.target.checked })}
-        />
-        I experienced pain (progression will be held)
-      </label>
-    </>
-  );
-}
-function FinishSession({
-  draft,
-  finish,
-}: {
-  draft: D.Session;
-  finish: (f: D.Session["feedback"]) => void;
-}) {
-  const [feedback, setFeedback] = useState(draft.feedback);
-  return (
-    <>
-      <p>
-        Your session is saved with completed sets only. Take a moment to note
-        how the work felt.
-      </p>
-      <div className="summary-grid">
-        <Stat
-          label="WORKING / DROP"
-          value={String(
-            draft.exercises
-              .flatMap((e) => e.sets)
-              .filter((t) => t.done && t.kind !== "warmup").length,
-          )}
-          detail="Completed sets"
-        />
-        <Stat
-          label="HARD SETS"
-          value={String(
-            draft.exercises.flatMap((e) => e.sets).filter(D.hard).length,
-          )}
-          detail="≤4 RIR, no warmups"
-        />
-      </div>
-      <Feedback value={feedback} onChange={setFeedback} />
-      <p className="caption">
-        Pain or high fatigue/soreness blocks load progression. This feedback is
-        training context, not medical advice.
-      </p>
-      <Button variant="primary wide" onClick={() => finish(feedback)}>
-        Save completed workout <Check size={18} />
-      </Button>
-    </>
-  );
-}
 function History({
   sessions,
   exercises,
@@ -2983,14 +2294,14 @@ function HistoryDetail({
       <h2>{s.name}</h2>
       <div className="summary-grid">
         <Stat
-          label="WORKING / DROP SETS"
+          label="RAW WORK BOUTS"
           value={String(working.length)}
           detail="Completed only"
         />
         <Stat
           label="HARD SETS"
-          value={String(working.filter(D.hard).length)}
-          detail="≤4 reps in reserve"
+          value={String(Object.values(D.directVolume([s], exercises)).reduce((a,b)=>a+b,0))}
+          detail="Straight/down sets, ≤4 RIR; advanced bouts separate"
         />
       </div>
       {s.exercises.map((e) => (
@@ -3050,12 +2361,7 @@ function HistoryDetail({
         </div>
       ))}
       <p>{s.notes || "No session notes."}</p>
-      <div className="tag-row">
-        <span className="tag">Pump {s.feedback.pump}/5</span>
-        <span className="tag">Soreness {s.feedback.soreness}/5</span>
-        <span className="tag">Fatigue {s.feedback.fatigue}/5</span>
-        {s.feedback.pain && <span className="tag warning">Pain recorded</span>}
-      </div>
+      <FeedbackSummary session={s} />
       <p className="caption">
         Records and trends are recalculated from all logged sessions in
         Insights. Warmups are excluded.
@@ -3203,10 +2509,11 @@ function HistoryEditor({
           onChange={(e) => setS({ ...s, notes: e.target.value })}
         />
       </Field>
-      <Feedback
+      <SessionFeedbackFields
         value={s.feedback}
         onChange={(feedback) => setS({ ...s, feedback })}
       />
+      <MuscleFeedbackFields value={s.muscleFeedback ?? []} onChange={muscleFeedback => setS({...s, muscleFeedback})} muscles={[...new Set(s.exercises.flatMap(entry => { const ex=exercises.find(ex=>ex.id===entry.exerciseId); return ex ? [ex.muscle,...ex.secondary] : []; }))]} />
       {error && (
         <p className="error" role="alert">
           {error}
@@ -3224,11 +2531,13 @@ function Insights({
   state: s,
   exercises,
   weekStart,
+  onReviewProgram,
   onApplyDeload,
 }: {
   state: D.State;
   exercises: D.Exercise[];
   weekStart: Date;
+  onReviewProgram: (p: D.Program) => void;
   onApplyDeload: (p: D.Program) => void;
 }) {
   const [selected, setSelected] = useState(""),
@@ -3254,7 +2563,7 @@ function Insights({
       label: niceDate(
         `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
       ),
-      value: Object.values(D.volume(sessions, exercises)).reduce(
+      value: Object.values(D.directVolume(sessions, exercises)).reduce(
         (a, b) => a + b,
         0,
       ),
@@ -3262,38 +2571,13 @@ function Insights({
     };
   });
   const performance = ex
-    ? [...s.sessions]
-        .sort(
-          (a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt,
-        )
-        .flatMap((s) => {
-          const sets = s.exercises
-            .filter(
-              (e) =>
-                e.exerciseId === ex.id &&
-                (e.convention || ex.convention) === ex.convention &&
-                (e.equipment || ex.equipment) === ex.equipment,
-            )
-            .flatMap((e) =>
-              e.sets.filter((t) => t.done && t.kind === "working"),
-            );
-          return sets.length
-            ? [
-                {
-                  label: niceDate(s.date),
-                  value: Math.max(
-                    ...sets.map((t) =>
-                      D.displayLoad(t.weight, ex.convention, displayUnit),
-                    ),
-                  ),
-                  reps: Math.max(...sets.map((t) => t.reps)),
-                },
-              ]
-            : [];
-        })
+    ? D.performanceTimeline(ex.id, s.sessions, exercises).map((point) => ({
+        label: niceDate(point.date), reps: point.reps, context: point.context,
+        value: D.displayLoad(point.weight, ex.convention, displayUnit),
+      }))
     : [];
   const rec = ex
-    ? D.recommend(ex.id, s.sessions, exercises, { min: 8, max: 12 })
+    ? D.recommend(ex.id, s.sessions, exercises, { min: 8, max: 12 }, {experience:s.profile?.experience, phase:s.programs.find(p=>!p.archived) ? D.programPhase(s.programs.find(p=>!p.archived)!) : undefined})
     : null;
   const recs = D.records(s.sessions, exercises);
   const latest = [...s.sessions].sort(
@@ -3310,6 +2594,7 @@ function Insights({
         title="See the shape of your effort."
         text="Real training data. Useful context. No invented streaks."
       />
+      <MuscleReview sessions={s.sessions} exercises={exercises} experience={s.profile?.experience} program={s.programs.find(p=>!p.archived)} onReviewProgram={onReviewProgram} />
       <div className="stat-grid">
         <Stat
           label="TOTAL SESSIONS"
@@ -3361,10 +2646,7 @@ function Insights({
               </table>
             </details>
             <p className="caption">
-              One direct muscle per exercise; completed working/drop sets at ≤4
-              RIR. Secondary muscles receive indirect stimulus but are not
-              double counted. These counts are context, not universal volume
-              prescriptions.
+              Completed direct straight/down sets at ≤4 RIR. Advanced bouts and indirect involvement are shown separately below, never converted into equivalent growth sets. These are estimates, not personal volume landmarks.
             </p>
           </section>
           <section className="panel">
@@ -3387,7 +2669,7 @@ function Insights({
             </div>
             {ex && (
               <p className="caption">
-                Peak working set load · {ex.equipment} ·{" "}
+                Raw completed-bout timeline—not a comparable strength trend. Method and phase differ; load and reps belong to the same bout. {ex.equipment} ·{" "}
                 {D.conventionLabels[ex.convention]} ·{" "}
                 {ex.convention === "machine-label"
                   ? "raw label"
@@ -3404,26 +2686,26 @@ function Insights({
                       : s.settings.unit
                   }
                 />
-                <details className="data-table">
+                <details className="data-table performance-log">
                   <summary>View performance data</summary>
-                  <table>
+                  <table aria-label="Raw performance bouts">
                     <thead>
                       <tr>
-                        <th>Date</th>
+                        <th>Date / method / phase</th>
                         <th>
-                          Peak load (
+                          Load (
                           {ex?.convention === "machine-label"
                             ? "label"
                             : s.settings.unit}
                           )
                         </th>
-                        <th>Highest reps</th>
+                        <th>Bout reps</th>
                       </tr>
                     </thead>
                     <tbody>
                       {performance.slice(-12).map((x, i) => (
                         <tr key={i}>
-                          <td>{x.label}</td>
+                          <td>{x.label}<small>{x.context}</small></td>
                           <td>{fmt(x.value)}</td>
                           <td>{x.reps}</td>
                         </tr>
@@ -3450,6 +2732,7 @@ function Insights({
                         : "Keep gathering good data."}
                 </h3>
                 <p>{rec.reason}</p>
+                <DecisionEvidence decision={rec} />
                 {rec.weight !== undefined && (
                   <p>
                     {fmt(
@@ -3475,10 +2758,7 @@ function Insights({
           <section className="panel">
             <h2>Comparable records</h2>
             <p className="caption">
-              Best load, then reps at that load. Same exercise, equipment and
-              convention only. Working/drop sets; no warmups. Epley e1RM = load
-              × (1 + reps/30), total barbell load and ≤12 reps only. It is an
-              estimate, not a tested maximum.
+              Best raw load, then reps at that load, separated by exercise, equipment, convention, method/bout, semantic pair protocol and recorded phase. Legacy unknown pairs are not assumed comparable. Advanced-sequence progression stays manual. No warmups. Epley e1RM is shown only for qualifying straight total-barbell work; it is an estimate, not a tested maximum.
             </p>
             {recs.length ? (
               <div className="table-wrap">
@@ -3498,7 +2778,7 @@ function Insights({
                           <small>
                             {r.equipment} · {D.conventionLabels[r.convention]} ·{" "}
                             {niceDate(r.date)}
-                          </small>
+                          </small><small>{r.context}</small>
                         </td>
                         <td>
                           {fmt(
@@ -3579,9 +2859,10 @@ function Insights({
             <p className="caption">Marked days contain logged sessions.</p>
           </section>
           <section className="panel">
-            <h2>This week's muscle volume</h2>
+<h2>This week's muscle volume</h2>
+            <TrainingExposure sessions={s.sessions.filter(x=>new Date(x.date+"T12:00:00")>=weekStart && x.date<=D.today())} exercises={exercises} />
             <VolumeBars
-              values={D.volume(
+              values={D.directVolume(
                 s.sessions.filter(
                   (s) =>
                     new Date(s.date + "T12:00:00") >= weekStart &&
@@ -3599,22 +2880,16 @@ function Insights({
             {latest ? (
               <>
                 <p>Last session · {niceDate(latest.date)}</p>
-                <div className="tag-row">
-                  <span className="tag">Pump {latest.feedback.pump}/5</span>
-                  <span className="tag">
-                    Soreness {latest.feedback.soreness}/5
-                  </span>
-                  <span className="tag">
-                    Fatigue {latest.feedback.fatigue}/5
-                  </span>
-                </div>
-                {(latest.feedback.pain ||
-                  latest.feedback.soreness >= 4 ||
-                  latest.feedback.fatigue >= 4) && (
+                <FeedbackSummary session={latest} />
+                {(latest.feedback.pain === true ||
+                  (latest.feedback.reported === true && (
+                    (latest.feedback.soreness != null && latest.feedback.soreness >= 4) ||
+                    (latest.feedback.fatigue != null && latest.feedback.fatigue >= 4)))) && (
                   <>
                     <p>
-                      Elevated recovery signals. Hold progression; consider your
-                      planned deload. Persistent pain needs qualified support.
+                      Unscoped recovery signals need review. Local muscle reports
+                      are reviewed separately above; they do not automatically
+                      deload unrelated muscles. Persistent pain needs qualified support.
                     </p>
                     {s.programs
                       .filter((p) => !p.archived)
@@ -3726,6 +3001,8 @@ function Preferences({
   open: (m: { title: string; content: ReactNode }) => void;
   close: () => void;
 }) {
+  const singleUser = useStore().user?.accessMode === "single-user-local";
+  const publicWorkspace = useStore().accessMode === "public-workspace";
   const exercises = [...D.catalog, ...s.customExercises];
   return (
     <>
@@ -3831,6 +3108,7 @@ function Preferences({
               converted.
             </p>
           </section>
+          {publicWorkspace ? <section className="panel"><h2>AI is unavailable in public mode</h2><p>Private Gemini keys are never bound to this workspace. Manual programs, starter templates, workouts and imports remain available.</p></section> : <GeminiKeySettings />}
           <section className="panel">
             <h2>Your data, portable.</h2>
             <p>
@@ -3861,6 +3139,15 @@ function Preferences({
               >
                 <Download size={18} />
                 Export session CSV
+              </Button>
+              <Button onClick={() => {
+                exportPendingCopies().forEach((box, i) => download(
+                  `neoform-pending-${i + 1}-${D.today()}.json`,
+                  JSON.stringify({ version: 1, data: box.data }), "application/json",
+                ));
+              }}>Export pending tab copies</Button>
+              <Button onClick={() => open({ title: "Import from Hevy", content: <HevyImport /> })}>
+                Import from Hevy
               </Button>
             </div>
             <label className="upload-button">
@@ -3939,8 +3226,9 @@ function Preferences({
             </p>
           </section>
           <section className="panel">
-            <h2>Account & access</h2>
+            <h2>{publicWorkspace ? "Workspace access" : "Account & access"}</h2>
             <p>{userEmail}</p>
+            {publicWorkspace ? <p>No account or sign-in. This shared workspace is publicly readable and writable. Existing private accounts remain separate and cannot be accessed in this mode.</p> : singleUser ? <><p>Single-user / this PC</p><p className="caption">Opens your existing local account without sign-in. Access changes are disabled; restart with the authenticated configuration to manage credentials. Do not share or tunnel this server.</p></> : <>
             <div className="actions wrap">
               <Button
                 onClick={() =>
@@ -3974,7 +3262,7 @@ function Preferences({
               Password change signs out other devices. Sign out clears this
               device's account cache after syncing. Email password reset is
               unavailable; keep your passphrase safe.
-            </p>
+            </p></>}
           </section>
         </div>
         <div className="stack">
@@ -3984,8 +3272,7 @@ function Preferences({
             <details open>
               <summary>Effort, sets & comparisons</summary>
               <p>
-                RIR is reps in reserve; RPE = 10 − RIR here. Working and drop
-                sets count as direct hard sets at ≤4 RIR. Warmups do not
+                RIR is reps in reserve; RPE = 10 − RIR here. Direct straight/down sets at ≤4 RIR are counted separately from advanced raw bouts. No fractional growth credits are inferred. Warmups do not
                 contribute to volume, records or progression. Load convention
                 matters: per dumbbell means one implement; total means both
                 sides combined. Machine labels are not standardized.
@@ -3994,12 +3281,7 @@ function Preferences({
             <details>
               <summary>How progression works</summary>
               <p>
-                Two comparable sessions are needed. Pain, fatigue or soreness
-                ≥4/5 holds progression. Working sets with ≥1 RIR at the ceiling
-                can earn ≤2.5% or 2.5 kg increase; otherwise one rep within
-                range is suggested. Different machines, conventions and
-                exercises do not share records. Recommendations wait for your
-                visible acceptance and are not guaranteed optimal.
+                Two recent comparable exposures with known prescriptions and explicit current recovery are needed. Unresolved pain/systemic fatigue and missing context veto escalation. Beginners keep at least 2 RIR. The original load cap is the smaller of 2.5% and 2.5 kg, subject to available equipment. Method, bout and phase contexts remain separate; advanced sequence progression stays manual. Acceptance is explicit, never a promise of optimal growth.
               </p>
             </details>
             <details>
@@ -4016,15 +3298,17 @@ function Preferences({
             </details>
             <details>
               <summary>Privacy & recovery</summary>
-              <p>
-                Only your authenticated account can read its data. No trackers,
-                paid inference, or email service. Data is stored in D1; offline
-                cache is unencrypted on your device. Exports are private files.
-                Account deletion removes backend records and this browser cache;
-                other offline devices retain their local copy until sign-out.
-                Treat persistent pain as a reason to seek qualified advice, not
-                to force a load increase.
-              </p>
+              {publicWorkspace ? <p>Anyone with this URL can read, edit, import, replace or clear shared training data. Do not enter private information. AI and private accounts are unavailable. Export a backup before making shared changes; the device cache and exported files are unencrypted.</p> : <p>
+                Only your authenticated account can read its data.
+                Demonstrations use third-party YouTube content. AI sends only
+                bounded training preferences to Google Gemini using your
+                account's encrypted API key; Google charges and quotas may apply.
+                Data is stored in D1; offline cache is unencrypted on
+                your device. Exports are private files. Account deletion removes
+                backend records and this browser cache; other offline devices
+                retain their local copy until sign-out. Treat persistent pain as
+                a reason to seek qualified advice, not to force a load increase.
+              </p>}
             </details>
             <details>
               <summary>Install & references</summary>
@@ -4058,7 +3342,7 @@ function Preferences({
           <section className="quiet-card">
             <ShieldCheck size={22} />
             <div>
-              <h3>Built around your privacy.</h3>
+              <h3>{publicWorkspace ? "Shared with every visitor." : "Built around your privacy."}</h3>
               <p>
                 Export any time. Change your plan any time. Your training is
                 yours to keep.
@@ -4070,7 +3354,7 @@ function Preferences({
             onClick={() =>
               confirm(
                 "Clear training data?",
-                "This removes programs, custom exercises, sessions and active draft from your account. Your login and profile are retained. Export a backup first.",
+                publicWorkspace ? "This removes shared programs, custom exercises, sessions and active draft for EVERY visitor. Export a backup first." : "This removes programs, custom exercises, sessions and active draft from your account. Your login and profile are retained. Export a backup first.",
                 () =>
                   change((s) => ({
                     ...D.emptyState(),

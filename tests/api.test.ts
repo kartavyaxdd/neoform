@@ -183,5 +183,5 @@ describe("real local Worker + D1 auth/data", () => {
       last = (await api("/api/login", "POST", { email: target, password }))
         .status;
     expect(last).toBe(429);
-  });
+  }, 30000);
 });

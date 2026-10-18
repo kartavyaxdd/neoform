@@ -18,9 +18,10 @@ test("parent: shared-cookie account switching removes old private dialogs and ke
 }) => {
   await create(page, "ParentA");
   await page
-    .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("button", { name: "Training", exact: true })
+    .getByRole("navigation", { name: "Mobile navigation" })
+    .getByRole("button", { name: "Workout", exact: true })
     .click();
+  await page.locator(".program-options > summary").first().click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -33,6 +34,10 @@ test("parent: shared-cookie account switching removes old private dialogs and ke
   const b = await page.context().newPage();
   await b.goto("/");
   await expect(b.locator(".sync-status")).toHaveText("Synced");
+  await b
+    .getByRole("navigation", { name: "Mobile navigation" })
+    .getByRole("button", { name: "More", exact: true })
+    .click();
   await b.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Create account", exact: true }),
@@ -73,6 +78,10 @@ test("parent: clean offline logout clears identity/cache and stays signed out af
   await expect
     .poll(() => page.evaluate(() => !!navigator.serviceWorker.controller))
     .toBe(true);
+  await page
+    .getByRole("navigation", { name: "Mobile navigation" })
+    .getByRole("button", { name: "More", exact: true })
+    .click();
   await context.setOffline(true);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(

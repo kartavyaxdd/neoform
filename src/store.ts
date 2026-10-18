@@ -1,5 +1,5 @@
 ﻿import { useSyncExternalStore } from "react";
-import { emptyState, stateSchema, type State } from "./domain";
+import { emptyState, stateSchema, uid, type State } from "./domain";
 import {
   acknowledge,
   receiveRemote,
@@ -8,9 +8,11 @@ import {
   type Remote,
 } from "./syncPolicy";
 
-type User = { id: string; email: string };
+type User = { id: string; email: string; accessMode?: "single-user-local"; kind?: never } |
+  { id: "public-workspace"; kind: "workspace"; accessMode: "public-workspace"; email?: never };
 type Snapshot = {
   user: User | null;
+  accessMode?: "single-user-local" | "public-workspace";
   box: Outbox;
   ready: boolean;
   status: string;
@@ -32,6 +34,9 @@ let current: Snapshot = {
   conflict: null,
 };
 const listeners = new Set<() => void>();
+const accountRequests = new Set<AbortController>();
+const tabId = uid();
+let tabConflict = false;
 let activeSync: object | null = null,
   epoch = 0,
   accountBlocked = false;
@@ -44,6 +49,8 @@ function publish(p: Partial<Snapshot>) {
 }
 function invalidate() {
   epoch++;
+  for (const controller of accountRequests) controller.abort();
+  accountRequests.clear();
   activeSync = null;
   clearTimeout(debounce);
 }
@@ -97,7 +104,11 @@ export async function request<T = unknown>(
   path: string,
   method = "GET",
   body?: unknown,
+  options?: { signal?: AbortSignal; headers?: Record<string, string> },
 ): Promise<T> {
+  if (current.accessMode === "public-workspace" &&
+      (path.startsWith("/ai/") || ["/login", "/register", "/logout", "/password", "/account"].includes(path)))
+    throw new Error("Private accounts, credentials and AI are unavailable in the public workspace.");
   const bound = !["/login", "/register", "/me", "/health"].includes(path),
     requestEpoch = epoch;
   if (bound && !observeAccount())
@@ -113,43 +124,78 @@ export async function request<T = unknown>(
       new Error("Please sign in before accessing account data."),
       { status: 401 },
     );
-  const res = await fetch("/api" + path, {
-    method,
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      ...(expected ? { "X-Neoform-Account": expected } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  const json = (await res.json()) as { error?: string };
-  if (bound && (requestEpoch !== epoch || !observeAccount()))
-    throw Object.assign(new Error("Browser account changed. Sign in again."), {
-      status: 412,
-    });
-  if (!res.ok)
-    throw Object.assign(new Error(json.error || "Request failed"), {
-      status: res.status,
-      data: json,
-    });
-  return json as T;
-}
-const key = (id: string) => "neoform:account:" + id;
-function persist() {
-  if (!current.user || accountBlocked) return;
+  const controller = new AbortController();
+  const abort = () => controller.abort(options?.signal?.reason);
+  options?.signal?.addEventListener("abort", abort, { once: true });
+  if (options?.signal?.aborted) abort();
+  if (bound) accountRequests.add(controller);
   try {
-    localStorage.setItem(key(current.user.id), JSON.stringify(current.box));
-    localStorage.setItem(identityKey, JSON.stringify(current.user));
-  } catch {
-    publish({
-      error:
-        "Device storage is full. Export a backup; this draft cannot be preserved offline.",
+    const res = await fetch("/api" + path, {
+      method,
+      credentials: "same-origin",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(expected ? { "X-Neoform-Account": expected } : {}),
+        ...options?.headers,
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
+    const json = (await res.json()) as { error?: string };
+    if (bound && (requestEpoch !== epoch || !observeAccount()))
+      throw Object.assign(
+        new Error("Browser account changed. Sign in again."),
+        {
+          status: 412,
+        },
+      );
+    if (!res.ok)
+      throw Object.assign(new Error(json.error || "Request failed"), {
+        status: res.status,
+        data: json,
+      });
+    return json as T;
+  } finally {
+    accountRequests.delete(controller);
+    options?.signal?.removeEventListener("abort", abort);
   }
 }
-function cached(user: User): Outbox | null {
+const key = (id: string) => "neoform:account:" + id;
+const pendingPrefix = (id: string) => "neoform:pending:" + id + ":";
+function persist() {
+  if (!current.user || accountBlocked) return false;
+  let durable = false;
   try {
-    const box = JSON.parse(localStorage.getItem(key(user.id)) || "null");
+    const serialized = JSON.stringify(current.box);
+    // A tab owns only its journal. Shared cache writes cannot erase another
+    // tab's offline draft, even when storage events are delayed or absent.
+    if (current.box.dirty) {
+      localStorage.setItem(pendingPrefix(current.user.id) + tabId, serialized);
+      durable = true;
+    }
+    localStorage.setItem(key(current.user.id), serialized);
+    durable = true;
+    if (!current.box.dirty)
+      localStorage.removeItem(pendingPrefix(current.user.id) + tabId);
+    localStorage.setItem(identityKey, JSON.stringify(current.user));
+  } catch {
+    if (!durable && !current.box.dirty && current.box.base)
+      publish({
+        status: navigator.onLine ? "Synced" : "Saved online · offline copy unavailable",
+        error: "Device storage is full. Changes are saved online; the offline copy could not be updated.",
+      });
+    else if (!durable)
+      publish({
+        status: "Not saved · kept in memory",
+        error:
+          "Device storage is full. Export a backup; this draft cannot be preserved offline.",
+      });
+  }
+  return durable;
+}
+function parseCache(serialized: string | null): Outbox | null {
+  try {
+    const box = JSON.parse(serialized || "null");
     if (
       box &&
       Number.isInteger(box.revision) &&
@@ -175,8 +221,60 @@ function cached(user: User): Outbox | null {
   }
   return null;
 }
+function reconcileTabs(user: User, initial: Outbox | null): Outbox | null {
+  let box = initial;
+  tabConflict = false;
+  for (const k of Object.keys(localStorage)
+    .filter((k) => k.startsWith(pendingPrefix(user.id)))
+    .sort()) {
+    const pending = parseCache(localStorage.getItem(k));
+    if (!pending?.dirty) continue;
+    if (!box) {
+      box = pending;
+      continue;
+    }
+    if (JSON.stringify(box.data) === JSON.stringify(pending.data)) continue;
+    try {
+      if (!pending.base) throw new Error("A pending tab has no common base.");
+      const data = mergeThreeWay(pending.base.data, box.data, pending.data);
+      if (JSON.stringify(data) !== JSON.stringify(box.data))
+        box = { ...box, data, dirty: true, generation: box.generation + 1 };
+    } catch {
+      // Leave every original journal intact; never auto-select a competing edit.
+      tabConflict = true;
+    }
+  }
+  return box;
+}
+function cached(user: User): Outbox | null {
+  return reconcileTabs(user, parseCache(localStorage.getItem(key(user.id))));
+}
+function observeTabs() {
+  if (!current.user || accountBlocked) return;
+  const box = reconcileTabs(current.user, current.box);
+  if (box)
+    publish({
+      box,
+      ...(tabConflict
+        ? {
+            status: "Tab conflict · sync paused",
+            error:
+              "Competing tab changes are preserved on this device. Export pending copies before choosing a replacement.",
+          }
+        : {}),
+    });
+}
+export function exportPendingCopies() {
+  if (!current.user) return [];
+  return Object.keys(localStorage)
+    .filter((k) => k.startsWith(pendingPrefix(current.user!.id)))
+    .map((k) => parseCache(localStorage.getItem(k)))
+    .filter((box): box is Outbox => !!box?.dirty);
+}
 export function change(fn: (data: State) => State) {
   if (!observeAccount() || !current.user) return false;
+  observeTabs();
+  if (tabConflict) return false;
   const data = stateSchema.safeParse(fn(structuredClone(current.box.data)));
   if (!data.success) {
     publish({ error: data.error.issues[0]?.message || "Invalid change" });
@@ -192,10 +290,37 @@ export function change(fn: (data: State) => State) {
     status: navigator.onLine ? "Pending sync" : "Offline · saved on device",
     error: "",
   });
-  persist();
+  const durable = persist();
   clearTimeout(debounce);
   debounce = setTimeout(() => void sync(), 450);
-  return true;
+  return durable;
+}
+// A preview closes only after durable device persistence or a server ack.
+// Failed transactions roll back when no newer edit occurred, so retry cannot
+// insert a duplicate generated program. The caller retains its editable preview.
+export async function saveChange(fn: (data: State) => State) {
+  const before = current,
+    saveEpoch = epoch;
+  if (change(fn)) return true;
+  const attempted = current.box;
+  if (attempted === before.box) return false;
+  await sync();
+  if (saveEpoch !== epoch) return false;
+  if (
+    !current.box.dirty &&
+    current.box.base &&
+    JSON.stringify(current.box.base.data) === JSON.stringify(attempted.data)
+  )
+    return true;
+  if (current.box.generation === attempted.generation) {
+    publish({
+      box: before.box,
+      status: "Not saved · preview kept",
+      error:
+        "Could not save on this device or online. Keep the preview, export it or retry.",
+    });
+  }
+  return false;
 }
 function parseRemote(value: Remote): Remote {
   if (!Number.isInteger(value.revision) || value.revision < 0)
@@ -203,11 +328,17 @@ function parseRemote(value: Remote): Remote {
   return { data: stateSchema.parse(value.data), revision: value.revision };
 }
 export async function sync() {
+  // Do not turn a known authentication failure into a transient "Retry sync"
+  // action during background polling. Only confirmed initialize/login clears
+  // the error and resumes the preserved outbox.
+  if (current.status === "Sign in again to sync" && current.error) return;
+  if (observeAccount()) observeTabs();
   if (
     !observeAccount() ||
     activeSync ||
     !current.user ||
     current.conflict ||
+    tabConflict ||
     !navigator.onLine
   )
     return;
@@ -330,52 +461,66 @@ export function resolveConflict(choice: "remote" | "merge" | "local") {
   }
 }
 export async function initialize(user?: User) {
-  if (!user && localStorage.getItem(signedOutKey)) {
-    publish({
-      user: null,
-      box: freshBox(),
-      ready: true,
-      status: "Signed out",
-      conflict: null,
-    });
+  const explicitlySignedOut = !user && !!localStorage.getItem(signedOutKey);
+  if (explicitlySignedOut && !navigator.onLine) {
+    publish({ user: null, box: freshBox(), ready: true, status: "Signed out", conflict: null });
     return;
   }
   invalidate();
   const initEpoch = epoch;
   accountBlocked = false;
+  tabConflict = false;
   try {
     user = user || (await request<User>("/me"));
     if (epoch !== initEpoch) return;
-    if (!user?.id || !user.email) throw new Error("Invalid account identity.");
+    // Probe safe identity metadata even after an older authenticated-mode logout.
+    // Never re-open an ordinary cookie account against an explicit sign-out.
+    if (explicitlySignedOut && user.accessMode !== "single-user-local" && user.accessMode !== "public-workspace")
+      throw Object.assign(new Error("Signed out"), { status: 401 });
+    if (!user?.id || (user.accessMode === "public-workspace"
+        ? user.id !== "public-workspace" || user.kind !== "workspace" || "email" in user
+        : !user.email)) throw new Error("Invalid account identity.");
     const cache = cached(user);
     localStorage.removeItem(signedOutKey);
     publish({
       user,
+      accessMode: user.accessMode,
       box: cache || freshBox(),
       ready: true,
       error: "",
       conflict: null,
     });
     persist();
+    if (tabConflict) observeTabs();
     await sync();
   } catch (e) {
     if (epoch !== initEpoch) return;
-    const err = e as Error & { status?: number };
+    const err = e as Error & { status?: number; data?: { accessMode?: "single-user-local" } };
+    if (err.data?.accessMode === "single-user-local") {
+      publish({ user: null, accessMode: "single-user-local", ready: true,
+        status: "Local setup required", error: err.message, conflict: null });
+      return;
+    }
     if (!err.status && !localStorage.getItem(signedOutKey)) {
       try {
         const identity = JSON.parse(
           localStorage.getItem(identityKey) || "null",
         );
-        const cache = identity?.id && identity?.email && cached(identity);
+        const validIdentity = identity?.accessMode === "public-workspace"
+          ? identity.id === "public-workspace" && identity.kind === "workspace" && !("email" in identity)
+          : identity?.id && identity?.email;
+        const cache = validIdentity && cached(identity);
         if (cache) {
           publish({
             user: identity,
+            accessMode: identity.accessMode,
             box: cache,
             ready: true,
             error: "",
             conflict: null,
             status: "Offline · saved on device",
           });
+          if (tabConflict) observeTabs();
           return;
         }
       } catch {
@@ -387,6 +532,7 @@ export async function initialize(user?: User) {
       box: freshBox(),
       ready: true,
       status: "Signed out",
+      accessMode: undefined,
       conflict: null,
       error: "",
     });
@@ -402,6 +548,10 @@ export async function login(
   if (epoch === loginEpoch) await initialize(user);
 }
 export async function logout() {
+  if (current.accessMode === "public-workspace")
+    throw new Error("Sign-out is unavailable in the public workspace. Close this tab instead.");
+  if (current.user?.accessMode === "single-user-local")
+    throw new Error("Sign-out is disabled in single-user mode. Close this tab instead.");
   if (current.box.dirty) {
     await sync();
     if (current.box.dirty)
@@ -452,6 +602,12 @@ window.addEventListener("storage", (event) => {
   if (e.key === null || e.key === identityKey || e.key === signedOutKey) {
     if (current.user) observeAccount();
     else accountChanged();
+  } else if (
+    current.user &&
+    (e.key === key(current.user.id) ||
+      e.key?.startsWith(pendingPrefix(current.user.id)))
+  ) {
+    if (observeAccount()) observeTabs();
   }
 });
 window.addEventListener("online", () => void sync());

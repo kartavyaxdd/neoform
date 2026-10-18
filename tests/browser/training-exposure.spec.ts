@@ -1,0 +1,26 @@
+import {test,expect} from '@playwright/test';
+import {fixture} from './v2-fixture';
+import * as D from '../../src/domain';
+test('real Progress separates advanced raw bouts, displays semantic records and honest raw performance',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await fixture(page);
+ const bench=D.catalog.find(x=>x.id==='bench')!;
+ const plain=D.startSession('Straight QA',[D.createEntry(bench)]);
+ const advanced=D.startSession('Myorep QA',[D.createEntry(bench)]);
+ for(const s of [plain,advanced])s.exercises[0].sets.forEach(t=>Object.assign(t,{done:true,weight:20,reps:12,rir:3}));
+ advanced.exercises[0].technique='myoreps';advanced.exercises[0].techniqueGroup='synthetic-group';
+ advanced.exercises[0].sets.forEach((t,i)=>{t.bout=i?'mini':'activation';t.groupId='synthetic-group';t.rest=20;});
+ await page.evaluate(async(sessions)=>{const r=await fetch('/api/data');const state=await r.json() as {revision:number;data:D.State};const identity=await (await fetch('/api/me')).json() as {id:string};const saved=await fetch('/api/data',{method:'PUT',headers:{'Content-Type':'application/json','X-Neoform-Account':identity.id},body:JSON.stringify({revision:state.revision,data:{...state.data,sessions}})});if(!saved.ok)throw Error('QA seed failed '+saved.status)},[plain,advanced]);
+ await page.reload();await expect(page.locator('.sync-status')).toHaveText('Synced');
+ await page.getByRole('navigation',{name:'Mobile navigation'}).getByRole('button',{name:'Progress',exact:true}).click();
+ const exposure=page.getByRole('table',{name:'Muscle exposure details'});
+ await expect(exposure).toBeVisible();
+ const chest=exposure.getByRole('row').filter({has:page.getByRole('cell',{name:'Chest',exact:true})});
+ expect(await chest.getByRole('cell').allTextContents()).toEqual(['Chest','3','0','3','6','2']);
+ await page.getByText('View performance data',{exact:true}).click();
+ await expect(page.locator('.performance-log')).toContainText('myoreps');
+ await expect(page.locator('.performance-log')).toContainText('mini');
+ const records=page.locator('section.panel').filter({has:page.getByRole('heading',{name:'Comparable records',exact:true})});
+ await expect(records).toContainText('myoreps');await expect(records).toContainText('activation');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.screenshot({path:'evidence/training-engine/exposure-390.png',fullPage:true});
+});

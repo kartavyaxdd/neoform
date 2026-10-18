@@ -14,7 +14,7 @@ async function register(page: Page, name = "Avery") {
   await page.getByLabel("Your name", { exact: true }).fill(name);
   await page.getByRole("button", { name: "Build my workspace" }).click();
   await expect(
-    page.getByRole("heading", { name: new RegExp("Welcome back, " + name) }),
+    page.getByRole("heading", { name: "Workout", exact: true }),
   ).toBeVisible();
   await synced(page);
   return email;
@@ -28,27 +28,47 @@ async function signIn(page: Page, email: string) {
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: /Welcome back/ }),
+    page.getByRole("heading", { name: "Workout", exact: true }),
   ).toBeVisible();
   await synced(page);
 }
 async function nav(page: Page, label: string) {
-  const sidebar = page.getByRole("navigation", { name: "Main navigation" });
-  if (await sidebar.isVisible())
-    await sidebar.getByRole("button", { name: label, exact: true }).click();
-  else
+  const mapped: Record<string, string> = {
+    Overview: "Dashboard",
+    Training: "Workout",
+    Insights: "Progress",
+  };
+  if (label === "Exercises" || label === "Journal") {
     await page
       .getByRole("navigation", { name: "Mobile navigation" })
+      .getByRole("button", { name: "Workout", exact: true })
+      .click();
+    await page
       .getByRole("button", {
-        name:
-          label === "Overview"
-            ? "Home"
-            : label === "Exercises"
-              ? "Library"
-              : label,
-        exact: true,
+        name: label === "Exercises" ? "Exercise library" : "Workout History",
+        exact: false,
       })
       .click();
+  } else
+    await page
+      .getByRole("navigation", { name: "Mobile navigation" })
+      .getByRole("button", { name: mapped[label] || label, exact: true })
+      .click();
+}
+async function sessionNotes(page: Page) {
+  await page
+    .getByRole("button", { name: "Session options", exact: true })
+    .click();
+}
+async function closeSheet(page: Page) {
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+}
+async function programOptions(page: Page) {
+  await page
+    .locator(".program-options")
+    .first()
+    .getByText("Program options", { exact: true })
+    .click();
 }
 async function synced(page: Page) {
   await expect(page.locator(".sync-status")).toHaveText("Synced");
@@ -63,8 +83,10 @@ async function json(page: Page) {
   );
 }
 async function settings(page: Page) {
-  const mobile = page.getByRole("button", { name: "Settings", exact: true });
-  await mobile.locator("visible=true").first().click();
+  await page
+    .getByRole("navigation", { name: "Mobile navigation" })
+    .getByRole("button", { name: "More", exact: true })
+    .click();
 }
 test("registration → onboarding → edited program → log/undo/resume → history → analytics → backup → sign-in", async ({
   page,
@@ -73,6 +95,7 @@ test("registration → onboarding → edited program → log/undo/resume → his
   page.on("pageerror", (e) => errors.push(e.message));
   const email = await register(page);
   await nav(page, "Training");
+  await programOptions(page);
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   let dialog = page.getByRole("dialog");
   await dialog.getByLabel("Program name").fill("Avery · six-week build");
@@ -112,9 +135,11 @@ test("registration → onboarding → edited program → log/undo/resume → his
     })
     .click();
   await page.getByRole("button", { name: "Skip rest", exact: true }).click();
+  await sessionNotes(page);
   await page
     .getByLabel("Session notes", { exact: true })
     .fill("Controlled tempo. Good session.");
+  await closeSheet(page);
   await synced(page);
   await page.reload();
   await expect(
@@ -148,9 +173,10 @@ test("registration → onboarding → edited program → log/undo/resume → his
     page.getByRole("heading", { name: "Comparable records" }),
   ).toBeVisible();
   await expect(page.getByRole("cell", { name: "60 × 10" })).toBeVisible();
-  await expect(
-    page.getByRole("cell", { name: "80 kg", exact: true }),
-  ).toBeVisible();
+  // The configured superset context is not a valid straight-barbell e1RM.
+  const recordRow=page.getByRole("row").filter({has:page.getByRole("cell",{name:/Barbell back squat.*superset/})});
+  await expect(recordRow.getByRole("cell",{name:"—",exact:true})).toBeVisible();
+  await expect(page.getByRole("cell",{name:"80 kg",exact:true})).toHaveCount(0);
   await page.getByText("View chart data", { exact: true }).click();
   await expect(
     page.getByRole("columnheader", { name: "Week of" }),
@@ -221,7 +247,7 @@ test("two browsers synchronize, offline refresh preserves drafts, conflicts requ
   );
   const email = await register(pa, "Morgan");
   await signIn(pb, email);
-  await pa.getByRole("button", { name: "Open workout", exact: true }).click();
+  await pa.getByRole("button", { name: "Empty Workout", exact: true }).click();
   await pa.getByRole("button", { name: "Add exercise", exact: true }).click();
   await pa
     .getByRole("dialog")
@@ -253,10 +279,12 @@ test("two browsers synchronize, offline refresh preserves drafts, conflicts requ
   offlineB = true;
   await b.setOffline(true);
   expect(await pb.evaluate(() => navigator.onLine)).toBe(false);
+  await sessionNotes(pb);
   await pb
     .getByLabel("Session notes", { exact: true })
     .fill("Offline note kept.");
   await pb.reload();
+  await sessionNotes(pb);
   await expect(pb.getByLabel("Session notes", { exact: true })).toHaveValue(
     "Offline note kept.",
   );
@@ -268,14 +296,17 @@ test("two browsers synchronize, offline refresh preserves drafts, conflicts requ
     .getByLabel("Barbell bench press set 1 weight", { exact: true })
     .fill("50");
   await synced(pa);
+  await closeSheet(pb);
   offlineB = false;
   await b.setOffline(false);
   await expect(
     pb.getByRole("heading", { name: "Both devices made changes." }),
   ).toBeVisible();
+  await sessionNotes(pb);
   await expect(pb.getByLabel("Session notes", { exact: true })).toHaveValue(
     "Offline note kept.",
   );
+  await closeSheet(pb);
   await pb.getByRole("button", { name: "Merge safe changes" }).click();
   await pb
     .getByRole("dialog")
@@ -283,16 +314,20 @@ test("two browsers synchronize, offline refresh preserves drafts, conflicts requ
     .click();
   await synced(pb);
   await pa.reload();
+  await sessionNotes(pa);
   await expect(pa.getByLabel("Session notes", { exact: true })).toHaveValue(
     "Offline note kept.",
   );
+  await closeSheet(pa);
   await expect(
     pa.getByLabel("Barbell bench press set 1 weight", { exact: true }),
   ).toHaveValue("50");
   await register(pc, "Taylor");
   expect((await json(pc)).data.draft).toBeNull();
   expect((await json(pc)).data.sessions).toEqual([]);
-  await expect(pc.getByText("Your first entry is ahead.")).toBeVisible();
+  await expect(
+    pc.getByRole("heading", { name: "Workout", exact: true }),
+  ).toBeVisible();
   const cached = await pb.evaluate(async () => {
     const entries = [] as string[];
     for (const name of await caches.keys()) {
@@ -370,6 +405,7 @@ test("custom exercise, past workout edit/delete, responsive dark/light screensho
   await synced(page);
   expect((await json(page)).data.sessions).toHaveLength(0);
   await nav(page, "Overview");
+  await page.getByRole("button", { name: "Toggle theme" }).click();
   for (const width of [1440, 768, 390, 360]) {
     await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
     await expect
@@ -432,9 +468,11 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       .click();
     const indexes = session === 0 ? [2, 3] : [1, 2];
     if (session === 0) {
+      await page.getByRole("button", { name: "Warm Up", exact: true }).click();
       await page
         .getByLabel("Barbell back squat set 1 type", { exact: true })
         .selectOption("warmup");
+      await closeSheet(page);
       await page
         .getByLabel("Barbell back squat set 1 weight", { exact: true })
         .fill("20");
@@ -462,6 +500,11 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
     await page
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
+    // Explicit fresh reports are required; skipped defaults do not prove recovery.
+    await page.getByLabel("Systemic fatigue",{exact:true}).selectOption("1");
+    await page.getByLabel("Unscoped pain",{exact:true}).selectOption("no");
+    await page.getByText("Other unscoped observations",{exact:true}).click();
+    await page.getByLabel("Unscoped soreness",{exact:true}).selectOption("1");
     await page.getByRole("button", { name: "Save completed workout" }).click();
     await page
       .getByRole("button", { name: "Close dialog", exact: true })
@@ -478,16 +521,24 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       exact: true,
     }),
   });
-  await squat.getByText("Progression note", { exact: true }).click();
-  await expect(squat).toContainText("61.5 kg × 8 reps");
-  await squat.getByRole("button", { name: "Accept for unlogged sets" }).click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
+  const options = page.getByRole("dialog");
+  await options.getByText("Progression note", { exact: true }).click();
+  await expect(options).toContainText("61.5 kg × 8 reps");
+  await options
+    .getByRole("button", { name: "Accept for unlogged sets" })
+    .click();
   await expect(
     page.getByLabel("Barbell back squat set 1 weight", { exact: true }),
   ).toHaveValue("61.5");
-  await expect(squat.getByRole("status")).toContainText("accept");
-  await squat.getByRole("button", { name: "Defer", exact: true }).click();
-  await expect(squat.getByRole("status")).toContainText("defer");
+  await expect(options.getByRole("status")).toContainText("accept");
+  await options.getByRole("button", { name: "Defer", exact: true }).click();
+  await expect(options.getByRole("status")).toContainText("defer");
+  await closeSheet(page);
   await squat.getByRole("button", { name: "Add set", exact: true }).click();
+  await page.getByRole("button", { name: "Warm Up", exact: true }).click();
   await page
     .getByLabel("Barbell back squat set 4 type", { exact: true })
     .selectOption("drop");
@@ -504,13 +555,22 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
   await expect(
     page.getByLabel("Barbell back squat set 4 weight", { exact: true }),
   ).not.toBeVisible();
+  await page
+    .getByRole("tab", { name: "Barbell bench press", exact: true })
+    .click();
   const bench = page.locator(".log-exercise").filter({
     has: page.getByRole("heading", {
       name: "Barbell bench press",
       exact: true,
     }),
   });
-  await bench.getByRole("button", { name: "Swap", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Swap", exact: true })
+    .click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /Incline dumbbell press/ })
@@ -518,7 +578,14 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
   await expect(
     page.getByRole("heading", { name: "Incline dumbbell press", exact: true }),
   ).toBeVisible();
+  await page
+    .getByRole("tab", { name: "Barbell back squat", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
   await page.getByRole("button", { name: "Use RPE", exact: true }).click();
+  await closeSheet(page);
   await page
     .getByLabel("Barbell back squat set 1 RPE", { exact: true })
     .fill("8");
@@ -534,7 +601,9 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
   await nav(page, "Exercises");
   await expect(page.getByRole("region", { name: "Rest timer" })).toBeVisible();
   await nav(page, "Training");
-  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Resume session", exact: true })
+    .click();
   await page.getByRole("button", { name: "Skip rest", exact: true }).click();
   await synced(page);
   // Revoke the real server session to emulate expiry; do not bypass authentication.
@@ -545,10 +614,12 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       body: "{}",
     });
   });
+  await sessionNotes(page);
   await page
     .getByLabel("Session notes", { exact: true })
     .fill("Draft kept through expired login");
-  await page.locator(".sync-status").click();
+  await page.getByRole("button", { name: "Sync now", exact: true }).click();
+  await closeSheet(page);
   await expect(
     page.getByRole("button", { name: "Sign in to sync", exact: true }),
   ).toBeVisible();
@@ -561,9 +632,11 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
     .fill(password);
   await page.getByRole("button", { name: "Restore access & sync" }).click();
   await synced(page);
+  await sessionNotes(page);
   await expect(page.getByLabel("Session notes", { exact: true })).toHaveValue(
     "Draft kept through expired login",
   );
+  await closeSheet(page);
   await page
     .getByRole("button", { name: "Discard session", exact: true })
     .click();
@@ -612,6 +685,7 @@ test("custom mesocycle, duplication/archive, deload targets and unconverted mach
 }) => {
   await register(page, "Jules");
   await nav(page, "Training");
+  await programOptions(page);
   await page
     .getByRole("button", { name: "Duplicate", exact: true })
     .first()
@@ -622,8 +696,14 @@ test("custom mesocycle, duplication/archive, deload targets and unconverted mach
     .first()
     .click();
   await expect(page.locator(".program-card.archived")).toHaveCount(1);
+  await page.locator(".archive-group > summary").click();
+  await page.locator(".program-card.archived > summary").click();
+  await page
+    .locator(".program-card.archived .program-options > summary")
+    .click();
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(page.locator(".program-card.archived")).toHaveCount(0);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: "New program", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog
@@ -659,11 +739,9 @@ test("custom mesocycle, duplication/archive, deload targets and unconverted mach
   const program = page.locator(".program-card").filter({
     has: page.getByRole("heading", { name: "Two-day intent", exact: true }),
   });
+  await program.locator(":scope > summary").click();
+  await program.locator(".program-options > summary").click();
   await program.getByRole("button", { name: /W4/ }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Confirm", exact: true })
-    .click();
   await program
     .getByRole("button", { name: "Start Machine focus", exact: true })
     .click();
@@ -672,13 +750,17 @@ test("custom mesocycle, duplication/archive, deload targets and unconverted mach
   ).not.toBeVisible();
   await expect(
     page.getByLabel("Leg press set 1 RIR", { exact: true }),
-  ).toHaveValue("4");
-  await expect(page.getByText(/Target: 5–8 reps/)).toContainText("90s rest");
+  ).toHaveValue("5");
+  await page.getByRole("button", { name: "Targets", exact: true }).click();
+  await expect(page.getByText(/Target: 2–4 reps/)).toContainText("90s rest");
+  await closeSheet(page);
   await page.getByLabel("Leg press set 1 weight", { exact: true }).fill("7");
   await settings(page);
   await page.getByLabel("Load units", { exact: true }).selectOption("lb");
   await nav(page, "Training");
-  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Resume session", exact: true })
+    .click();
   await expect(
     page.getByLabel("Leg press set 1 weight", { exact: true }),
   ).toHaveValue("7");
@@ -692,7 +774,7 @@ test("custom mesocycle, duplication/archive, deload targets and unconverted mach
   await synced(page);
   const data = await json(page);
   expect(data.data.draft?.exercises[0].sets[0].weight).toBe(7);
-  expect(data.data.draft?.exercises[0].sets[0].rir).toBe(4);
+  expect(data.data.draft?.exercises[0].sets[0].rir).toBe(5);
   expect(data.data.timer?.remaining).toBe(90);
   expect(data.data.programs).toHaveLength(3);
 });

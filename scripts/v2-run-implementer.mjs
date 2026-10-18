@@ -1,0 +1,14 @@
+import { spawn } from 'node:child_process';
+import { readFileSync, mkdirSync, createWriteStream, writeFileSync } from 'node:fs';
+import path from 'node:path';
+mkdirSync('evidence/v2', {recursive:true});
+const args = ['C:/Users/spamk/AppData/Roaming/npm/node_modules/@openai/codex/bin/codex.js', 'exec', '--model', 'gpt-6.1-sol', '-c', 'model_reasoning_effort="high"', '--dangerously-bypass-approvals-and-sandbox', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--json', '-C', process.cwd(), '-i', path.resolve('.planning/ui-reference/mf-workouts-1.png'), '-i', path.resolve('.planning/ui-reference/mf-workouts-2.png'), '-o', path.resolve('evidence/v2/implementer-final.txt'), '-'];
+const log = createWriteStream('evidence/v2/implementer.jsonl');
+const err = createWriteStream('evidence/v2/implementer-stderr.log');
+const child = spawn(process.execPath,args,{shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});
+writeFileSync('evidence/v2/implementer-process.json',JSON.stringify({pid:child.pid,command:[process.execPath,...args],log:'evidence/v2/implementer.jsonl',stderr:'evidence/v2/implementer-stderr.log',started:new Date().toISOString()},null,2));
+console.log(`Implementation CLI PID ${child.pid}; log evidence/v2/implementer.jsonl`);
+child.stdout.pipe(log); child.stderr.pipe(err);
+child.stdin.end(readFileSync('.planning/v2-implementer-prompt.txt','utf8'));
+child.on('error',e=>{console.error(e.message);process.exitCode=1;});
+child.on('close',code=>{console.log(`Implementation CLI exited ${code}`);process.exitCode=code??1;});

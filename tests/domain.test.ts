@@ -17,15 +17,16 @@ import {
 const session = (weight = 60, pain = false): Session => ({
   id: crypto.randomUUID(),
   name: "Upper",
-  date: "2026-10-08",
+  date: new Date().toISOString().slice(0, 10),
   startedAt: 1,
   duration: 1800,
   notes: "",
-  feedback: { pump: 3, soreness: 1, fatigue: 1, pain },
+  feedback: { pump: 3, soreness: 1, fatigue: 1, pain, reported: true },
   exercises: [
     {
       id: crypto.randomUUID(),
       exerciseId: "bench",
+      target: {min:8,max:10,rir:2,rest:120},
       notes: "",
       sets: [
         { id: "s1", weight, reps: 10, rir: 2, kind: "working", done: true },

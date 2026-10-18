@@ -67,6 +67,15 @@ export function mergeThreeWay(base: State, remote: State, local: State): State {
   const merge = (b: unknown, r: unknown, l: unknown, path: string): unknown => {
     if (same(l, b)) return r;
     if (same(r, b) || same(r, l)) return l;
+    // Older snapshots omit this optional list. Independent additions have a
+    // known empty ancestor, while competing links still require a choice.
+    if (
+      path === "account.exerciseVideos" &&
+      b === undefined &&
+      Array.isArray(r) &&
+      Array.isArray(l)
+    )
+      return merge([], r, l, path);
     if (r === undefined || l === undefined || r === null || l === null)
       return fail(path, "an edit conflicts with a deletion or replacement");
     if (Array.isArray(b) && Array.isArray(r) && Array.isArray(l)) {
@@ -75,7 +84,10 @@ export function mergeThreeWay(base: State, remote: State, local: State): State {
         ? "id"
         : all.every((v) => object(v) && typeof v.key === "string")
           ? "key"
-          : null;
+          : path === "account.exerciseVideos" &&
+              all.every((v) => object(v) && typeof v.exerciseId === "string")
+            ? "exerciseId"
+            : null;
       if (!field) return fail(path, "both devices changed this list");
       const map = (items: Record<string, unknown>[]) => {
         const result = new Map(items.map((v) => [v[field] as string, v]));

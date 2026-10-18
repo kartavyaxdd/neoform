@@ -1,0 +1,29 @@
+import {it,expect} from 'vitest';
+import * as D from '../src/domain';
+const base='http://localhost:8787';
+
+it('real isolated Worker persists book feedback, phase and technique metadata without losing legacy records',async()=>{
+ const registered=await fetch(base+'/api/register',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({email:`training-api-${crypto.randomUUID()}@example.test`,password:'synthetic-training-only-passphrase'})});
+ expect(registered.status).toBe(201);const user=await registered.json() as {id:string};
+ const cookie=registered.headers.get('set-cookie')!.split(';')[0];
+ const headers={Origin:base,'Content-Type':'application/json',Cookie:cookie,'X-Neoform-Account':user.id};
+ const initial=await fetch(base+'/api/data',{headers});expect(initial.status).toBe(200);const before=await initial.json() as {revision:number;data:D.State};
+ const p:any=D.starterProgram('balanced');p.phase='resensitization';p.effort={mode:'ramp',startRir:4,endRir:2};
+ p.workouts[0].exercises[0].technique='tempo';p.workouts[0].exercises[0].tempo={eccentric:3,pause:1,concentric:1};
+ const legacy:any=D.startSession('Legacy QA',[D.createEntry(D.catalog[0])]);
+ legacy.feedback={pump:3,soreness:1,fatigue:1,pain:false};legacy.exercises[0].sets[0].done=true;
+ const draft:any=D.startSession('Book-driven QA',[D.createEntry(D.catalog[0])]);
+ draft.feedback={pump:null,soreness:null,fatigue:null,pain:null,reported:true};
+ draft.muscleFeedback=[{muscle:D.catalog[0].muscle,recovered:'unknown',soreness:null,pain:null,recordedAt:Date.now()}];
+ draft.exercises[0].technique='myoreps';draft.exercises[0].techniqueGroup='qa-myorep-group';
+ draft.exercises[0].sets[0]={...draft.exercises[0].sets[0],bout:'activation',groupId:'qa-myorep-group',rest:20};
+ draft.exercises[0].sets[1]={...draft.exercises[0].sets[1],bout:'mini',groupId:'qa-myorep-group',rest:20};
+ const data={...before.data,programs:[p],sessions:[legacy],draft};
+ const put=await fetch(base+'/api/data',{method:'PUT',headers,body:JSON.stringify({revision:before.revision,data})});
+ expect(put.status).toBe(200);const saved=await put.json() as {revision:number};
+ const loaded=await fetch(base+'/api/data',{headers});expect(loaded.status).toBe(200);
+ expect(await loaded.json()).toEqual({revision:saved.revision,data});
+ const stale=await fetch(base+'/api/data',{method:'PUT',headers,body:JSON.stringify({revision:before.revision,data})});expect(stale.status).toBe(409);
+ const mismatch=await fetch(base+'/api/data',{headers:{...headers,'X-Neoform-Account':'another-synthetic-account'}});expect(mismatch.status).toBe(412);
+ const foreign=await fetch(base+'/api/data',{method:'PUT',headers:{...headers,Origin:'https://evil.example.test'},body:JSON.stringify({revision:saved.revision,data})});expect(foreign.status).toBe(403);
+},20000);

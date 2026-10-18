@@ -8,12 +8,13 @@ if not exist node_modules\wrangler\bin\wrangler.js (
 call npm run build
 if errorlevel 1 goto failed
 set "CI=1"
-node node_modules\wrangler\bin\wrangler.js d1 migrations apply neoform --local --persist-to .local-state
+set "WRANGLER_SEND_METRICS=false"
+call npm.cmd exec -- wrangler d1 migrations apply neoform --config wrangler.single-user.jsonc --local --persist-to .local-state
 if errorlevel 1 goto failed
-set "CI="
-echo NEOFORM LOCAL ONLY: http://127.0.0.1:8788
+echo NEOFORM SINGLE-USER / THIS PC: http://127.0.0.1:8788
+echo Opens the existing account without sign-in. Do not share or tunnel this server.
 echo Keep this window open. This is not phone/PC cloud hosting.
-node node_modules\wrangler\bin\wrangler.js dev --local --ip 127.0.0.1 --port 8788 --persist-to .local-state
+node scripts\local-gateway.mjs
 exit /b %errorlevel%
 :failed
 echo Local startup stopped. Read the error above.

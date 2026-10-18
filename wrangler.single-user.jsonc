@@ -1,0 +1,14 @@
+{
+  "name": "neoform-single-user-local",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "alias": { "./ai-local": "./worker/ai-disabled.ts" },
+  "assets": { "directory": "./dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+  "d1_databases": [{ "binding": "DB", "database_name": "neoform", "database_id": "00000000-0000-0000-0000-000000000001", "migrations_dir": "migrations" }],
+  "vars": {
+    "SINGLE_USER_MODE": "local",
+    "SINGLE_USER_ID": "160cfea9-bfc3-413f-aa40-1cd9ab4e76eb"
+  },
+  "dev": { "ip": "127.0.0.1", "port": 8788, "local_protocol": "http", "inspector_port": 9231 },
+  "observability": { "enabled": false }
+}

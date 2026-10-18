@@ -16,6 +16,7 @@ const entry = (
 ) => ({
   id,
   exerciseId: "bench",
+  target: {min:8,max:10,rir:2,rest:120},
   notes: "",
   convention,
   equipment: "Barbell" as const,
@@ -24,11 +25,11 @@ const entry = (
 const session = (id: string, entries: any[]): Session => ({
   id,
   name: "Parent QA upper",
-  date: "2026-10-08",
+  date: new Date().toISOString().slice(0, 10),
   startedAt: id === "a" ? 1 : 2,
   duration: 600,
   notes: "",
-  feedback: { pump: 3, soreness: 1, fatigue: 1, pain: false },
+  feedback: { pump: 3, soreness: 1, fatigue: 1, pain: false, reported: true },
   exercises: entries,
 });
 describe("independent release regressions", () => {

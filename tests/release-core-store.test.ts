@@ -288,3 +288,74 @@ it("keeps explicit conflict choices and rejects merge if a legacy dirty cache ha
   expect(store.useStore().box.data).toEqual(remote);
   expect(store.useStore().conflict).toBeNull();
 });
+
+it("does not claim durable success when offline device persistence fails", async () => {
+  network.onLine = false;
+  const original = storage.setItem;
+  vi.stubGlobal(
+    "localStorage",
+    new Proxy(storage, {
+      get(target, property) {
+        if (property === "setItem")
+          return () => {
+            throw new DOMException("quota", "QuotaExceededError");
+          };
+        return Reflect.get(target, property);
+      },
+    }),
+  );
+  expect(
+    store.change((s) => ({ ...s, settings: { ...s.settings, unit: "lb" } })),
+  ).toBe(false);
+  expect(store.useStore().box.data.settings.unit).toBe("lb");
+  expect(store.useStore().status).toMatch(/not saved|memory/i);
+  expect(store.useStore().error).toMatch(/storage|export/i);
+  expect(original).toBeDefined();
+});
+it("preserves two same-account offline tab snapshots after both reload without storage-event delivery", async () => {
+  const first = store;
+  vi.resetModules();
+  vi.clearAllTimers();
+  const second = await import("../src/store");
+  await flush();
+  network.onLine = false;
+  first.change((s) => ({ ...s, settings: { ...s.settings, unit: "lb" } }));
+  second.change((s) => ({ ...s, settings: { ...s.settings, theme: "dark" } }));
+  vi.resetModules();
+  vi.clearAllTimers();
+  fetcher.mockImplementation(() => Promise.reject(new TypeError("offline")));
+  const reload = await import("../src/store");
+  await flush();
+  expect(reload.useStore().box.data.settings.unit).toBe("lb");
+  expect(reload.useStore().box.data.settings.theme).toBe("dark");
+  expect(reload.useStore().box.dirty).toBe(true);
+});
+it("aborts account-bound generation immediately when shared identity switches", async () => {
+  let signal!: AbortSignal;
+  fetcher.mockImplementation((_url: string, options: RequestInit) => {
+    signal = options.signal!;
+    return new Promise((_resolve, reject) =>
+      signal.addEventListener("abort", () =>
+        reject(new DOMException("abort", "AbortError")),
+      ),
+    );
+  });
+  const pending = store.request("/ai/generate", "POST", {});
+  const rejected = expect(pending).rejects.toThrow();
+  storage.setItem("neoform:identity", JSON.stringify(b));
+  event("neoform:identity", JSON.stringify(b));
+  expect(signal.aborted).toBe(true);
+  await rejected;
+});
+
+it('accepts online acknowledgement when device storage is full without reporting a false offline save', async()=>{
+ vi.stubGlobal('localStorage',new Proxy(storage,{get(target,property){
+  if(property==='setItem')return ()=>{throw new DOMException('quota','QuotaExceededError')};
+  return Reflect.get(target,property);
+ }}));
+ fetcher.mockImplementation(()=>reply({revision:2}));
+ expect(await store.saveChange(s=>({...s,settings:{...s.settings,unit:'lb'}}))).toBe(true);
+ expect(store.useStore().box.dirty).toBe(false);
+ expect(store.useStore().status).toBe('Synced');
+ expect(store.useStore().error).toMatch(/saved online.*offline/i);
+});

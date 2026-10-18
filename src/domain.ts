@@ -1,5 +1,16 @@
 import { z } from "zod";
-export const uid = () => crypto.randomUUID();
+import { videoId } from "./videos";
+export const uid = () => {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // LAN HTTP lacks randomUUID; getRandomValues remains cryptographically secure.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 export const MAX_BACKUP = 2_000_000;
 export const MAX_STATE_BYTES = MAX_BACKUP - 256;
 const id = z.string().min(1).max(100),
@@ -334,6 +345,37 @@ export const catalog: Exercise[] = [
   ex("band-row", "Band row", "Back", "Band", "Pull", "machine-label"),
   ex("band-curl", "Band curl", "Biceps", "Band", "Isolation", "machine-label"),
 ];
+export const techniques = [
+  "straight",
+  "down-set",
+  "superset",
+  "pre-exhaust",
+  "myoreps",
+  "drop-set",
+  "giant-set",
+  "tempo",
+] as const;
+const techniqueFields = {
+  technique: z.enum(techniques).optional(),
+  techniqueGroup: z.string().max(80).optional(),
+  repGoal: z.number().int().min(1).max(300).optional(),
+  tempo: z
+    .object({
+      eccentric: z.number().min(0).max(10),
+      pause: z.number().min(0).max(10),
+      concentric: z.number().min(0).max(10),
+    })
+    .strict()
+    .optional(),
+};
+export const phases = [
+  "accumulation",
+  "deload",
+  "maintenance",
+  "resensitization",
+  "active-rest",
+] as const;
+export type Phase = (typeof phases)[number];
 export const setSchema = z
   .object({
     id,
@@ -342,6 +384,11 @@ export const setSchema = z
     rir: z.number().min(0).max(10),
     kind: z.enum(["working", "warmup", "drop"]),
     done: z.boolean(),
+    bout: z
+      .enum(["straight", "activation", "mini", "drop", "down", "giant"])
+      .optional(),
+    groupId: z.string().max(80).optional(),
+    rest: z.number().int().min(0).max(900).optional(),
   })
   .strict();
 export type SetLog = z.infer<typeof setSchema>;
@@ -357,7 +404,9 @@ const entryTarget = z
 const entrySchema = z
   .object({
     id,
+    protocol: z.string().max(600).optional(),
     exerciseId: id,
+    ...techniqueFields,
     notes: note,
     convention: z.enum(conventions).optional(),
     equipment: z.enum(equipment).optional(),
@@ -369,10 +418,11 @@ const entrySchema = z
 export type Entry = z.infer<typeof entrySchema>;
 const feedbackSchema = z
   .object({
-    pump: z.number().int().min(1).max(5),
-    soreness: z.number().int().min(1).max(5),
-    fatigue: z.number().int().min(1).max(5),
-    pain: z.boolean(),
+    pump: z.number().int().min(1).max(5).nullable().optional(),
+    soreness: z.number().int().min(1).max(5).nullable().optional(),
+    fatigue: z.number().int().min(1).max(5).nullable().optional(),
+    pain: z.boolean().nullable().optional(),
+    reported: z.boolean().optional(),
   })
   .strict();
 const date = z
@@ -393,8 +443,29 @@ export const sessionSchema = z
     duration: z.number().finite().min(0).max(86400),
     notes: note,
     feedback: feedbackSchema,
+    muscleFeedback: z
+      .array(
+        z
+          .object({
+            muscle: z.enum(muscles),
+            pump: z.number().int().min(1).max(5).nullable().optional(),
+            soreness: z.number().int().min(1).max(5).nullable().optional(),
+            fatigue: z.number().int().min(1).max(5).nullable().optional(),
+            pain: z.boolean().nullable().optional(),
+            recovered: z.enum(["yes", "just", "no", "unknown"]).optional(),
+            recordedAt: z.number().finite().min(0).optional(),
+          })
+          .strict(),
+      )
+      .max(muscles.length)
+      .refine(
+        (rows) => new Set(rows.map((r) => r.muscle)).size === rows.length,
+        "Duplicate muscle feedback",
+      )
+      .optional(),
     programId: id.optional(),
     week: z.number().int().min(1).max(16).optional(),
+    phase: z.enum(phases).optional(),
     exercises: z.array(entrySchema).max(60),
   })
   .strict();
@@ -403,6 +474,7 @@ export const targetSchema = z
   .object({
     id,
     exerciseId: id,
+    ...techniqueFields,
     sets: z.number().int().min(1).max(10),
     min: z.number().int().min(1).max(100),
     max: z.number().int().min(1).max(100),
@@ -432,6 +504,15 @@ export const programSchema = z
     deloadWeek: z.number().int().min(1).max(16),
     currentWeek: z.number().int().min(1).max(16),
     archived: z.boolean(),
+    phase: z.enum(phases).optional(),
+    effort: z
+      .object({
+        mode: z.enum(["fixed", "ramp"]),
+        startRir: z.number().min(0).max(5),
+        endRir: z.number().min(0).max(5),
+      })
+      .strict()
+      .optional(),
     workouts: z.array(workoutSchema).min(1).max(14),
   })
   .strict()
@@ -461,6 +542,23 @@ const rawState = z
       })
       .strict(),
     customExercises: z.array(exerciseSchema).max(500),
+    exerciseVideos: z
+      .array(
+        z
+          .object({
+            exerciseId: id,
+            url: z
+              .string()
+              .max(300)
+              .refine(
+                (url) => videoId(url) !== null,
+                "Use a specific HTTPS YouTube video.",
+              ),
+          })
+          .strict(),
+      )
+      .max(500)
+      .optional(),
     programs: z.array(programSchema).max(100),
     sessions: z.array(sessionSchema).max(5000),
     draft: sessionSchema.nullable(),
@@ -488,6 +586,20 @@ const rawState = z
 export const stateSchema = rawState.superRefine((s, ctx) => {
   const all = [...catalog, ...s.customExercises];
   const ids = new Set(all.map((e) => e.id));
+  for (const link of s.exerciseVideos || [])
+    if (!ids.has(link.exerciseId))
+      ctx.addIssue({
+        code: "custom",
+        message: "Unknown video exercise reference",
+      });
+  if (
+    new Set((s.exerciseVideos || []).map((v) => v.exerciseId)).size !==
+    (s.exerciseVideos || []).length
+  )
+    ctx.addIssue({
+      code: "custom",
+      message: "Duplicate video exercise reference",
+    });
   const unique = (items: { id: string }[], path: string) => {
     if (new Set(items.map((x) => x.id)).size !== items.length)
       ctx.addIssue({ code: "custom", message: "Duplicate IDs", path: [path] });
@@ -532,7 +644,7 @@ export const restRemaining = (timer: State["timer"], now = Date.now()) =>
       : Math.max(0, Math.ceil((timer.endAt - now) / 1000));
 export const emptyState = (): State => ({
   profile: null,
-  settings: { unit: "kg", theme: "dark", timerSound: false, reminders: false },
+  settings: { unit: "kg", theme: "light", timerSound: false, reminders: false },
   customExercises: [],
   programs: [],
   sessions: [],
@@ -598,24 +710,124 @@ export function starterProgram(
     })),
   };
 }
-export function weeklyTarget(p: Program, week: number) {
-  const deload = week === p.deloadWeek;
+export type Experience = "New" | "Intermediate" | "Advanced";
+export const trainingPolicyVersion = "neoform-book-2026-10-v1";
+export function programPhase(p: Program): Phase {
+  return (
+    p.phase ?? (p.currentWeek === p.deloadWeek ? "deload" : "accumulation")
+  );
+}
+// Original conservative recipes, based on physical PDF pp.166–170,277.
+// They are not measured maintenance volume or a biological reset.
+function phaseTarget(t: Target, p: Program, experience?: Experience): Target {
+  const phase = programPhase(p);
+  const progress = Math.max(
+    0,
+    Math.min(1, (p.currentWeek - 1) / Math.max(1, p.deloadWeek - 2)),
+  );
+  let rir = p.effort
+    ? p.effort.mode === "fixed"
+      ? p.effort.startRir
+      : Math.round(
+          (p.effort.startRir +
+            (p.effort.endRir - p.effort.startRir) * progress) *
+            10,
+        ) / 10
+    : t.rir;
+  if (experience === "New") rir = Math.max(2, rir);
+  if (phase === "deload")
+    return {
+      ...t,
+      sets: Math.max(1, Math.ceil(t.sets / 2)),
+      min: Math.max(1, Math.floor(t.min / 2)),
+      max: Math.max(1, Math.floor(t.max / 2)),
+      rir: Math.max(5, rir),
+      technique: "straight",
+      techniqueGroup: undefined,
+      repGoal: undefined,
+      tempo: undefined,
+      superset: "",
+      kind: t.kind === "warmup" ? "warmup" : "working",
+    };
+  if (phase === "maintenance" || phase === "resensitization")
+    return {
+      ...t,
+      sets: Math.max(1, Math.ceil(t.sets / 2)),
+      rir: Math.max(3, rir),
+      technique: "straight",
+      techniqueGroup: undefined,
+      repGoal: undefined,
+      tempo: undefined,
+      superset: "",
+      kind: t.kind === "warmup" ? "warmup" : "working",
+    };
+  return { ...t, rir };
+}
+export function weeklyTarget(
+  p: Program,
+  week: number,
+  experience?: Experience,
+) {
+  const current = { ...p, currentWeek: week };
+  const phase = programPhase(current);
+  const targets =
+    phase === "active-rest"
+      ? []
+      : p.workouts.flatMap((w) =>
+          w.exercises
+            .filter((t) => t.kind !== "warmup")
+            .map((t) => phaseTarget(t, current, experience)),
+        );
+  const rirs = targets.map((t) => t.rir);
   return {
-    sets: p.workouts.reduce(
-      (sum, w) =>
-        sum +
-        w.exercises
-          .filter((e) => e.kind !== "warmup")
-          .reduce(
-            (s, e) =>
-              s + (deload ? Math.max(1, Math.ceil(e.sets / 2)) : e.sets),
-            0,
-          ),
-      0,
-    ),
-    rir: deload ? 4 : Math.max(1, 3 - Math.floor((week - 1) / 2)),
-    deload,
+    sets: targets.reduce((n, t) => n + t.sets, 0),
+    rir: rirs.length ? rirs.reduce((a, b) => a + b, 0) / rirs.length : 5,
+    rirMin: rirs.length ? Math.min(...rirs) : 5,
+    rirMax: rirs.length ? Math.max(...rirs) : 5,
+    deload: phase === "deload",
+    phase,
+    sourcePages: [166, 169, 170, 277, 315, 316],
+    policyVersion: trainingPolicyVersion,
   };
+}
+export function prepareWorkout(
+  workout: Workout,
+  program: Program,
+  exercises: Exercise[],
+  sessions: Session[],
+  experience?: Experience,
+): Entry[] {
+  const phase = programPhase(program);
+  if (phase === "active-rest") return [];
+  const late =
+    program.workouts.findIndex((w) => w.id === workout.id) >=
+    Math.ceil(program.workouts.length / 2);
+  return workout.exercises.flatMap((t) => {
+    const x = exercises.find((x) => x.id === t.exerciseId);
+    if (!x) return [];
+    const adjusted = phaseTarget(t, program, experience);
+    const entry = createEntry(x, adjusted);
+    const previous = [...sessions]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+      .reverse()
+      .filter((s) => !s.phase || s.phase === "accumulation")
+      .filter((s) => !(s.programId === program.id && s.week === program.deloadWeek && !s.phase))
+      .flatMap((s) => s.exercises.map((e) => ({e, confirmed: s.phase === "accumulation"})))
+      .find(
+        ({e, confirmed}) =>
+          e.exerciseId === x.id &&
+          e.target !== undefined && e.target.rir < (phase === "deload" && !confirmed ? 4 : 5) &&
+          comparableKey(e, x) === comparableKey(entry, x) &&
+          e.sets.some((s) => s.done && s.kind === "working"),
+      )?.e;
+    const load =
+      previous?.sets.find((s) => s.done && s.kind === "working")?.weight ?? 0;
+    entry.sets = entry.sets.map((s) => ({
+      ...s,
+      weight: phase === "deload" && late ? load / 2 : load,
+    }));
+    return [entry];
+  });
 }
 export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
   return {
@@ -625,6 +837,12 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
     convention: e.convention,
     equipment: e.equipment,
     superset: t?.superset || "",
+    ...(t?.technique ? { technique: t.technique } : {}),
+    ...(t?.techniqueGroup !== undefined
+      ? { techniqueGroup: t.techniqueGroup }
+      : {}),
+    ...(t?.repGoal !== undefined ? { repGoal: t.repGoal } : {}),
+    ...(t?.tempo ? { tempo: { ...t.tempo } } : {}),
     target: {
       min: t?.min || 8,
       max: t?.max || 12,
@@ -658,9 +876,15 @@ export function startSession(
     startedAt: Date.now(),
     duration: 0,
     notes: "",
-    feedback: { pump: 3, soreness: 1, fatigue: 1, pain: false },
+    feedback: {
+      pump: null,
+      soreness: null,
+      fatigue: null,
+      pain: null,
+      reported: false,
+    },
     exercises: entries,
-    ...(program ? { programId: program.id, week: program.currentWeek } : {}),
+    ...(program ? { programId: program.id, week: program.currentWeek, phase: programPhase(program) } : {}),
   };
 }
 export const toggleSet = (s: Session, id: string): Session => ({
@@ -679,6 +903,78 @@ export const completeSession = (s: Session): Session => ({
     .filter((e) => e.sets.length),
 });
 export const hard = (s: SetLog) => s.done && s.kind !== "warmup" && s.rir <= 4;
+export type MuscleExposure = {
+  directHardSets: number;
+  indirectHardSets: number;
+  advancedBouts: number;
+  rawBouts: number;
+  exposures: number;
+  sourcePages: number[];
+  assumptions: string[];
+  policyVersion: string;
+};
+export function muscleExposure(
+  sessions: Session[],
+  exercises: Exercise[],
+): Record<string, MuscleExposure> {
+  const result: Record<string, MuscleExposure> = {};
+  for (const session of sessions) {
+    const seen = new Set<string>();
+    for (const entry of session.exercises) {
+      const x = exercises.find((x) => x.id === entry.exerciseId);
+      if (!x) continue;
+      const completed = entry.sets.filter((s) => s.done && s.kind !== "warmup");
+      if (!completed.length) continue;
+      const advanced = (s: SetLog) =>
+        s.kind === "drop" ||
+        (s.bout !== undefined && !["straight", "down"].includes(s.bout)) ||
+        ["myoreps", "drop-set", "giant-set"].includes(entry.technique ?? "");
+      for (const muscle of new Set([x.muscle, ...x.secondary])) {
+        const row = (result[muscle] ??= {
+          directHardSets: 0,
+          indirectHardSets: 0,
+          advancedBouts: 0,
+          rawBouts: 0,
+          exposures: 0,
+          sourcePages: [43, 59, 60, 169, 223, 257],
+          assumptions: [
+            "Completed raw bouts and declared catalog involvement, not measured growth or equivalent muscle doses.",
+            "Hard-set qualification uses the original app RIR <=4 heuristic; advanced bouts have no fractional straight-set conversion. Indirect involvement is reported separately, never added to direct sets.",
+          ],
+          policyVersion: trainingPolicyVersion,
+        });
+        row.rawBouts += completed.length;
+        row.advancedBouts += completed.filter(advanced).length;
+        const hardCount = completed.filter(
+          (s) => !advanced(s) && hard(s),
+        ).length;
+        if (muscle === x.muscle) row.directHardSets += hardCount;
+        else row.indirectHardSets += hardCount;
+        seen.add(muscle);
+      }
+    }
+    for (const muscle of seen) result[muscle].exposures++;
+  }
+  return result;
+}
+export function directVolume(sessions: Session[], exercises: Exercise[]) {
+  return Object.fromEntries(Object.entries(muscleExposure(sessions, exercises))
+    .map(([muscle, row]) => [muscle, row.directHardSets]));
+}
+// Deliberately a raw-bout timeline, not a comparable strength trend. Each
+// point's load and repetitions belong to the same actual completed bout.
+export function performanceTimeline(exerciseId: string, sessions: Session[], exercises: Exercise[]) {
+  const x = exercises.find((x) => x.id === exerciseId);
+  if (!x) return [];
+  return [...sessions].sort((a,b) => a.date.localeCompare(b.date) || a.startedAt-b.startedAt)
+    .flatMap((session) => session.exercises.filter((e) => e.exerciseId === exerciseId &&
+      (e.equipment ?? x.equipment) === x.equipment && (e.convention ?? x.convention) === x.convention)
+      .flatMap((e) => e.sets.filter((set) => set.done && set.kind !== "warmup").map((set) => ({
+        date: session.date, weight: set.weight, reps: set.reps,
+        context: executionContext(e, set, session.phase),
+      }))));
+}
+// Legacy API: raw completed direct hard bouts, not equivalent growth sets.
 export function volume(sessions: Session[], exercises: Exercise[]) {
   const result: Record<string, number> = {};
   for (const s of sessions)
@@ -716,13 +1012,30 @@ export const canonicalLoad = (
 ) =>
   convention === "machine-label" ? value : convertWeight(value, unit, "kg");
 export function comparableKey(e: Entry, x: Exercise) {
-  return `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}`;
+  const base = `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}`;
+  // Preserve old straight-set keys, but never merge cadence/group/advanced contexts.
+  const technique = e.technique ?? (e.superset ? "superset" : "straight");
+  // Instance IDs group raw bouts; only a semantic pair protocol belongs in
+  // cross-session comparison. Legacy unknown pairs stay deliberately distinct.
+  const groupContext = ["myoreps", "drop-set", "giant-set"].includes(technique)
+    ? "sequence"
+    : e.protocol ?? e.techniqueGroup ?? e.superset ?? "";
+  return technique === "straight" && !e.tempo && !e.techniqueGroup && !e.repGoal
+    ? base
+    : base + "|" + JSON.stringify([technique, groupContext, e.repGoal ?? null, e.tempo ?? null]);
+}
+export function executionContext(e: Entry, set?: SetLog, phase?: Phase) {
+  const method = e.technique ?? (e.superset ? "superset" : "straight");
+  return [method, e.protocol, e.tempo ? `tempo ${e.tempo.eccentric}/${e.tempo.pause}/${e.tempo.concentric}s` : undefined,
+    e.repGoal ? `goal ${e.repGoal} reps` : undefined, set?.bout ?? set?.kind,
+    phase ?? "unrecorded phase"].filter(Boolean).join(" · ");
 }
 export function records(sessions: Session[], exercises: Exercise[]) {
   const result = new Map<
     string,
     {
       key: string;
+      context: string;
       name: string;
       weight: number;
       reps: number;
@@ -736,11 +1049,20 @@ export function records(sessions: Session[], exercises: Exercise[]) {
     for (const e of s.exercises) {
       const x = exercises.find((x) => x.id === e.exerciseId);
       if (!x) continue;
-      const key = comparableKey(e, x);
       for (const set of e.sets.filter((t) => t.done && t.kind !== "warmup")) {
+        const key =
+          comparableKey(e, x) + `|phase:${s.phase ?? "unrecorded"}` +
+          (set.kind === "drop" || (set.bout && set.bout !== "straight")
+            ? `|bout:${set.bout ?? set.kind}`
+            : "");
         const old = result.get(key);
         const est =
           x.e1rm &&
+          (!e.technique || e.technique === "straight") &&
+          !e.tempo &&
+          !e.superset &&
+          set.kind === "working" &&
+          (!set.bout || set.bout === "straight") &&
           (e.equipment || x.equipment) === "Barbell" &&
           (e.convention || x.convention) === "total" &&
           set.reps <= 12 &&
@@ -754,6 +1076,7 @@ export function records(sessions: Session[], exercises: Exercise[]) {
         )
           result.set(key, {
             key,
+            context: executionContext(e, set, s.phase),
             name: x.name,
             weight: set.weight,
             reps: set.reps,
@@ -766,21 +1089,224 @@ export function records(sessions: Session[], exercises: Exercise[]) {
     }
   return [...result.values()];
 }
+export type CoachingOptions = {
+  experience?: Experience;
+  now?: number;
+  phase?: Phase;
+};
 export type Recommendation = {
   action: "hold" | "load" | "reps" | "recover";
   reason: string;
   weight?: number;
   reps?: number;
+  evidence?: string[];
+  assumptions?: string[];
+  sourcePages?: number[];
+  policyVersion?: string;
 };
+const chronological = (sessions: Session[]) =>
+  [...sessions].sort(
+    (a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt,
+  );
+const sessionTime = (s: Session) => Date.parse(s.date + "T12:00:00Z");
+const fresh = (s: Session, now: number, days: number) =>
+  now - sessionTime(s) <= days * 86400000 && now - sessionTime(s) >= -86400000;
+const involves = (
+  s: Session,
+  muscle: Exercise["muscle"],
+  exercises: Exercise[],
+) =>
+  s.exercises.some((e) => {
+    const x = exercises.find((x) => x.id === e.exerciseId);
+    return (
+      x &&
+      (x.muscle === muscle || x.secondary.includes(muscle)) &&
+      e.sets.some((s) => s.done && s.kind !== "warmup")
+    );
+  });
+function recoveryStatus(
+  muscle: Exercise["muscle"],
+  sessions: Session[],
+  exercises: Exercise[],
+  now: number,
+) {
+  const ordered = chronological(sessions),
+    latest = ordered.at(-1);
+  const localSession = ordered
+    .filter((s) => s.muscleFeedback?.some((r) => r.muscle === muscle))
+    .at(-1);
+  const local = localSession?.muscleFeedback?.find((r) => r.muscle === muscle);
+  const evidence: string[] = [];
+  const painReport = [...ordered]
+    .reverse()
+    .find(
+      (s) =>
+        s.feedback.pain === true ||
+        (s.feedback.reported === true && s.feedback.pain === false),
+    );
+  const localPainReport = [...ordered]
+    .reverse()
+    .flatMap((s) => s.muscleFeedback ?? [])
+    .find((r) => r.muscle === muscle && typeof r.pain === "boolean");
+  if (painReport?.feedback.pain === true || localPainReport?.pain === true) {
+    evidence.push(
+      `${muscle}: unresolved reported pain; missing/unreported feedback does not clear a prior pain flag.`,
+    );
+    return { blocked: true, positive: false, evidence };
+  }
+  // Follow the latest actual systemic observation, not the last unrelated
+  // workout. Unknown reports cannot establish that a previous flag resolved.
+  const systemic = [...ordered].reverse().find((s) =>
+    typeof s.feedback.fatigue === "number" &&
+    (s.feedback.reported === true || s.feedback.fatigue >= 4),
+  );
+  if (systemic && (systemic.feedback.fatigue ?? 0) >= 4) {
+    const recent = fresh(systemic, now, 7);
+    evidence.push(recent
+      ? `${systemic.date}: unresolved high systemic fatigue; later unknown feedback does not clear it.`
+      : `${systemic.date}: old systemic fatigue report needs current confirmation; it is not a diagnosis of present fatigue.`);
+    return { blocked: recent, positive: false, evidence };
+  }
+  if (
+    local &&
+    (local.pain === true ||
+      (localSession &&
+        fresh(localSession, now, 7) &&
+        (local.recovered === "no" ||
+          (local.fatigue ?? 0) >= 4 ||
+          (local.soreness ?? 0) >= 4)))
+  ) {
+    evidence.push(
+      `${localSession!.date}: ${muscle} pain or incomplete local recovery.`,
+    );
+    return { blocked: true, positive: false, evidence };
+  }
+  const relevant = ordered.filter((s) => involves(s, muscle, exercises)).at(-1);
+  if (
+    relevant &&
+    fresh(relevant, now, 7) &&
+    (relevant.feedback.soreness ?? 0) >= 4
+  ) {
+    evidence.push(
+      `${relevant.date}: high unscoped soreness after ${muscle} involvement.`,
+    );
+    return { blocked: true, positive: false, evidence };
+  }
+  const localFresh =
+    localSession &&
+    (!relevant || ordered.indexOf(localSession) >= ordered.indexOf(relevant)) &&
+    fresh(localSession, now, 7) &&
+    (local?.recordedAt === undefined ||
+      (now - local.recordedAt >= -86400000 &&
+        now - local.recordedAt <= 7 * 86400000));
+  const positive =
+    !!(localFresh && local?.recovered === "yes" && local.pain === false) ||
+    !!(
+      !local &&
+      relevant &&
+      fresh(relevant, now, 7) &&
+      relevant.feedback.reported === true &&
+      relevant.feedback.pain === false &&
+      relevant.feedback.fatigue != null &&
+      relevant.feedback.fatigue <= 2 &&
+      relevant.feedback.soreness != null &&
+      relevant.feedback.soreness <= 2
+    );
+  evidence.push(
+    positive
+      ? `${(localSession ?? relevant)!.date}: explicit recovery reported for ${muscle}.`
+      : `${muscle}: recovery unknown, stale, unreported, or only just in time.`,
+  );
+  return { blocked: false, positive, evidence };
+}
+const coachingMeta = (
+  evidence: string[] = [],
+  sourcePages = [98, 99, 134, 165, 175, 316],
+) => ({
+  evidence,
+  assumptions: [
+    "Original conservative NEOFORM heuristics, not measured MEV/MRV or a growth diagnosis.",
+    "Favorable recovery reports expire after 7 days; performance comparisons after 21 days. Pain requires an explicit clear report. Technique/ROM and equipment setup must remain repeatable.",
+  ],
+  sourcePages,
+  policyVersion: trainingPolicyVersion,
+});
 export function recommend(
   exerciseId: string,
   sessions: Session[],
   exercises: Exercise[],
   range: { min: number; max: number },
+  options: CoachingOptions = {},
 ): Recommendation {
   const x = exercises.find((x) => x.id === exerciseId);
-  if (!x) return { action: "hold", reason: "Exercise unavailable." };
-  const wantedKey = `${x.id}|${x.convention}|${x.equipment}`;
+  const result = (
+    action: Recommendation["action"],
+    reason: string,
+    evidence: string[] = [],
+    extra: Partial<Recommendation> = {},
+  ): Recommendation => ({
+    action,
+    reason,
+    ...coachingMeta(evidence),
+    ...extra,
+  });
+  if (!x) return result("hold", "Exercise unavailable.");
+  const now = options.now ?? Date.now();
+  const recovery = recoveryStatus(x.muscle, sessions, exercises, now);
+  const support = x.secondary
+    .map((m) => recoveryStatus(m, sessions, exercises, now))
+    .find((r) => r.blocked);
+  if (support)
+    return result(
+      "recover",
+      "An assisting muscle has a recovery/pain flag; review this movement without blanket-blocking unrelated work.",
+      support.evidence,
+    );
+  if (recovery.blocked)
+    return result(
+      "recover",
+      "Defer progression; review local recovery or unscoped pain/systemic fatigue. Stop painful work and seek qualified advice for persistent pain.",
+      recovery.evidence,
+    );
+  if (options.phase && options.phase !== "accumulation")
+    return result(
+      "hold",
+      `The ${options.phase} phase prioritizes recovery or retention, not escalation.`,
+      recovery.evidence,
+    );
+  const latestEntry = chronological(sessions)
+    .filter((s) => fresh(s, now, 21))
+    .flatMap((s) => s.exercises)
+    .filter(
+      (e) =>
+        e.exerciseId === exerciseId &&
+        e.sets.some((t) => t.done && t.kind !== "warmup"),
+    )
+    .at(-1);
+  if (
+    !latestEntry ||
+    (latestEntry.convention ?? x.convention) !== x.convention ||
+    (latestEntry.equipment ?? x.equipment) !== x.equipment
+  )
+    return result(
+      "hold",
+      "Log recent work in the intended equipment and convention context.",
+      recovery.evidence,
+    );
+  if (
+    latestEntry.sets.some(
+      (t) =>
+        t.done &&
+        t.kind !== "warmup" &&
+        (t.kind !== "working" || (t.bout && t.bout !== "straight")),
+    )
+  )
+    return result(
+      "hold",
+      "The latest exposure contains non-straight bouts; review its whole sequence rather than selecting older straight work.",
+      recovery.evidence,
+    );
+  const wantedKey = comparableKey(latestEntry, x);
   const matchingEntries = (s: Session) =>
     s.exercises.filter(
       (e) => e.exerciseId === exerciseId && comparableKey(e, x) === wantedKey,
@@ -789,40 +1315,103 @@ export function recommend(
     matchingEntries(s).flatMap((e) =>
       e.sets.filter((t) => t.done && t.kind === "working"),
     );
-  const comparable = sessions
-    .filter((s) => workingSets(s).length > 0)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+  const comparable = chronological(sessions)
+    .filter((s) => fresh(s, now, 21) && workingSets(s).length > 0)
     .slice(-2);
-  const latest = comparable.at(-1);
-  const recovery = [...sessions]
-    .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
-    .at(-1);
+  const evidence = [
+    ...recovery.evidence,
+    ...comparable.map(
+      (s) =>
+        `${s.date}: ${workingSets(s).length} comparable completed working sets.`,
+    ),
+  ];
+  if (comparable.length < 2 || new Set(comparable.map((s) => s.id)).size < 2)
+    return result(
+      "hold",
+      "Log two recent comparable exposures before progression suggestions.",
+      evidence,
+    );
+  if (!recovery.positive)
+    return result(
+      "hold",
+      "Confirm current recovery; unknown or unreported feedback is not evidence of good recovery.",
+      evidence,
+    );
+  const sets = comparable.flatMap(workingSets),
+    latestSets = workingSets(comparable[1]);
+  const entries = comparable.flatMap(matchingEntries);
+  if (entries.some((e) => !e.target))
+    return result("hold", "Historical prescriptions are unknown; confirm intended effort, rest and rep context before progression.", evidence);
   if (
-    recovery &&
-    (recovery.feedback.pain ||
-      recovery.feedback.fatigue >= 4 ||
-      recovery.feedback.soreness >= 4)
+    entries.some(
+      (e) =>
+        (e.technique && !["straight", "superset"].includes(e.technique)) ||
+        e.tempo ||
+        e.sets.some(
+          (t) =>
+            t.done &&
+            t.kind !== "warmup" &&
+            (t.kind === "drop" || (t.bout && t.bout !== "straight")),
+        ),
+    )
   )
-    return {
-      action: "recover",
-      reason:
-        "Pain or elevated fatigue/soreness: defer progression. Consider less volume or a deload; seek qualified advice for persistent pain.",
-    };
-  if (comparable.length < 2)
-    return {
-      action: "hold",
-      reason:
-        "Log two comparable sessions before receiving progression suggestions.",
-    };
-  const sets = comparable.flatMap(workingSets);
-  if (!sets.length || sets.some((s) => s.rir < 1))
-    return {
-      action: "hold",
-      reason:
-        "Hold your targets until working sets are controlled with at least 1 rep in reserve.",
-    };
-  const latestSets = workingSets(latest!);
-  const weight = latestSets[0]?.weight || 0;
+    return result(
+      "hold",
+      "Advanced sequences need a whole-sequence manual review; do not equate activation, mini, drop or down bouts to straight sets.",
+      evidence,
+    );
+  if (
+    entries.some(
+      (e) =>
+        e.target &&
+        (e.target.rir >= 5 ||
+          e.target.min !== range.min ||
+          e.target.max !== range.max ||
+          e.sets.some(
+            (t) => t.done && t.kind === "working" && t.rir < e.target!.rir,
+          )),
+    )
+  )
+    return result(
+      "hold",
+      "Prescribed effort or rep context was missed or is recovery-oriented; repeat before escalating.",
+      evidence,
+    );
+  const counts = comparable.map((s) => workingSets(s).length);
+  if (
+    counts[0] !== counts[1] ||
+    new Set(entries.map((e) => e.target?.rest ?? null)).size > 1
+  )
+    return result(
+      "hold",
+      "Set dose or prescribed rest changed; establish comparable exposures.",
+      evidence,
+    );
+  if (!sets.every((s) => Math.abs(s.weight - latestSets[0].weight) < 0.01))
+    return result(
+      "hold",
+      "Loads changed across sets or exposures; establish a repeatable load context.",
+      evidence,
+    );
+  const means = comparable.map(
+    (s) =>
+      workingSets(s).reduce((sum, t) => sum + t.reps, 0) /
+      workingSets(s).length,
+  );
+  if (means[1] < means[0])
+    return result(
+      "hold",
+      "Mean comparable performance declined; do not escalate from a cherry-picked best set.",
+      evidence,
+    );
+  const floor = options.experience === "New" ? 2 : 1;
+  if (sets.some((s) => s.rir < floor))
+    return result(
+      "hold",
+      `Repeat controlled work with at least ${floor} RIR before escalating.`,
+      evidence,
+    );
+  const weight = latestSets[0].weight;
   if (
     sets.every((s) => s.reps >= range.max) &&
     weight > 0 &&
@@ -832,32 +1421,192 @@ export function recommend(
     const nextWeight =
       Math.floor((weight + Math.min(2.5, weight * 0.025)) * 100) / 100;
     if (nextWeight <= weight)
-      return {
-        action: "hold",
-        reason:
-          "No increment fits within the cap at this load resolution. Keep load stable and repeat controlled reps.",
-      };
-    return {
-      action: "load",
-      weight: nextWeight,
-      reps: range.min,
-      reason:
-        "Both comparable sessions met the rep ceiling with reserve. Add at most 2.5% or 2.5 kg, whichever is smaller; round down to available plates.",
-    };
+      return result(
+        "hold",
+        "No load increment fits the conservative cap at numeric resolution; repeat.",
+        evidence,
+      );
+    return result(
+      "load",
+      "Both comparable exposures met the ceiling with reserve. Add at most 2.5% or 2.5 kg, whichever is smaller; round down to available plates or hold when equipment jumps are too coarse.",
+      evidence,
+      { weight: nextWeight, reps: range.min },
+    );
   }
-  if (sets.every((s) => s.reps >= range.min) && latestSets.length)
-    return {
-      action: "reps",
-      weight,
-      reps: Math.min(range.max, Math.min(...latestSets.map((s) => s.reps)) + 1),
-      reason:
-        "Keep load stable and try one more rep, bounded by your rep range. Machine labels stay on the same machine; no inferred load increment.",
-    };
-  return {
-    action: "hold",
-    reason:
-      "Keep targets stable until comparable working sets reach the lower rep target.",
-  };
+  if (latestSets.every((s) => s.reps >= range.max))
+    return result(
+      "hold",
+      "Rep ceiling reached; no inferred increment for machine labels or added-bodyweight work. Review available equipment manually.",
+      evidence,
+    );
+  if (sets.every((s) => s.reps >= range.min))
+    return result(
+      "reps",
+      "Keep load stable and try one more rep within the range. Machine labels remain raw labels on the same setup, not inferred weights.",
+      evidence,
+      {
+        weight,
+        reps: Math.min(
+          range.max,
+          Math.min(...latestSets.map((s) => s.reps)) + 1,
+        ),
+      },
+    );
+  return result(
+    "hold",
+    "Keep targets stable until all comparable working sets meet the lower rep target.",
+    evidence,
+  );
+}
+export type MuscleReview = ReturnType<typeof coachingMeta> & {
+  action: "hold" | "volume-review" | "recover" | "deload-review";
+  reason: string;
+};
+// Performance is relative to the saved prescription, never a pump/growth score.
+function musclePerformance(
+  muscle: Exercise["muscle"],
+  sessions: Session[],
+  exercises: Exercise[],
+  now: number,
+) {
+  const groups = new Map<string, { entry: Entry; session: Session }[]>();
+  for (const session of chronological(sessions).filter((s) =>
+    fresh(s, now, 21),
+  ))
+    for (const entry of session.exercises) {
+      const x = exercises.find((x) => x.id === entry.exerciseId);
+      if (
+        !x ||
+        x.muscle !== muscle ||
+        !entry.sets.some((s) => s.done && s.kind !== "warmup")
+      )
+        continue;
+      const rows = groups.get(x.id) ?? [];
+      rows.push({ entry, session });
+      groups.set(x.id, rows);
+    }
+  const rows = [...groups.values()];
+  const evidence: string[] = [];
+  let repeatedMiss = false,
+    favorable = rows.length > 0;
+  for (const exposures of rows) {
+    const pair = exposures.slice(-2);
+    if (pair.length < 2 || pair[0].session.id === pair[1].session.id) {
+      favorable = false;
+      continue;
+    }
+    const [a, b] = pair.map((p) => p.entry),
+      x = exercises.find((x) => x.id === a.exerciseId)!;
+    const valid = (e: Entry) =>
+      !!e.target &&
+      e.target.rir < 5 &&
+      (!e.technique || ["straight", "superset"].includes(e.technique)) &&
+      !e.tempo &&
+      !e.sets.some(
+        (s) =>
+          s.done &&
+          s.kind !== "warmup" &&
+          (s.kind !== "working" || (s.bout && s.bout !== "straight")),
+      );
+    const sets = (e: Entry) =>
+      e.sets.filter((s) => s.done && s.kind === "working");
+    if (
+      !valid(a) ||
+      !valid(b) ||
+      comparableKey(a, x) !== comparableKey(b, x) ||
+      a.target!.rest !== b.target!.rest ||
+      a.target!.min !== b.target!.min ||
+      a.target!.max !== b.target!.max ||
+      sets(a).length !== sets(b).length
+    ) {
+      favorable = false;
+      continue;
+    }
+    const misses = (e: Entry) =>
+      sets(e).some((s) => s.reps < e.target!.min || s.rir < e.target!.rir);
+    const missed = misses(a) && misses(b);
+    repeatedMiss ||= missed;
+    const easy = (e: Entry) =>
+      sets(e).every(
+        (s) => s.reps >= e.target!.min && s.rir >= e.target!.rir + 1,
+      );
+    const nonDeclining = sets(b).every(
+      (s, i) =>
+        s.weight >= sets(a)[i].weight &&
+        s.reps >= sets(a)[i].reps &&
+        s.rir >= sets(a)[i].rir,
+    );
+    favorable &&= easy(a) && easy(b) && nonDeclining;
+    evidence.push(
+      `${x.name}: two ${sets(b).length}-set comparable exposures; ${missed ? "both below prescribed reps/effort" : easy(a) && easy(b) && nonDeclining ? "targets exceeded with extra reserve" : "no clear favorable performance margin"}.`,
+    );
+  }
+  return { repeatedMiss, favorable, evidence };
+}
+export function muscleReview(
+  muscle: Exercise["muscle"],
+  sessions: Session[],
+  exercises: Exercise[],
+  options: CoachingOptions = {},
+): MuscleReview {
+  const now = options.now ?? Date.now(),
+    recovery = recoveryStatus(muscle, sessions, exercises, now);
+  const performance = musclePerformance(muscle, sessions, exercises, now);
+  const evidence = [...recovery.evidence, ...performance.evidence];
+  const result = (
+    action: MuscleReview["action"],
+    reason: string,
+  ): MuscleReview => ({
+    action,
+    reason,
+    ...coachingMeta(evidence, [98, 99, 165, 166, 168, 169, 175, 277, 316]),
+  });
+  const trained = muscles.filter((m) =>
+    sessions.some(
+      (s) =>
+        fresh(s, now, 14) &&
+        s.exercises.some(
+          (e) =>
+            exercises.find((x) => x.id === e.exerciseId)?.muscle === m &&
+            e.sets.some((t) => t.done && t.kind !== "warmup"),
+        ),
+    ),
+  );
+  const struggling = trained.filter(
+    (m) => musclePerformance(m, sessions, exercises, now).repeatedMiss,
+  );
+  if (
+    performance.repeatedMiss &&
+    struggling.length >= 2 &&
+    struggling.length > trained.length / 2
+  ) {
+    evidence.push(
+      `${struggling.join(", ")}: repeated below-target performance across more than half of recently trained primary muscles.`,
+    );
+    return result(
+      "deload-review",
+      "Review broader fatigue reduction, not a diagnosis of MRV. Multiple muscles repeatedly missed prescribed performance.",
+    );
+  }
+  if (recovery.blocked || performance.repeatedMiss)
+    return result(
+      "recover",
+      "Review a localized recovery session before escalation. Repeated missed effort/reps or pain/recovery flags veto extra work; seek qualified advice for persistent pain.",
+    );
+  if (options.phase && options.phase !== "accumulation")
+    return result(
+      "hold",
+      `The ${options.phase} goal is recovery/retention; do not infer a biological sensitivity reset or add growth work.`,
+    );
+  if (recovery.positive && performance.favorable)
+    return result(
+      "volume-review",
+      "Optional small volume review, not an automatic addition: repeated targets exceeded with reserve and explicit early recovery. Check schedule, technique and current dose before accepting any edit.",
+    );
+  return result(
+    "hold",
+    "Keep volume stable. Require repeated comparable above-target performance and explicit early recovery; pump, soreness absence or just-in-time recovery alone cannot justify additions.",
+  );
 }
 export function importBackup(text: string): State {
   if (new TextEncoder().encode(text).length > MAX_BACKUP)
@@ -879,6 +1628,18 @@ export function mergeStates(remote: State, local: State): State {
   return stateSchema.parse({
     ...local,
     customExercises: merge(remote.customExercises, local.customExercises),
+    ...(remote.exerciseVideos || local.exerciseVideos
+      ? {
+          exerciseVideos: [
+            ...new Map(
+              [
+                ...(remote.exerciseVideos || []),
+                ...(local.exerciseVideos || []),
+              ].map((v) => [v.exerciseId, v]),
+            ).values(),
+          ],
+        }
+      : {}),
     programs: merge(remote.programs, local.programs),
     sessions: merge(remote.sessions, local.sessions),
   });

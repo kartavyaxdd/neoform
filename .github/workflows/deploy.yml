@@ -1,0 +1,71 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neoform-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      WRANGLER_SEND_METRICS: "false"
+      WRANGLER_WRITE_LOGS: "false"
+      WRANGLER_LOG_SANITIZE: "true"
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false"
+      NEOFORM_ACCOUNT_ID: ${{ vars.NEOFORM_ACCOUNT_ID }}
+      NEOFORM_WORKER: ${{ vars.NEOFORM_WORKER }}
+      NEOFORM_D1_ID: ${{ vars.NEOFORM_D1_ID }}
+      PUBLIC_WORKSPACE: ${{ vars.PUBLIC_WORKSPACE }}
+    steps:
+      - name: Checkout exact triggering commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate target and generate closed production configuration
+        run: node scripts/ci-production-config.mjs configure
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Core tests
+        run: npm test
+      - name: Explicit production policy and CI tests
+        run: node_modules/.bin/vitest run tests/cloud-launch-policy.test.mjs tests/cloud-secret-policy.test.mjs tests/v2-security-deployment.test.mjs tests/ci-deployment.test.mjs tests/public-workspace-worker.test.ts tests/public-workspace-store.test.ts tests/public-workspace-ui.test.ts
+      - name: Build assets
+        run: npm run build
+      - name: Security boundary
+        run: npm run security:check
+      - name: Write public nonsecret release marker
+        run: node scripts/ci-production-config.mjs marker
+      - name: Require existing database and encryption master
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/ci-production-config.mjs preflight
+      - name: Apply reviewed migrations to the existing exact database
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node_modules/.bin/wrangler d1 migrations apply neoform-bca721354a-data --remote --config .ci-production.json
+      - name: Deploy using lockfile-installed Wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node_modules/.bin/wrangler deploy --config .ci-production.json
+      - name: Verify exact public release and retained master metadata
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/ci-production-config.mjs verify
