@@ -35,8 +35,10 @@ export async function deployWithMaster({ listSecrets, prepareSchema, deploy, pro
 // Windows named pipes are kernel memory, not disk files. The default ACL is
 // scoped to the current user; never enable readableAll/writableAll.
 export async function withMemorySecretInput(payload, consume) {
-  if (process.platform !== "win32")
+  if (process.platform !== "win32") {
+    payload.fill(0);
     throw new Error("Secure in-memory secret input currently requires Windows named pipes; no disk fallback.");
+  }
   const inputPath = "\\\\.\\pipe\\neoform-secret-" + crypto.randomBytes(16).toString("hex") + ".json";
   let socket;
   const server = net.createServer((connection) => {

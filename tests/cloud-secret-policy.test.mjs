@@ -1,17 +1,26 @@
 import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
 const policy = await import("../scripts/cloud-secret-policy.mjs").catch(() => ({}));
 describe("production encryption master policy", () => {
-  it("fails closed if the deployment command never consumes its memory-only secret input", async () => {
+  it.each(["linux", "darwin"])("fails closed on %s without a disk fallback or consumer call and clears input", (platform) => {
+    // Exercise the real unsupported-platform branch on every host. Block any
+    // attempted filesystem write or socket creation, rather than trusting text.
+    const code = `import assert from 'node:assert/strict';import fs from 'node:fs';import net from 'node:net';const {withMemorySecretInput}=await import(${JSON.stringify(new URL('../scripts/cloud-secret-policy.mjs', import.meta.url).href)});Object.defineProperty(process,'platform',{value:${JSON.stringify(platform)}});for(const key of ['writeFileSync','writeFile','createWriteStream','open','openSync'])fs[key]=()=>{throw Error('DISK_FALLBACK_FORBIDDEN')};for(const key of ['writeFile','open'])fs.promises[key]=async()=>{throw Error('DISK_FALLBACK_FORBIDDEN')};net.createServer=()=>{throw Error('SOCKET_FALLBACK_FORBIDDEN')};const payload=Buffer.from('synthetic-only');let consumed=false;await assert.rejects(withMemorySecretInput(payload,async()=>{consumed=true}),/Windows named pipes; no disk fallback/);assert.equal(consumed,false);assert.ok(payload.every(v=>v===0),'unsupported-platform payload was not cleared');`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+  });
+  it.skipIf(process.platform !== "win32")("fails closed if the deployment command never consumes its memory-only secret input", async () => {
     const payload = Buffer.from("synthetic");
     await expect(policy.withMemorySecretInput(payload, async () => "unconsumed")).rejects.toThrow(/not consumed/);
     expect(payload.every((v) => v === 0)).toBe(true);
   });
-  it("the installed Wrangler consumes the Windows memory pipe during an offline synthetic deploy dry-run", async () => {
+  it.skipIf(process.platform !== "win32")("the installed Wrangler consumes the Windows memory pipe during an offline synthetic deploy dry-run", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const { spawn } = await import("node:child_process");
     const { cloudLaunchEnvironment } = await import("../scripts/cloud-launch-policy.mjs");
-    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR, "neoform-cloud-secret-test-"));
+    const { tmpdir } = await import("node:os");
+    const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || process.env.TMPDIR || tmpdir(), "neoform-cloud-secret-test-"));
     try {
       const main = path.join(dir, "worker.mjs");
       const config = path.join(dir, "wrangler.json");
@@ -101,7 +110,7 @@ describe("production encryption master policy", () => {
     expect(result).toBe("deployed");
     expect(seen).toEqual(["list", "schema", "list", "deploy", "list"]);
   });
-  it("streams JSON through an owner-scoped memory pipe without a plaintext file", async () => {
+  it.skipIf(process.platform !== "win32")("streams JSON through an owner-scoped memory pipe without a plaintext file", async () => {
     expect(typeof policy.withMemorySecretInput).toBe("function");
     const { spawn } = await import("node:child_process");
     const value = "synthetic-not-a-real-secret";

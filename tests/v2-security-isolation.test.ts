@@ -1,8 +1,9 @@
-import { it, expect } from "vitest";
+import { beforeEach, it, expect } from "vitest";
 import { createServer } from "node:http";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, writeFile, mkdtemp, readFile } from "node:fs/promises";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import {
   createIsolatedJob,
   assertSafeHostConfiguration,
@@ -13,7 +14,8 @@ import {
   disabledFeatures,
   verifyFeatureListing,
 } from "../scripts/cli-policy.mjs";
-const evidence = path.resolve("evidence/v2/security-implementer");
+const evidence = path.resolve(process.env.RUNNER_TEMP || process.env.TMPDIR || tmpdir(), "neoform-security-isolation-evidence");
+beforeEach(async () => { await mkdir(evidence, { recursive: true }); });
 it("fails closed without reading system or managed config and cannot infer cloud safety from absent cache", async () => {
   const root = await mkdtemp(path.join(evidence, "guard-"));
   await mkdir(path.join(root, "system"));
@@ -103,11 +105,16 @@ it("isolates hostile project config and captures a genuinely empty installed-CLI
     }
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  server.unref();
   const port = (server.address() as any).port;
-  const binary = path.join(
-    process.env.APPDATA!,
-    "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
-  );
+  const binary = process.env.CODEX_TEST_BINARY || (process.platform === "win32" && process.env.APPDATA
+    ? path.join(process.env.APPDATA, "npm/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe")
+    : "");
+  expect(binary, "Set CODEX_TEST_BINARY to the installed official Codex CLI 0.160.0 executable").not.toBe("");
+  // Windows cannot directly spawn a shebang .js file without a shell. Keep
+  // shell:false and run that official entrypoint with Node; Ubuntu uses its shebang.
+  const command = process.platform === "win32" && binary.endsWith(".js") ? process.execPath : binary;
+  const commandArgs = (args: string[]) => command === binary ? args : [binary, ...args];
   const args = generationArgs(
     job,
     path.join(root, "schema.json"),
@@ -133,26 +140,33 @@ it("isolates hostile project config and captures a genuinely empty installed-CLI
       "LOCALAPPDATA",
       "TEMP",
       "TMP",
+      "TMPDIR",
+      "RUNNER_TEMP",
     ]
       .filter((k) => process.env[k])
       .map((k) => [k, process.env[k]]),
   );
   env.CODEX_HOME = home;
+  env.HOME = home;
+  env.USERPROFILE = home;
+  const version = spawnSync(command, commandArgs(["--version"]), { cwd: job, env, shell: false, encoding: "utf8", timeout: 10000 });
+  expect(version.status, version.stderr || version.error?.message).toBe(0);
+  expect(version.stdout.trim()).toBe("codex-cli 0.160.0");
   // Positive control: a trusted job beneath the hostile ancestor fails strict
   // config validation before any MCP startup. An empty map cannot erase it.
   const unsafe = path.join(project, "unsafe-job");
   await mkdir(unsafe);
   const controlArgs = generationArgs(unsafe, path.join(root, "schema.json"), path.join(root, "models.json"));
   controlArgs.splice(controlArgs.length - 1, 0, "-c", `projects={${JSON.stringify(project)}={trust_level="trusted"},${JSON.stringify(unsafe)}={trust_level="trusted"}}`);
-  const control = spawnSync(binary, controlArgs, { cwd: unsafe, env, shell: false, windowsHide: true, encoding: "utf8", input: "Synthetic configuration control", timeout: 5000 });
+  const control = spawnSync(command, commandArgs(controlArgs), { cwd: unsafe, env, shell: false, windowsHide: true, encoding: "utf8", input: "Synthetic configuration control", timeout: 5000 });
   expect(control.status).not.toBe(0);
   expect(control.stderr).toContain("neoform_hostile_unrecognized");
-  const listing = spawnSync(binary, [...disabledFeatures.flatMap(f => ["--disable", f]), "features", "list"], { cwd: job, env, shell: false, windowsHide: true, encoding: "utf8", timeout: 10000 });
+  const listing = spawnSync(command, commandArgs([...disabledFeatures.flatMap(f => ["--disable", f]), "features", "list"]), { cwd: job, env, shell: false, windowsHide: true, encoding: "utf8", timeout: 10000 });
   expect(listing.status).toBe(0);
   const features = verifyFeatureListing(listing.stdout);
   let stdout = "",
     stderr = "";
-  const child = spawn(binary, args, {
+  const child = spawn(command, commandArgs(args), {
     cwd: job,
     env,
     shell: false,

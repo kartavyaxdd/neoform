@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 20
     env:
       CI: "true"
+      TMPDIR: ${{ runner.temp }}
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_WRITE_LOGS: "false"
       WRANGLER_LOG_SANITIZE: "true"
@@ -39,14 +40,19 @@ jobs:
           package-manager-cache: false
       - name: Install locked dependencies
         run: npm ci
+      - name: Install pinned official CLI for synthetic local transport tests (no auth)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/neoform-codex-test" --no-save --package-lock=false --no-audit --no-fund @openai/codex@0.160.0
+          chmod +x "$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js"
+          echo "CODEX_TEST_BINARY=$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js" >> "$GITHUB_ENV"
       - name: Validate target and generate closed production configuration
         run: node scripts/ci-production-config.mjs configure
       - name: Typecheck
         run: npm run typecheck
       - name: Core tests
-        run: npm test
+        run: npm test -- --maxWorkers=2
       - name: Explicit production policy and CI tests
-        run: node_modules/.bin/vitest run tests/cloud-launch-policy.test.mjs tests/cloud-secret-policy.test.mjs tests/v2-security-deployment.test.mjs tests/ci-deployment.test.mjs tests/public-workspace-worker.test.ts tests/public-workspace-store.test.ts tests/public-workspace-ui.test.ts
+        run: node_modules/.bin/vitest run --maxWorkers=2 tests/cloud-launch-policy.test.mjs tests/cloud-secret-policy.test.mjs tests/v2-security-deployment.test.mjs tests/ci-deployment.test.mjs tests/public-workspace-worker.test.ts tests/public-workspace-store.test.ts tests/public-workspace-ui.test.ts
       - name: Build assets
         run: npm run build
       - name: Security boundary
