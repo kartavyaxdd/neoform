@@ -1,7 +1,10 @@
 import { it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-const base = "http://localhost:8787",
+import path from "node:path";
+import { qaTarget } from "./qa-target";
+const base = qaTarget(),
   password = "synthetic-Gemini-QA-passphrase";
+const qaDatabaseDirectory=path.join(process.env.NEOFORM_QA_RUN_DIR!,'d1/v3/d1/miniflare-D1DatabaseObject');
 const api = (
   path: string,
   method = "GET",
@@ -36,8 +39,8 @@ async function signup() {
 }
 function encryptedRow(id: string) {
   const script =
-    "import pathlib,sqlite3,json,sys; files=[p for p in pathlib.Path('.qa-state/v3/d1/miniflare-D1DatabaseObject').glob('*.sqlite') if p.name!='metadata.sqlite']; assert len(files)==1; db=sqlite3.connect('file:'+files[0].as_posix()+'?mode=ro',uri=True); row=db.execute('SELECT encrypted FROM account_ai_keys WHERE user_id=?',(sys.argv[1],)).fetchone(); print(json.dumps(json.loads(row[0]) if row else None))";
-  const p = spawnSync("python", ["-c", script, id], {
+    "import pathlib,sqlite3,json,sys; files=[p for p in pathlib.Path(sys.argv[2]).glob('*.sqlite') if p.name!='metadata.sqlite']; assert len(files)==1; db=sqlite3.connect('file:'+files[0].as_posix()+'?mode=ro',uri=True); row=db.execute('SELECT encrypted FROM account_ai_keys WHERE user_id=?',(sys.argv[1],)).fetchone(); print(json.dumps(json.loads(row[0]) if row else None))";
+  const p = spawnSync("python", ["-c", script, id, qaDatabaseDirectory], {
     shell: false,
     encoding: "utf8",
   });
@@ -128,8 +131,8 @@ it("real QA D1 key lifecycle: encrypted at rest, two-account isolation, literal 
 }, 30000);
 function qaDailyBudget(mode = "get", value: [number, number] | null = null) {
   const script =
-    "import pathlib,sqlite3,json,sys; files=[p for p in pathlib.Path('.qa-state/v3/d1/miniflare-D1DatabaseObject').glob('*.sqlite') if p.name!='metadata.sqlite']; assert len(files)==1; db=sqlite3.connect(files[0]); value=json.loads(sys.argv[2]); key='gemini-global-day';\nif sys.argv[1]!='get':\n db.execute('DELETE FROM rate_limits WHERE key=?',(key,))\n if value is not None:db.execute('INSERT INTO rate_limits(key,count,window) VALUES (?,?,?)',(key,*value))\n db.commit()\nprint(json.dumps(db.execute('SELECT count,window FROM rate_limits WHERE key=?',(key,)).fetchone()))";
-  const p = spawnSync("python", ["-c", script, mode, JSON.stringify(value)], {
+    "import pathlib,sqlite3,json,sys; files=[p for p in pathlib.Path(sys.argv[3]).glob('*.sqlite') if p.name!='metadata.sqlite']; assert len(files)==1; db=sqlite3.connect(files[0]); value=json.loads(sys.argv[2]); key='gemini-global-day';\nif sys.argv[1]!='get':\n db.execute('DELETE FROM rate_limits WHERE key=?',(key,))\n if value is not None:db.execute('INSERT INTO rate_limits(key,count,window) VALUES (?,?,?)',(key,*value))\n db.commit()\nprint(json.dumps(db.execute('SELECT count,window FROM rate_limits WHERE key=?',(key,)).fetchone()))";
+  const p = spawnSync("python", ["-c", script, mode, JSON.stringify(value), qaDatabaseDirectory], {
     encoding: "utf8",
     shell: false,
   });

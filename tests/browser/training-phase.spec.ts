@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import type { State } from "../../src/domain";
+const output=process.env.NEOFORM_QA_OUTPUT!;
 const synced = (page: Page) =>
   expect(page.locator(".sync-status")).toHaveText("Synced");
 async function data(page: Page): Promise<State> {
@@ -53,7 +54,7 @@ for (const width of [360, 390])
     );
     expect(entry.sets.every((s) => s.rir >= 4)).toBe(true);
     await page.screenshot({
-      path: `evidence/training-engine-ui/logger-${width}.png`,
+      path: `${output}/training-engine-ui/logger-${width}.png`,
       fullPage: true,
     });
     await page
@@ -84,7 +85,7 @@ for (const width of [360, 390])
       .getByLabel("Quads recovery", { exact: true })
       .selectOption("no");
     await page.screenshot({
-      path: `evidence/training-engine-ui/finish-sheet-${width}.png`,
+      path: `${output}/training-engine-ui/finish-sheet-${width}.png`,
       fullPage: true,
     });
     await dialog
@@ -135,7 +136,7 @@ for (const width of [360, 390])
     await expect(page.locator(".muscle-review").getByRole("heading", {name:"Hold and observe",exact:true})).toBeVisible();
     await page.getByLabel("Review muscle", { exact: true }).selectOption("Quads");
     await page.screenshot({
-      path: `evidence/training-engine-ui/review-${width}.png`,
+      path: `${output}/training-engine-ui/review-${width}.png`,
       fullPage: true,
     });
     await page

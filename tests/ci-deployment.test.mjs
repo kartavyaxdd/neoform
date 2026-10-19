@@ -117,6 +117,14 @@ describe('production CI configuration', () => {
     expect(jobEnvironment).not.toContain('runner.temp');
     expect(text).toMatch(/- name: Core tests\s+env:\s+TMPDIR: \$\{\{ runner\.temp \}\}\s+run: npm test/);
   });
+  it('requires the real isolated Worker D1 and mobile gates before any remote write',()=>{
+    const text=readFileSync(workflowPath,'utf8');
+    const browser=text.indexOf('node node_modules/@playwright/test/cli.js install --with-deps chromium');
+    const integration=text.indexOf('npm run test:integration');
+    expect(browser).toBeGreaterThan(0);expect(integration).toBeGreaterThan(browser);
+    expect(integration).toBeLessThan(text.indexOf('ci-production-config.mjs preflight'));
+    expect(integration).toBeLessThan(text.indexOf('d1 migrations apply'));
+  });
   it('serializes master-only production deployments with pinned actions, all gates and no credential provisioning', () => {
     expect(existsSync(workflowPath)).toBe(true);
     const text = readFileSync(workflowPath, 'utf8');

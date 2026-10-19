@@ -1,7 +1,18 @@
 import { defineConfig } from "@playwright/test";
-const evidenceRoot = process.env.NEOFORM_QA_OUTPUT || "evidence";
+import { qaTarget } from "./tests/qa-target";
+const baseURL = qaTarget();
+const evidenceRoot = process.env.NEOFORM_QA_OUTPUT!;
 export default defineConfig({
   testDir: "./tests/browser",
+  // Provider-independent end-to-end release gates. Live-provider and special
+  // access-mode rehearsals require their separate isolated configurations.
+  testMatch: [
+    "readiness.spec.ts",
+    "reliability.spec.ts",
+    "training-phase.spec.ts",
+    "v2-layout.spec.ts",
+    "v2-accessibility.spec.ts",
+  ],
   timeout: 90000,
   expect: { timeout: 12000 },
   fullyParallel: false,
@@ -14,11 +25,11 @@ export default defineConfig({
     ["json", { outputFile: `${evidenceRoot}/browser-results.json` }],
   ],
   use: {
-    baseURL: "http://localhost:8787",
+    baseURL,
     headless: true,
-    launchOptions: {
-      executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    },
+    ...(process.env.NEOFORM_QA_BROWSER
+      ? { launchOptions: { executablePath: process.env.NEOFORM_QA_BROWSER } }
+      : {}),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 15000,

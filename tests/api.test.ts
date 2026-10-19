@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-const base = "http://localhost:8787";
+import { qaTarget } from "./qa-target";
+const base = qaTarget();
 const email = () => `qa-${crypto.randomUUID()}@example.test`;
 const password = "test-only-strong-passphrase-42";
 async function api(path: string, method = "GET", body?: unknown, cookie = "") {

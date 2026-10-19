@@ -1,5 +1,6 @@
 import { it, expect } from "vitest";
-const base = "http://localhost:8787",
+import { qaTarget } from "./qa-target";
+const base = qaTarget(),
   password = "release-test-passphrase-42";
 async function api(
   path: string,

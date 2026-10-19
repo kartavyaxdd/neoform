@@ -1,6 +1,7 @@
 import {it,expect} from 'vitest';
 import * as D from '../src/domain';
-const base='http://localhost:8787';
+import { qaTarget } from './qa-target';
+const base=qaTarget();
 
 it('real isolated Worker persists book feedback, phase and technique metadata without losing legacy records',async()=>{
  const registered=await fetch(base+'/api/register',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({email:`training-api-${crypto.randomUUID()}@example.test`,password:'synthetic-training-only-passphrase'})});

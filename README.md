@@ -1,57 +1,63 @@
 # NEOFORM
 
-V2 opens to a compact Workout tab, with a single-exercise logger, privacy-enhanced demonstration sheets, and an editable Gemini program maker. Curated source metadata is in `public/video-sources.json`.
+NEOFORM is a compact workout logger and optional mini coach built with React, TypeScript, Vite, a Cloudflare Worker and D1. The mobile logger shows one exercise at a time. Equipment setup, readiness, technique controls and coaching explanations stay in sheets.
 
-AI uses **Gemini only**, pinned to live-qualified `gemini-3.5-flash-lite`. More → Gemini AI accepts, replaces and removes each account's own Google API key. The server stores AES-GCM ciphertext with account-bound authenticated data; an ignored persistent `.dev.vars` master is required. Keys are never returned, included in app backups or saved in browser storage. Google charges and quotas may apply; no billing settings were changed. There is no automatic model/provider, Codex, subscription or preset fallback. **Genuine production-provider generation is verified:** a bounded two-day program was generated and independently validated in 3329 ms with real positive usage. See `evidence/GEMINI-FINAL-VERIFIED.md`; older 3.8 overload/timeout evidence is historical.
+The existing public app is [NEOFORM](https://neoform-bca721354a.kartavya-neoform.workers.dev/). It deliberately uses **public-workspace mode**: anyone with the URL can view and change the shared workspace. Ordinary private-account authentication remains available in authenticated installations. Private accounts, provider keys and AI generation are blocked in public-workspace mode. Local no-login mode is a separate opt-in loopback-only configuration.
 
-The ephemeral `worker/ai-local.ts` is ignored and must remain untracked. Production bundling removes its local-only import, and cloud launch additionally requires the empty-module alias. Run `npm run security:check` after building to check the deployment graph and client assets without reading the runtime module. AI preview saves require durable device persistence or server acknowledgement; failed saves keep an editable, exportable preview. Offline tabs keep separate pending copies and merge compatible changes after reload; Settings can export every pending tab copy.
+Training policy is governed by [TRAINING-PRINCIPLES.md](TRAINING-PRINCIPLES.md). Deterministic guidance requires confirmed comparable performance and current readiness; it explains uncertainty and never measures growth or personal volume landmarks. Available load selections constrain proposals. Applying a proposal is explicit and does not rewrite a program or historical workout. The full remaining scope is tracked in [docs/IMPROVEMENT-PLAN.md](docs/IMPROVEMENT-PLAN.md).
 
-Gemini is called directly by the authenticated Worker, not a sidecar or agent. It makes one stateless model interaction (`store:false`), with structured JSON output and no tools, then validates known exercises, equipment, limitations, repetitions and volume independently. Durable D1 quotas default to 3 attempts/account/15 minutes and 10 total/day, concurrency 1; cancellation is account-scoped and timeout-bounded. Run `npm run ai:setup` once to generate the ignored server master, apply migrations in the intended persistence directory, then restart Wrangler to load new bindings. Legacy CLI/subscription scripts remain historical experiments only; the Worker does not dispatch to them and their services were stopped.
+Private installations can optionally use the bounded Gemini integration with account-scoped encrypted keys. Provider access is separate from deterministic coaching, and there is no static template marketed as a live AI response. Do not run provider provisioning or legacy sidecar/proof scripts as part of ordinary QA. The ignored local runtime module must remain untracked; production and QA use the disabled-module alias. `npm run security:check` checks the deployment graph and client assets without reading that runtime module.
 
-`npm test`, `npm run test:api`, and `npm run test:browser` cover core, authenticated API, encrypted key isolation and browser behavior without invoking a provider. Synthetic fixtures are explicitly named; `gemini-real-output-replay.spec.ts` separately replays captured genuine provider output into an isolated QA account to verify editable preview, explicit save/activation and reload readback. That replay is not a live authenticated upstream call. Genuine attempts use the opt-in `scripts/gemini-live-proof.mjs` with the exact authorized account email/ID; it reads only that encrypted key record and never reads or writes personal programs. Do not copy an owner's key into QA. Current real provider evidence is `evidence/gemini/live-provider-proof.json`.
+## Local development
 
-Private, intentional hypertrophy training. React + TypeScript + Vite, Cloudflare Worker API, D1 SQLite, original styling. Optional Gemini API usage may incur charges. No deployment performed by this implementation run.
-
-## Local launch
-
-Use Node 22 LTS or newer supported by Wrangler. From this directory:
+Use the locked dependencies and a supported Node runtime (CI uses Node 24):
 
 ```
 npm ci
-npm run db:migrate
-npm run dev
-```
-
-Open http://localhost:8787. Register your own account in the app. Local storage is under `.wrangler/state`; do not delete it if you want to retain local accounts. There are no seeded owner credentials or completed workouts. `npm run build` rebuilds client assets; Wrangler reloads Worker changes.
-
-## Isolated QA
-
-```
-npx wrangler d1 migrations apply neoform --local --persist-to .qa-state
 npm run build
-npm run dev:qa
 ```
 
-In another terminal: `npm test`, `npm run test:api`, `npm run test:browser`, `npm run typecheck`. API and browser tests create disposable `@example.test` accounts in the QA database. Do not point QA at a personal or production server. The core suite also controls request timing for race tests; browser tests use the real API and D1. Actual red/green execution evidence, the final acceptance checklist and screenshots live in `evidence/` and [.planning/ACCEPTANCE.md](.planning/ACCEPTANCE.md).
+Keep an existing personal installation on its already selected persistence directory. `.local-state` contains personal state and must be preserved. Do not switch its database binding or directory to create a replacement installation. For a new development installation, use the same explicit persistence directory for migration and server startup:
 
-This run used Node 26.7.0 and the existing installed Chrome executable at `C:/Program Files/Google/Chrome/Application/chrome.exe`. No browser installation or other application changes were required. On another machine change `playwright.config.ts` to its installed Chromium executable, or install Playwright's Chromium and remove that executable override. Locked versions are in `package-lock.json`.
+```
+node node_modules/wrangler/bin/wrangler.js d1 migrations apply neoform --local --persist-to .local-state
+node node_modules/wrangler/bin/wrangler.js dev --local --port 8787 --persist-to .local-state
+```
 
-To keep browser reports separate during concurrent review, set `NEOFORM_QA_OUTPUT` to a project-relative directory before running Playwright. The final acceptance run uses `evidence/final-browser` (PowerShell: `$env:NEOFORM_QA_OUTPUT='evidence/final-browser'`). Its report, JSON and artifacts are written there. Avoid rebuilding assets while a browser suite is running against Wrangler.
+Open localhost:8787 and use ordinary registration/sign-in. These commands are for personal development; tests must use the isolated harness below. No owner credentials or completed workouts are seeded.
 
-## Hosting handoff — parent only
+## Isolated release QA
 
-`wrangler.jsonc` uses a placeholder D1 UUID for local development. Parent must provision a permanent free-plan D1 database in an authorized existing Cloudflare account, replace that binding UUID, run remote migrations, then deploy the built Worker and static assets. The implementer must not deploy or accept temporary account policies. No secrets belong in client assets or git. The workout app requires no provider secrets; optional Gemini requires a server-only `GEMINI_KEY_MASTER` secret and per-account encrypted keys. Choose HTTPS in production; session cookies are Secure on HTTPS. Review platform usage quotas before launch. Deployment and remote-runtime validation remain the parent's responsibility.
+```
+npm run typecheck
+npm test
+node node_modules/@playwright/test/cli.js install --with-deps chromium
+npm run test:integration
+```
 
-## Backup and restore
+`test:integration` builds assets, creates a unique directory under `.qa-state`, applies migrations to a fresh local D1 database, starts its own Worker on unused loopback ports, and runs the provider-independent API and selected browser release gates. It disables dotenv loading and inherited provider/deployment credentials. It never attaches to an existing app listener. The harness terminates its owned process tree, checks that its listener stopped, and invalidates the active run marker. Reports and screenshots stay inside that run's `.qa-state/integration-*/evidence` directory.
 
-Settings exports a versioned JSON backup (profile, programs, custom exercises, sessions, active draft and timer; never passwords or session tokens). Import validates the entire file, rejects files over 2 MB and asks for merge or replacement. Import merge keeps distinct IDs and gives imported versions precedence for matching IDs. Make a backup before replacing. CSV exports completed session sets with canonical kg for standard loads, a separate raw `machine_label` column, and convention/equipment columns. Machine labels never change with kg/lb preferences. Files are unencrypted: store them privately. Parent should also back up D1 using the provider's export facility before migrations. Restore JSON through the app in the intended account; private data remains scoped to that account.
+`npm run test:api` runs the API gate in its own fresh Worker. `npm run test:browser` does the same for browser gates. Do not manually start another server or edit the browser configuration. The default uses Playwright's installed Chromium. To use an existing browser executable locally, set an absolute `NEOFORM_QA_BROWSER` path; for example in PowerShell:
 
-## Offline use and conflicts
+```
+$env:NEOFORM_QA_BROWSER='C:/Program Files/Google/Chrome/Application/chrome.exe'
+npm run test:integration
+```
 
-After one online visit/sign-in, the public shell and your account's draft are available offline on that device. The sync badge distinguishes local pending edits, offline state, sign-in expiry and conflicts. A server revision mismatch pauses writes. Safe sync merge uses the saved common base to preserve independent edits and deletions; it refuses competing edits or conflicting ordering. Export both copies before choosing explicit cloud/local replacement. This is deliberately different from backup-import precedence. Logging out removes private device caches; pending edits must first sync, export or be explicitly cleared. An offline logout cannot revoke an unreachable server session and shows that limitation.
+API gates cover authentication, account isolation, revision conflicts, input boundaries and exact training metadata persistence against real D1. Browser gates cover readiness, equipment, explicit program saves/activation, offline journals, phase targets, accessibility and 360/390px layouts. Synthetic AI previews are intercepted fixtures, not provider calls. The selected gate does not run every historical browser/probe suite: encrypted-key integration, live-provider qualification, and special access-mode rehearsals need their own isolated setup. No ordinary test is evidence of a live upstream AI response. Never copy an owner's key, session or database into QA.
 
-## Training and release limits
+CI installs the locked Playwright browser and runs these gates before any remote migration or deployment. A failed gate blocks release. The separate remote metadata preflight also requires the existing exact database and encryption-master metadata; it never creates an installation or rotates the master.
 
-Coaching is a documented deterministic heuristic, with explanations and explicit accept/defer/decline choices. It requires comparable working-set history, holds on poor recovery/pain, caps load increases and does not infer increments for machine labels. Direct muscle hard-set totals exclude warmups; indirect compound involvement is explained separately. Estimated 1RM is restricted to comparable positive total-barbell loads and at most 12 reps. Programs advance weeks through visible choices. Preferences support in-app reminders and a browser-dependent timer chime; background push and email password reset are not provided.
+## Hosting and releases
 
-The runnable local product is tested. Remote hosting, production HTTPS and provider CPU/security validation are separate parent steps. Review [SECURITY.md](SECURITY.md), including the native password-KDF work-factor limitation, before public release.
+Production is the existing Cloudflare installation on GitHub `master`. Releases must push the reviewed commit, deploy that same committed code and verify the full SHA at `/__release.json` plus actual HTTPS changed flows. Preserve its database, encryption master and explicitly selected public-workspace flag. GitHub code/QA checks and public release verification are distinct outcomes. An authorized manual deployment is required when push-triggered deployment is unavailable; a push alone is not a deployment. No credentials or private local state belong in Git or client assets.
+
+Cloudflare remains the current host; free hosting depends on provider quotas and continued plan availability, not a lifetime guarantee. Usage efficiency and backup/restore work remain on the improvement plan. No billing changes are required for ordinary app deployment.
+
+## Backup, offline behavior and current limits
+
+Settings exports versioned JSON with profile, programs, custom exercises, sessions, readiness, active draft and timer, without passwords, session tokens or provider keys. Import validates the file and offers explicit merge or replacement; make a backup before replacing. CSV preserves canonical kg separately from raw machine labels. Exported files are unencrypted and should be stored privately.
+
+The present whole-state API/backup format still has a 2 MB ceiling. Normalized history, pagination, transactional IndexedDB outbox and restore rehearsal are required before claiming durable lifetime storage. The portable QA gates are preparation for that migration, not proof it is implemented.
+
+After an online visit, the shell and saved draft can work offline. Sync uses revisions and separate tab journals; competing edits require explicit review, and Settings can export pending copies. Missing observations remain unknown. Existing accounts, programs and workout history must never be silently rewritten or truncated. See [SECURITY.md](SECURITY.md) for authentication/runtime limitations and [AGENTS.md](AGENTS.md) for standing release and data-preservation instructions.

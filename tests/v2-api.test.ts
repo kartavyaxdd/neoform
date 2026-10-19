@@ -1,5 +1,6 @@
 import { it, expect, describe } from "vitest";
-const base = "http://localhost:8787";
+import { qaTarget } from "./qa-target";
+const base = qaTarget();
 const input = {
   goal: "Build muscle",
   experience: "New",
