@@ -110,6 +110,13 @@ describe('production CI configuration', () => {
     expect(text.indexOf('@openai/codex@0.160.0')).toBeLessThan(text.indexOf('npm test'));
     expect(text).not.toMatch(/codex login|OPENAI_API_KEY|CODEX_API_KEY/);
   });
+  it('uses runner context only after a runner exists, never in job-level env', () => {
+    const text = readFileSync(workflowPath, 'utf8');
+    const jobEnvironment = text.match(/\n    env:\n([\s\S]*?)\n    steps:/)?.[1];
+    expect(jobEnvironment).toBeDefined();
+    expect(jobEnvironment).not.toContain('runner.temp');
+    expect(text).toMatch(/- name: Core tests\s+env:\s+TMPDIR: \$\{\{ runner\.temp \}\}\s+run: npm test/);
+  });
   it('serializes master-only production deployments with pinned actions, all gates and no credential provisioning', () => {
     expect(existsSync(workflowPath)).toBe(true);
     const text = readFileSync(workflowPath, 'utf8');

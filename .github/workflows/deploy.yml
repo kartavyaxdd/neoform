@@ -19,7 +19,6 @@ jobs:
     timeout-minutes: 20
     env:
       CI: "true"
-      TMPDIR: ${{ runner.temp }}
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_WRITE_LOGS: "false"
       WRANGLER_LOG_SANITIZE: "true"
@@ -50,6 +49,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Core tests
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: npm test -- --maxWorkers=2
       - name: Explicit production policy and CI tests
         run: node_modules/.bin/vitest run --maxWorkers=2 tests/cloud-launch-policy.test.mjs tests/cloud-secret-policy.test.mjs tests/v2-security-deployment.test.mjs tests/ci-deployment.test.mjs tests/public-workspace-worker.test.ts tests/public-workspace-store.test.ts tests/public-workspace-ui.test.ts
