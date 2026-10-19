@@ -2594,7 +2594,7 @@ function Insights({
     .flatMap(s => s.exercises).filter(e => e.exerciseId === ex?.id).at(-1)?.target;
   const rec = ex && reviewRange
     ? D.recommend(ex.id, s.sessions, exercises, reviewRange, {experience:s.profile?.experience,
-      phase:reviewProgram ? D.programPhase(reviewProgram) : undefined,entry:reviewEntry})
+      phase:reviewProgram ? D.programPhase(reviewProgram) : undefined,entry:reviewEntry,readiness:s.draft?.readiness})
     : null;
   const recs = D.records(s.sessions, exercises);
   const latest = [...s.sessions].sort(
@@ -2611,7 +2611,7 @@ function Insights({
         title="See the shape of your effort."
         text="Real training data. Useful context. No invented streaks."
       />
-      <MuscleReview sessions={s.sessions} exercises={exercises} experience={s.profile?.experience} program={s.programs.find(p=>!p.archived)} onReviewProgram={onReviewProgram} />
+      <MuscleReview sessions={s.sessions} exercises={exercises} experience={s.profile?.experience} program={s.programs.find(p=>!p.archived)} readiness={s.draft?.readiness} onReviewProgram={onReviewProgram} />
       <div className="stat-grid">
         <Stat
           label="TOTAL SESSIONS"

@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import * as D from "../src/domain";
+import { syntheticReadiness } from "./readiness-fixture";
 
 function exposures(weight = 100) {
   return [2, 1].map((days) => {
@@ -21,7 +22,7 @@ function exposures(weight = 100) {
   });
 }
 const advise = (sessions: D.Session[], entry?: D.Entry) =>
-  D.recommend("bench", sessions, D.catalog, { min: 8, max: 12 }, { entry });
+  D.recommend("bench", sessions, D.catalog, { min: 8, max: 12 }, { entry, readiness:syntheticReadiness() });
 
 it("does not invent an available increment when the equipment is unknown", () => {
   expect(advise(exposures()).action).toBe("hold");

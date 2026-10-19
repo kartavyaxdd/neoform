@@ -13,6 +13,7 @@ import { Button, Field, Num, Modal } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
+import { ReadinessSheet } from "./ReadinessSheet";
 import {
   canApplyStraightProgression,
   giantProgress,
@@ -145,6 +146,7 @@ export function SessionLogger({
                 {
                   experience: data.profile?.experience,
                   entry: e,
+                  readiness: s.readiness,
                   phase:
                     s.phase ?? (program ? D.programPhase(program) : undefined),
                 },
@@ -382,6 +384,7 @@ export function SessionLogger({
                         history={history}
                       />
                       <div className="actions wrap">
+                        <Button onClick={() => setSheet("Readiness")}>Readiness</Button>
                         {!history && (
                           <Button onClick={() => setSheet("Equipment setup")}>
                             Equipment setup
@@ -618,6 +621,12 @@ export function SessionLogger({
                       history={history}
                       addOnly
                     />
+                  ) : sheet === "Readiness" ? (
+                    <ReadinessSheet key={e.id} value={s.readiness} muscles={[...new Set([ex.muscle,...ex.secondary,...s.exercises.flatMap(e=>{
+                      const x=exercises.find(x=>x.id===e.exerciseId);return x?[x.muscle,...x.secondary]:[];
+                    })])]}
+                      readOnly={history || s.exercises.some(e=>e.sets.some(t=>t.done && t.kind!=="warmup"))}
+                      onSave={readiness=>{setSession({...s,readiness});setSheet(null);}} />
                   ) : sheet === "Equipment setup" ? (
                     e.sets.some((t) => t.done && t.kind !== "warmup") ? (
                       <p>

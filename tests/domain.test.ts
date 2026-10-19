@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { syntheticReadiness } from "./readiness-fixture";
 import {
   emptyState,
   stateSchema,
@@ -75,7 +76,7 @@ describe("training vertical slice", () => {
     const rec = recommend("bench", [completed(), completed()], catalog, {
       min: 8,
       max: 10,
-    });
+    }, {readiness:syntheticReadiness()});
     expect(rec.action).toBe("load");
     expect(rec.weight).toBeLessThanOrEqual(63);
     expect(

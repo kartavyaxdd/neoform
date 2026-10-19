@@ -1,5 +1,6 @@
 import {it,expect} from 'vitest';
 import * as D from '../src/domain';
+import { syntheticReadiness } from './readiness-fixture';
 import {configureTechnique,pairTechnique} from '../src/techniques';
 const now=Date.parse('2026-10-18T12:00:00Z');
 const bench=D.catalog.find(x=>x.id==='bench')!;
@@ -10,7 +11,7 @@ function favorable(){
   s.muscleFeedback=[{muscle:'Chest',recovered:'yes',pain:false,soreness:1}];return s;
  });
 }
-const rec=(sessions:D.Session[],at=now)=>D.recommend('bench',sessions,D.catalog,{min:8,max:12},{now:at});
+const rec=(sessions:D.Session[],at=now,readiness:D.Readiness|null=syntheticReadiness(now))=>D.recommend('bench',sessions,D.catalog,{min:8,max:12},{now:at,readiness:readiness??undefined});
 it('never treats a completed target default or legacy unknown effort as reported effort',()=>{
  const h=favorable();h.forEach(s=>s.exercises[0].sets.forEach(t=>t.effortReported=false));
  expect(rec(h).action).toBe('hold');expect(rec(h).reason).toMatch(/effort.*unconfirmed/i);
@@ -68,12 +69,12 @@ it('selects the next workout from actual workout identity rather than number of 
  expect(D.nextWorkout(p,[s,{...s,id:D.uid(),startedAt:s.startedAt+1000}]).id).toBe(p.workouts[2].id);
 });
 it('unrelated unknown feedback cannot erase systemic fatigue; stale fatigue asks for confirmation, not indefinite recovery',()=>{
- const h=favorable();h[1].feedback={fatigue:5,reported:true};expect(rec(h).action).toBe('recover');
+ const h=favorable();h[1].feedback={fatigue:5,reported:true};expect(rec(h,now,null).action).toBe('recover');
  const other=D.startSession('Unrelated unknown',[D.createEntry(D.catalog.find(x=>x.id==='squat')!)]);
  other.exercises[0].sets.forEach(t=>t.done=true);other.startedAt=now;other.date='2026-10-18';
- expect(rec([...h,other]).action).toBe('recover');
+ expect(rec([...h,other],now,null).action).toBe('recover');
  const stale=favorable();const old=D.startSession('Old systemic report',[]);old.date='2026-10-01';old.startedAt=Date.parse(old.date+'T12:00:00Z');old.feedback={fatigue:5,reported:true};
- expect(rec([old,...stale]).action).toBe('hold');
+ expect(rec([old,...stale],now,null).action).toBe('hold');
  stale[1].feedback={fatigue:2,reported:true};expect(rec([old,...stale]).action).toBe('load');
  expect(rec(h,now+40*86400000).action).toBe('hold');
 });

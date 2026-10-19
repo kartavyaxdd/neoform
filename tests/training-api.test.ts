@@ -16,6 +16,7 @@ it('real isolated Worker persists book feedback, phase and technique metadata wi
  const draft:any=D.startSession('Book-driven QA',[D.createEntry(D.catalog[0])]);
  draft.exercises[0].setup={label:'Synthetic rack A',execution:'Paused',availableLoads:[60,61.25,62.5]};
  draft.exercises[0].sourceTargetId=p.workouts[0].exercises[0].id;
+ draft.readiness={recordedAt:Date.now(),fatigue:null,pain:false,context:'changed',factors:['travel'],muscles:[{muscle:'Chest',recovered:'unknown',pain:null,soreness:null,recordedAt:Date.now()-3600000}]};
  draft.feedback={pump:null,soreness:null,fatigue:null,pain:null,reported:true};
  draft.muscleFeedback=[{muscle:D.catalog[0].muscle,recovered:'unknown',soreness:null,pain:null,recordedAt:Date.now()}];
  draft.exercises[0].technique='myoreps';draft.exercises[0].techniqueGroup='qa-myorep-group';

@@ -1,5 +1,6 @@
 import { it, expect } from "vitest";
 import * as D from "../src/domain";
+import { syntheticReadiness } from "./readiness-fixture";
 const bench = D.catalog[0];
 const history = (n = 2) =>
   Array.from({ length: n }, (_, i) => {
@@ -80,7 +81,7 @@ it("requires affirmative fresh recovery, uses local scope, and attaches evidence
   ).toBe("hold");
   report(h);
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }),
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }),
   ).toMatchObject({
     action: "load",
     weight: 61.5,
@@ -93,7 +94,7 @@ it("requires affirmative fresh recovery, uses local scope, and attaches evidence
     fatigue: 5,
   });
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("load");
   h[1].muscleFeedback![0].pain = true;
   expect(
@@ -115,7 +116,7 @@ it("requires affirmative fresh recovery, uses local scope, and attaches evidence
   expect(stale.action).toBe("hold");
   for (const r of [
     stale,
-    D.recommend("missing", [], D.catalog, { min: 8, max: 12 }, { now }),
+    D.recommend("missing", [], D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }),
   ]) {
     expect(r.evidence).toBeInstanceOf(Array);
     expect(r.assumptions?.length).toBeGreaterThan(0);
@@ -127,7 +128,7 @@ it("vetoes below-prescribed effort, recent technique changes, deloads, advanced 
   report(h);
   h.forEach((s) => (s.exercises[0].target!.rir = 3));
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
   h.forEach((s) => (s.exercises[0].target!.rir = 2));
   h[1].exercises[0].technique = "tempo";
@@ -136,23 +137,23 @@ it("vetoes below-prescribed effort, recent technique changes, deloads, advanced 
     D.comparableKey(h[1].exercises[0], bench),
   );
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
   delete h[1].exercises[0].technique;
   delete h[1].exercises[0].tempo;
   h[1].exercises[0].sets[1].bout = "mini";
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
   delete h[1].exercises[0].sets[1].bout;
   h[1].exercises[0].target!.rir = 5;
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
   h[1].exercises[0].target!.rir = 2;
   h[1].exercises[0].sets.pop();
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
 });
 it("beginners keep reserve, machine ceilings hold without fake increments, and declining mean performance blocks escalation", () => {
@@ -176,32 +177,32 @@ it("beginners keep reserve, machine ceilings hold without fake increments, and d
   });
   report(h, "Quads");
   expect(
-    D.recommend("leg-press", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("leg-press", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("hold");
   const declining = history();
   report(declining);
   declining[1].exercises[0].sets.forEach((t) => (t.reps = 10));
   expect(
-    D.recommend("bench", declining, D.catalog, { min: 8, max: 12 }, { now })
+    D.recommend("bench", declining, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) })
       .action,
   ).toBe("hold");
 });
 it("reviews muscle dose only with repeated favorable performance and never diagnoses growth from pump", () => {
   const h = history();
-  expect(D.muscleReview("Chest", h, D.catalog, { now }).action).toBe("hold");
+  expect(D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("hold");
   report(h);
-  expect(D.muscleReview("Chest", h, D.catalog, { now }).action).toBe("hold");
+  expect(D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("hold");
   h.forEach((s) => s.exercises[0].sets.forEach((t) => (t.rir = 3)));
-  const review = D.muscleReview("Chest", h, D.catalog, { now });
+  const review = D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) });
   expect(review.action).toBe("volume-review");
   expect(review.sourcePages).toContain(99);
   expect(review.evidence.length).toBeGreaterThan(1);
   h[1].muscleFeedback![0].recovered = "just";
-  expect(D.muscleReview("Chest", h, D.catalog, { now }).action).toBe("hold");
+  expect(D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("hold");
   h[1].muscleFeedback![0].recovered = "yes";
   h.forEach((s) => s.exercises[0].sets.forEach((t) => (t.rir = 1)));
-  expect(D.muscleReview("Chest", h, D.catalog, { now }).action).toBe("recover");
-  expect(D.muscleReview("Quads", h, D.catalog, { now }).action).toBe("hold");
+  expect(D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("recover");
+  expect(D.muscleReview("Quads", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("hold");
 });
 it("suggests broad deload review only after repeated multi-muscle below-target exposures", () => {
   const h = history();
@@ -215,7 +216,7 @@ it("suggests broad deload review only after repeated multi-muscle below-target e
     s.exercises[0].sets.forEach((t) => (t.rir = 1));
     s.muscleFeedback!.push({ muscle: "Back", recovered: "no", pain: false });
   });
-  const review = D.muscleReview("Chest", h, D.catalog, { now });
+  const review = D.muscleReview("Chest", h, D.catalog, { now, readiness:syntheticReadiness(now) });
   expect(review.action).toBe("deload-review");
   expect(review.sourcePages).toContain(169);
   expect(
@@ -271,15 +272,15 @@ it("treats supporting-muscle pain conservatively without blocking unrelated musc
   report(h);
   h[1].muscleFeedback!.push({ muscle: "Triceps", pain: true });
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("recover");
-  expect(D.muscleReview("Quads", h, D.catalog, { now }).action).toBe("hold");
+  expect(D.muscleReview("Quads", h, D.catalog, { now, readiness:syntheticReadiness(now) }).action).toBe("hold");
 });
 it("one duplicated session is not two independent comparable exposures", () => {
   const h = history(1);
   report(h);
   expect(
-    D.recommend("bench", [h[0], h[0]], D.catalog, { min: 8, max: 12 }, { now })
+    D.recommend("bench", [h[0], h[0]], D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) })
       .action,
   ).toBe("hold");
 });
@@ -333,7 +334,7 @@ it("unknown reports never clear an unresolved prior pain flag", () => {
   ).toBe("recover");
   h[1].feedback = { pain: false, reported: true };
   expect(
-    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now }).action,
+    D.recommend("bench", h, D.catalog, { min: 8, max: 12 }, { now, readiness:syntheticReadiness(now) }).action,
   ).toBe("load");
   h[0].muscleFeedback![0].pain = true;
   h[1].muscleFeedback![0].pain = null;

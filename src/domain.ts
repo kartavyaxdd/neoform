@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { videoId } from "./videos";
+import { recoveryObservations, recoveryTime, readinessFresh } from "./readiness";
 export const uid = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   // LAN HTTP lacks randomUUID; getRandomValues remains cryptographically secure.
@@ -446,6 +447,26 @@ const date = z
       new Date(d + "T12:00:00Z").toISOString().slice(0, 10) === d,
     "Invalid date",
   );
+export const readinessFactors = ["poor-sleep", "illness", "travel", "unusual-activity", "other"] as const;
+export const readinessSchema = z.object({
+  recordedAt: z.number().finite().min(0),
+  fatigue: z.number().int().min(1).max(5).nullable(),
+  pain: z.boolean().nullable(),
+  context: z.enum(["unknown", "usual", "changed"]),
+  factors: z.array(z.enum(readinessFactors)).max(readinessFactors.length)
+    .refine(values => new Set(values).size === values.length, "Duplicate context factors"),
+  muscles: z.array(z.object({
+    muscle: z.enum(muscles),
+    recovered: z.enum(["yes", "no", "unknown"]),
+    pain: z.boolean().nullable(),
+    soreness: z.number().int().min(1).max(5).nullable(),
+    fatigue: z.number().int().min(1).max(5).nullable().optional(),
+    recordedAt: z.number().finite().min(0).optional(),
+  }).strict()).max(muscles.length)
+    .refine(values => new Set(values.map(r=>r.muscle)).size === values.length, "Duplicate readiness muscles"),
+}).strict().refine(r => r.context === "changed" || r.factors.length === 0, "Context factors require changed context")
+  .refine(r=>r.muscles.every(row=>row.recordedAt === undefined || row.recordedAt <= r.recordedAt), "Muscle report cannot be later than the check-in");
+export type Readiness = z.infer<typeof readinessSchema>;
 export const sessionSchema = z
   .object({
     id,
@@ -455,6 +476,7 @@ export const sessionSchema = z
     duration: z.number().finite().min(0).max(86400),
     notes: note,
     feedback: feedbackSchema,
+    readiness: readinessSchema.optional(),
     muscleFeedback: z
       .array(
         z
@@ -725,7 +747,7 @@ export function starterProgram(
   };
 }
 export type Experience = "New" | "Intermediate" | "Advanced";
-export const trainingPolicyVersion = "neoform-book-2026-10-v3";
+export const trainingPolicyVersion = "neoform-book-2026-10-v4";
 export function programPhase(p: Program): Phase {
   return (
     p.phase ?? (p.currentWeek === p.deloadWeek ? "deload" : "accumulation")
@@ -1127,6 +1149,7 @@ export type CoachingOptions = {
   now?: number;
   phase?: Phase;
   entry?: Entry;
+  readiness?: Readiness;
 };
 export type Recommendation = {
   action: "hold" | "load" | "reps" | "recover";
@@ -1164,13 +1187,11 @@ function recoveryStatus(
   sessions: Session[],
   exercises: Exercise[],
   now: number,
+  readiness?: Readiness,
 ) {
-  const ordered = chronological(sessions),
+  const ordered = recoveryObservations(sessions, readiness, now),
     latest = ordered.at(-1);
-  const localSession = ordered
-    .filter((s) => s.muscleFeedback?.some((r) => r.muscle === muscle))
-    .at(-1);
-  const local = localSession?.muscleFeedback?.find((r) => r.muscle === muscle);
+  const localRows = ordered.flatMap(s=>(s.muscleFeedback??[]).filter(r=>r.muscle===muscle).map(row=>({session:s,row})));
   const evidence: string[] = [];
   const painReport = [...ordered]
     .reverse()
@@ -1202,55 +1223,42 @@ function recoveryStatus(
       : `${systemic.date}: old systemic fatigue report needs current confirmation; it is not a diagnosis of present fatigue.`);
     return { blocked: recent, positive: false, evidence };
   }
-  if (
-    local &&
-    (local.pain === true ||
-      (localSession &&
-        fresh(localSession, now, 7) &&
-        (local.recovered === "no" ||
-          (local.fatigue ?? 0) >= 4 ||
-          (local.soreness ?? 0) >= 4)))
-  ) {
+  const relevant = ordered.filter((s) => involves(s, muscle, exercises)).at(-1);
+  const current = readiness?.muscles.find(r=>r.muscle === muscle);
+  const currentAt = current?.recordedAt ?? readiness?.recordedAt;
+  const currentFresh = readinessFresh(readiness, now) && currentAt !== undefined && readinessFresh({recordedAt:currentAt}, now) && (!relevant || currentAt >= recoveryTime(relevant));
+  const currentLocalGood = currentFresh && current?.recovered === "yes" && current.pain === false &&
+    current.soreness !== null && current.soreness <= 2;
+  const actualRecovery = localRows.filter(({row})=>row.recovered && row.recovered!=="unknown").at(-1);
+  const actualFatigue = localRows.filter(({row})=>typeof row.fatigue === "number").at(-1);
+  const actualSoreness = localRows.filter(({row})=>typeof row.soreness === "number").at(-1);
+  const localFlag = [actualRecovery?.row.recovered === "no" ? actualRecovery : undefined,
+    (actualFatigue?.row.fatigue??0)>=4 ? actualFatigue : undefined,
+    (actualSoreness?.row.soreness??0)>=4 ? actualSoreness : undefined].find(report=>report && fresh(report.session,now,7));
+  if (localFlag) {
     evidence.push(
-      `${localSession!.date}: ${muscle} pain or incomplete local recovery.`,
+      `${localFlag.session.date}: ${muscle} incomplete local recovery, high soreness or fatigue; unknown answers do not clear an actual report.`,
     );
     return { blocked: true, positive: false, evidence };
   }
-  const relevant = ordered.filter((s) => involves(s, muscle, exercises)).at(-1);
   if (
     relevant &&
     fresh(relevant, now, 7) &&
     (relevant.feedback.soreness ?? 0) >= 4
+    && !currentLocalGood
   ) {
     evidence.push(
       `${relevant.date}: high unscoped soreness after ${muscle} involvement.`,
     );
     return { blocked: true, positive: false, evidence };
   }
-  const localFresh =
-    localSession &&
-    (!relevant || ordered.indexOf(localSession) >= ordered.indexOf(relevant)) &&
-    fresh(localSession, now, 7) &&
-    (local?.recordedAt === undefined ||
-      (now - local.recordedAt >= -86400000 &&
-        now - local.recordedAt <= 7 * 86400000));
-  const positive =
-    !!(localFresh && local?.recovered === "yes" && local.pain === false) ||
-    !!(
-      !local &&
-      relevant &&
-      fresh(relevant, now, 7) &&
-      relevant.feedback.reported === true &&
-      relevant.feedback.pain === false &&
-      relevant.feedback.fatigue != null &&
-      relevant.feedback.fatigue <= 2 &&
-      relevant.feedback.soreness != null &&
-      relevant.feedback.soreness <= 2
-    );
+  const positive = !!(currentLocalGood && readiness?.pain === false && readiness.fatigue !== null && readiness.fatigue <= 2 && readiness.context === "usual");
+  if (readiness && currentFresh && readiness.context === "changed")
+    evidence.push(`Current context changed: ${readiness.factors.join(", ") || "unspecified"}. This does not establish what caused performance changes; hold escalation for review.`);
   evidence.push(
     positive
-      ? `${(localSession ?? relevant)!.date}: explicit recovery reported for ${muscle}.`
-      : `${muscle}: recovery unknown, stale, unreported, or only just in time.`,
+      ? `${muscle}: fresh pre-session readiness reported after the last exposure; pain-free, low soreness and systemic fatigue, usual context.`
+      : `${muscle}: current readiness unknown, incomplete, stale, or recorded before the latest exposure. Optional readiness in Exercise options can inform coaching; logging is always available.`,
   );
   return { blocked: false, positive, evidence };
 }
@@ -1261,7 +1269,7 @@ const coachingMeta = (
   evidence,
   assumptions: [
     "Original conservative NEOFORM heuristics, not measured MEV/MRV or a growth diagnosis.",
-    "Favorable recovery reports expire after 7 days; performance comparisons after 21 days. Pain requires an explicit clear report. Technique/ROM and equipment setup must remain repeatable.",
+    "Positive advice requires a current pre-session check-in within 12 hours and after the latest exposure; this is software policy, not a biological recovery window. Historical flags use a 7-day review window; performance comparisons use 21 days. Pain requires an explicit clear report. Technique/ROM and equipment setup must remain repeatable. Date-only legacy reports have no measured observation time.",
   ],
   sourcePages,
   policyVersion: trainingPolicyVersion,
@@ -1287,9 +1295,9 @@ export function recommend(
   });
   if (!x) return result("hold", "Exercise unavailable.");
   const now = options.now ?? Date.now();
-  const recovery = recoveryStatus(x.muscle, sessions, exercises, now);
+  const recovery = recoveryStatus(x.muscle, sessions, exercises, now, options.readiness);
   const support = x.secondary
-    .map((m) => recoveryStatus(m, sessions, exercises, now))
+    .map((m) => recoveryStatus(m, sessions, exercises, now, options.readiness))
     .find((r) => r.blocked);
   if (support)
     return result(
@@ -1621,7 +1629,7 @@ export function muscleReview(
   options: CoachingOptions = {},
 ): MuscleReview {
   const now = options.now ?? Date.now(),
-    recovery = recoveryStatus(muscle, sessions, exercises, now);
+    recovery = recoveryStatus(muscle, sessions, exercises, now, options.readiness);
   const performance = musclePerformance(muscle, sessions, exercises, now);
   const evidence = [...recovery.evidence, ...performance.evidence];
   const result = (
@@ -1669,10 +1677,15 @@ export function muscleReview(
       "hold",
       `The ${options.phase} goal is recovery/retention; do not infer a biological sensitivity reset or add growth work.`,
     );
-  if (recovery.positive && performance.favorable)
+  const repeatedRecovery = chronological(sessions).filter(s=>involves(s,muscle,exercises)).slice(-2);
+  const earlyRecoveryReported = repeatedRecovery.length === 2 && repeatedRecovery.every(s=>{
+    const row=s.muscleFeedback?.find(r=>r.muscle===muscle);
+    return row?.recovered === "yes" && row.pain === false && (row.soreness??0)<4 && (row.fatigue??0)<4;
+  });
+  if (recovery.positive && performance.favorable && earlyRecoveryReported)
     return result(
       "volume-review",
-      "Optional small volume review, not an automatic addition: repeated targets exceeded with reserve and explicit early recovery. Check schedule, technique and current dose before accepting any edit.",
+      "Optional volume review, not an automatic addition: repeated targets exceeded with reserve and current readiness was reported. These observations do not establish a need for more sets. Check schedule, technique and current dose before accepting any edit.",
     );
   return result(
     "hold",

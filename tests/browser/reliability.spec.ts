@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { fixture } from "./v2-fixture";
+import { fixture, currentReadiness } from "./v2-fixture";
 import * as D from "../../src/domain";
 import { mkdir } from "node:fs/promises";
 
@@ -297,6 +297,7 @@ test("reported history produces per-row targets and completion alone leaves effo
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
+  await currentReadiness(page,"Quads");
   await page
     .getByRole("button", { name: "Exercise options", exact: true })
     .click();

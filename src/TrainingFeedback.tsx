@@ -20,7 +20,7 @@ const painText = (value: boolean | null | undefined) =>
       ? "Yes · pain recorded"
       : "No pain reported";
 
-function Rating({
+export function Rating({
   label,
   value,
   onChange,
@@ -47,7 +47,7 @@ function Rating({
     </Field>
   );
 }
-function Pain({
+export function Pain({
   label,
   value,
   onChange,
@@ -428,17 +428,20 @@ export function MuscleReview({
   exercises,
   experience,
   program,
+  readiness,
   onReviewProgram,
 }: {
   sessions: D.Session[];
   exercises: D.Exercise[];
   experience?: D.Experience;
   program?: D.Program;
+  readiness?: D.Readiness;
   onReviewProgram?: (p: D.Program) => void;
 }) {
   const [muscle, setMuscle] = useState<D.Exercise["muscle"]>("Quads");
   const decision = D.muscleReview(muscle, sessions, exercises, {
     experience,
+    readiness,
     phase: program ? D.programPhase(program) : undefined,
   });
   return (

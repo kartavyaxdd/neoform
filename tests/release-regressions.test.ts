@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { syntheticReadiness } from "./readiness-fixture";
 import {
   catalog,
   emptyState,
@@ -39,7 +40,7 @@ describe("independent release regressions", () => {
       session("a", [entry("a-side", 100, "per-side"), entry("a-total", 60)]),
       session("b", [entry("b-side", 100, "per-side"), entry("b-total", 60)]),
     ];
-    const rec = recommend("bench", sessions, catalog, { min: 8, max: 10 });
+    const rec = recommend("bench", sessions, catalog, { min: 8, max: 10 }, {readiness:syntheticReadiness()});
     expect(rec.action).toBe("reps");
     expect(rec.weight).toBe(60);
   });
