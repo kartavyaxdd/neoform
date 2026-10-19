@@ -27,6 +27,7 @@ const session = (weight = 60, pain = false): Session => ({
       id: crypto.randomUUID(),
       exerciseId: "bench",
       target: {min:8,max:10,rir:2,rest:120},
+      plannedWorkingSets: 2,
       notes: "",
       sets: [
         { id: "s1", weight, reps: 10, rir: 2, kind: "working", done: true },
@@ -65,7 +66,12 @@ describe("training vertical slice", () => {
     expect(
       recommend("bench", [session()], catalog, { min: 8, max: 10 }).action,
     ).toBe("hold");
-    const rec = recommend("bench", [session(), session()], catalog, {
+    const completed = () => {
+      const s = session();
+      s.exercises[0].sets.forEach(t => { t.done = true; t.effortReported = true; });
+      return s;
+    };
+    const rec = recommend("bench", [completed(), completed()], catalog, {
       min: 8,
       max: 10,
     });

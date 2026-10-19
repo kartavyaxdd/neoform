@@ -1,11 +1,15 @@
 import { stateSchema, type State } from "./domain";
-export type Remote = { data: State; revision: number };
+export type Remote = { data: State; revision: number; incorporated?: Record<string, number> };
 export type Outbox = {
   data: State;
   revision: number;
   dirty: boolean;
   generation: number;
   base?: Remote;
+  // Device-only journal generations already incorporated into this snapshot.
+  // Kept across reloads so old work cannot replay over subsequent edits.
+  incorporated?: Record<string, number>;
+  acknowledgedJournals?: Record<string, number>;
 };
 export function acknowledge(
   box: Outbox,

@@ -348,6 +348,132 @@ it("aborts account-bound generation immediately when shared identity switches", 
   await rejected;
 });
 
+it("retires a reloaded journal only after acknowledgement so later edits are not replayed", async () => {
+  let remote = { data: emptyState(), revision: 1 };
+  fetcher.mockImplementation((url: string, options?: RequestInit) => {
+    if (url === "/api/me") return reply(a);
+    if (options?.method === "PUT") {
+      const sent = JSON.parse(options.body as string);
+      remote = { data: sent.data, revision: sent.revision + 1 };
+      return reply({ revision: remote.revision });
+    }
+    return reply(remote);
+  });
+  network.onLine = false;
+  store.change(s => ({ ...s, settings: { ...s.settings, theme: "dark" } }));
+  const oldKey = Object.keys(storage).find(k => k.startsWith("neoform:pending:"))!;
+  expect(storage.getItem(oldKey)).not.toBeNull();
+  vi.resetModules();
+  vi.clearAllTimers();
+  events = new EventTarget();
+  vi.stubGlobal("window", events);
+  const reloaded = await import("../src/store");
+  await flush();
+  expect(storage.getItem(oldKey)).not.toBeNull();
+  network.onLine = true;
+  await reloaded.sync();
+  expect(remote.data.settings.theme).toBe("dark");
+  expect(storage.getItem(oldKey)).not.toBeNull(); // Foreign journals need atomic storage before garbage collection.
+  reloaded.change(s => ({ ...s, settings: { ...s.settings, theme: "light" } }));
+  await reloaded.sync();
+  await reloaded.sync();
+  expect(reloaded.useStore().box.data.settings.theme).toBe("light");
+  expect(remote.data.settings.theme).toBe("light");
+});
+
+it("an explicit cloud conflict choice survives subsequent sync and reload", async () => {
+  network.onLine = false;
+  store.change(s => ({...s, settings:{...s.settings,theme:'dark'}}));
+  vi.resetModules(); vi.clearAllTimers();
+  events = new EventTarget(); vi.stubGlobal('window',events);
+  const reloaded=await import('../src/store'); await flush();
+  const remote={data:emptyState(),revision:2}; remote.data.settings.unit='lb';
+  fetcher.mockImplementation(()=>reply({...remote,error:'Conflict'},409));
+  network.onLine=true; await reloaded.sync();
+  expect(reloaded.useStore().conflict).not.toBeNull();
+  network.onLine=false; reloaded.resolveConflict('remote');
+  expect(reloaded.useStore().box.data.settings).toMatchObject({theme:'light',unit:'lb'});
+  vi.resetModules(); vi.clearAllTimers();
+  events=new EventTarget();vi.stubGlobal('window',events);
+  fetcher.mockImplementation(()=>Promise.reject(new TypeError('offline')));
+  const again=await import('../src/store');await flush();
+  expect(again.useStore().box.data.settings).toMatchObject({theme:'light',unit:'lb'});
+});
+
+it("does not delete another journal generation written while acknowledgement is pending", async () => {
+  network.onLine = false;
+  store.change(s => ({ ...s, settings: { ...s.settings, theme: "dark" } }));
+  const oldKey = Object.keys(storage).find(k => k.startsWith("neoform:pending:"))!;
+  vi.resetModules(); vi.clearAllTimers();
+  events = new EventTarget(); vi.stubGlobal("window", events);
+  const reloaded = await import("../src/store"); await flush();
+  let finish!: (r: Response) => void;
+  fetcher.mockImplementation(() => new Promise<Response>(resolve => { finish = resolve; }));
+  network.onLine = true;
+  const syncing = reloaded.sync(); await flush();
+  const newer = JSON.parse(storage.getItem(oldKey)!);
+  newer.generation++;
+  newer.data.settings.unit = "lb";
+  storage.setItem(oldKey, JSON.stringify(newer));
+  finish(Response.json({ revision: 2 })); await syncing;
+  expect(JSON.parse(storage.getItem(oldKey)!).data.settings.unit).toBe("lb");
+  expect(reloaded.exportPendingCopies().some(box => box.data.settings.unit === "lb")).toBe(true);
+});
+
+it("an already-open third tab cannot replay work explicitly discarded by another tab", async () => {
+  let remote = {data:emptyState(),revision:2};remote.data.settings.unit='lb';
+  fetcher.mockImplementation((url:string,options?:RequestInit)=>{
+    if(url==='/api/me')return reply(a);
+    if(options?.method==='PUT'){
+      const sent=JSON.parse(options.body as string);
+      if(sent.revision!==remote.revision)return reply({...remote,error:'Conflict'},409);
+      remote={data:sent.data,revision:remote.revision+1};return reply({revision:remote.revision});
+    }
+    return reply(remote);
+  });
+  const first=store;
+  vi.resetModules();vi.clearAllTimers();events=new EventTarget();vi.stubGlobal('window',events);
+  const third=await import('../src/store');await flush();
+  expect(third.useStore().box.revision).toBe(2);
+  network.onLine=false;
+  first.change(s=>({...s,settings:{...s.settings,theme:'dark'}}));
+  vi.resetModules();vi.clearAllTimers();events=new EventTarget();vi.stubGlobal('window',events);
+  const recovering=await import('../src/store');await flush();
+  network.onLine=true;await recovering.sync();
+  expect(recovering.useStore().conflict).not.toBeNull();
+  recovering.resolveConflict('remote');await flush();
+  await third.sync();await flush();
+  expect(remote.data.settings).toMatchObject({theme:'light',unit:'lb'});
+});
+it.each(['local','merge'] as const)('allows an explicit %s choice after reviewing a foreign acknowledgement', async choice => {
+  let remote={data:emptyState(),revision:1};
+  network.onLine=false;
+  store.change(s=>({...s,settings:{...s.settings,unit:'lb'}}));
+  const original=Object.keys(storage).find(k=>k.startsWith('neoform:pending:'))!;
+  const journal='neoform:pending:account-a:foreign';
+  storage.setItem(journal,storage.getItem(original)!);
+  const generation=JSON.parse(storage.getItem(journal)!).generation;
+  storage.setItem(`neoform:journal-ack:${journal}:${generation}`,'1');
+  fetcher.mockImplementation((_url:string,options?:RequestInit)=>{
+    if(options?.method==='PUT'){
+      const sent=JSON.parse(options.body as string);remote={data:sent.data,revision:2};
+      return reply({revision:2});
+    }
+    return reply(remote);
+  });
+  network.onLine=true;await store.sync();
+  expect(store.useStore().conflict).not.toBeNull();
+  store.resolveConflict(choice);await flush();
+  expect(store.useStore().conflict).toBeNull();
+  expect(store.useStore().status).toBe('Synced');
+  expect(remote.data.settings.unit).toBe('lb');
+  vi.resetModules();vi.clearAllTimers();events=new EventTarget();vi.stubGlobal('window',events);
+  network.onLine=false;fetcher.mockImplementation(()=>Promise.reject(new TypeError('offline')));
+  const reloaded=await import('../src/store');await flush();
+  expect(reloaded.useStore().box.data.settings.unit).toBe('lb');
+  expect(reloaded.useStore().conflict).toBeNull();
+});
+
 it('accepts online acknowledgement when device storage is full without reporting a false offline save', async()=>{
  vi.stubGlobal('localStorage',new Proxy(storage,{get(target,property){
   if(property==='setItem')return ()=>{throw new DOMException('quota','QuotaExceededError')};

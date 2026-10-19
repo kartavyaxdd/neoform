@@ -500,7 +500,9 @@ export default function App() {
             if (
               change((s) => ({
                 ...s,
-                programs: [...s.programs.filter((x) => x.id !== p.id), p],
+                programs: s.programs.some(x => x.id === p.id)
+                  ? s.programs.map(x => x.id === p.id ? p : x)
+                  : [...s.programs, p],
               }))
             )
               close();
@@ -614,7 +616,7 @@ export default function App() {
         });
     change((s) => ({
       ...s,
-      draft: D.startSession(w?.name || "Open session", entries, p),
+      draft: D.startSession(w?.name || "Open session", entries, p, w),
       timer: null,
     }));
     go("session");
@@ -684,11 +686,13 @@ export default function App() {
         <FinishSessionFeedback
           draft={draft}
           exercises={exercises}
-          finish={(feedback, muscleFeedback) => {
+          finish={(feedback, muscleFeedback, confirmEffort) => {
             const logged = D.completeSession({
               ...draft,
               feedback,
               muscleFeedback,
+              exercises: draft.exercises.map(e => ({ ...e, sets: e.sets.map(t =>
+                confirmEffort && t.done ? { ...t, effortReported: true } : t) })),
               duration: Math.min(
                 86400,
                 Math.max(0, (Date.now() - draft.startedAt) / 1000),
@@ -1044,14 +1048,14 @@ export default function App() {
                           s.draft
                             ? go("session")
                             : activeProgram
-                              ? start(activeProgram.workouts[0], activeProgram)
+                              ? start(D.nextWorkout(activeProgram, s.sessions), activeProgram)
                               : go("train")
                         }
                       >
                         {s.draft
                           ? "Resume session"
                           : activeProgram
-                            ? "Start " + activeProgram.workouts[0].name
+                            ? "Start " + D.nextWorkout(activeProgram, s.sessions).name
                             : "Build a program"}
                         <ArrowRight size={18} />
                       </Button>
@@ -2014,6 +2018,7 @@ function ProgramBuilder({
                     </select>
                   </Field>
                   <button
+                    type="button"
                     className="icon-button"
                     aria-label="Move exercise up"
                     disabled={ti === 0}
@@ -2026,6 +2031,7 @@ function ProgramBuilder({
                     <ArrowUp size={17} />
                   </button>
                   <button
+                    type="button"
                     className="icon-button"
                     aria-label="Move exercise down"
                     disabled={ti === w.exercises.length - 1}
@@ -2038,6 +2044,7 @@ function ProgramBuilder({
                     <ArrowDown size={17} />
                   </button>
                   <button
+                    type="button"
                     className="icon-button danger-text"
                     aria-label="Remove target"
                     onClick={() =>
@@ -2576,8 +2583,17 @@ function Insights({
         value: D.displayLoad(point.weight, ex.convention, displayUnit),
       }))
     : [];
-  const rec = ex
-    ? D.recommend(ex.id, s.sessions, exercises, { min: 8, max: 12 }, {experience:s.profile?.experience, phase:s.programs.find(p=>!p.archived) ? D.programPhase(s.programs.find(p=>!p.archived)!) : undefined})
+  const reviewProgram = s.programs.find(p => !p.archived);
+  const reviewWorkout = reviewProgram?.workouts.find(w => w.exercises.some(t => t.exerciseId === ex?.id));
+  const reviewEntry = reviewProgram && reviewWorkout
+    ? D.prepareWorkout(reviewWorkout, reviewProgram, exercises, s.sessions, s.profile?.experience).find(e => e.exerciseId === ex?.id)
+    : undefined;
+  const reviewRange = reviewEntry?.target ?? [...s.sessions]
+    .sort((a,b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+    .flatMap(s => s.exercises).filter(e => e.exerciseId === ex?.id).at(-1)?.target;
+  const rec = ex && reviewRange
+    ? D.recommend(ex.id, s.sessions, exercises, reviewRange, {experience:s.profile?.experience,
+      phase:reviewProgram ? D.programPhase(reviewProgram) : undefined,entry:reviewEntry})
     : null;
   const recs = D.records(s.sessions, exercises);
   const latest = [...s.sessions].sort(
@@ -2733,7 +2749,7 @@ function Insights({
                 </h3>
                 <p>{rec.reason}</p>
                 <DecisionEvidence decision={rec} />
-                {rec.weight !== undefined && (
+                {rec.weight !== undefined && !rec.setTargets && (
                   <p>
                     {fmt(
                       D.displayLoad(
@@ -2745,9 +2761,12 @@ function Insights({
                     {ex?.convention === "machine-label"
                       ? "label"
                       : s.settings.unit}{" "}
-                    × {rec.reps} reps · review against your 8–12 rep range
+                    × {rec.reps} reps · review against your {reviewRange?.min}–{reviewRange?.max} rep range
                   </p>
                 )}
+                {rec.setTargets && <p>Working-set targets: {rec.setTargets.map(t =>
+                  `${fmt(D.displayLoad(t.weight, ex!.convention, displayUnit))} × ${t.reps}`).join(" / ")}
+                  {" "}{ex?.convention === "machine-label" ? "label" : displayUnit}.</p>}
                 <p className="caption">
                   Apply suggestions through “Accept for unlogged sets” in an
                   active workout. No automatic program or load changes.

@@ -76,7 +76,8 @@ describe('production CI configuration', () => {
     }
   });
   it('exercises CLI config/marker writes and rejects extra migrations, tracked local files and missing token', () => {
-    const scratch = process.env.RUNNER_TEMP || process.env.TMPDIR;
+    const scratch = process.env.RUNNER_TEMP || process.env.TMPDIR || path.resolve('.qa-state/ci-tests');
+    mkdirSync(scratch, { recursive: true });
     expect(scratch).toBeTruthy();
     const directory = mkdtempSync(path.join(scratch, 'neoform-ci-test-'));
     const cli = fileURLToPath(new URL(helper, import.meta.url));

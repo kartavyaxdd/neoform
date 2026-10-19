@@ -37,6 +37,8 @@ const listeners = new Set<() => void>();
 const accountRequests = new Set<AbortController>();
 const tabId = uid();
 let tabConflict = false;
+let acknowledgedJournalConflict = false;
+let blockedJournals: Record<string, number> = {};
 let activeSync: object | null = null,
   epoch = 0,
   accountBlocked = false;
@@ -162,6 +164,8 @@ export async function request<T = unknown>(
 }
 const key = (id: string) => "neoform:account:" + id;
 const pendingPrefix = (id: string) => "neoform:pending:" + id + ":";
+const journalAckKey = (journal: string, generation: number) =>
+  `neoform:journal-ack:${journal}:${generation}`;
 function persist() {
   if (!current.user || accountBlocked) return false;
   let durable = false;
@@ -205,6 +209,16 @@ function parseCache(serialized: string | null): Outbox | null {
       typeof box.dirty === "boolean"
     ) {
       box.data = stateSchema.parse(box.data);
+      if (box.incorporated &&
+          (typeof box.incorporated !== "object" || Array.isArray(box.incorporated) ||
+           Object.entries(box.incorporated).some(([k, generation]) =>
+             !k.startsWith("neoform:pending:") || !Number.isSafeInteger(generation) || Number(generation) < 0)))
+        box.incorporated = undefined;
+      if (box.acknowledgedJournals &&
+          (typeof box.acknowledgedJournals !== "object" || Array.isArray(box.acknowledgedJournals) ||
+           Object.entries(box.acknowledgedJournals).some(([k,g]) =>
+             !k.startsWith("neoform:pending:") || !Number.isSafeInteger(g) || Number(g) < 0)))
+        box.acknowledgedJournals = undefined;
       if (box.base?.revision === box.revision) {
         const parsed = stateSchema.safeParse(box.base.data);
         box.base = parsed.success
@@ -224,27 +238,72 @@ function parseCache(serialized: string | null): Outbox | null {
 function reconcileTabs(user: User, initial: Outbox | null): Outbox | null {
   let box = initial;
   tabConflict = false;
+  acknowledgedJournalConflict = false;
+  blockedJournals = {};
   for (const k of Object.keys(localStorage)
     .filter((k) => k.startsWith(pendingPrefix(user.id)))
     .sort()) {
     const pending = parseCache(localStorage.getItem(k));
     if (!pending?.dirty) continue;
-    if (!box) {
-      box = pending;
+    const ackRevision = Number(localStorage.getItem(journalAckKey(k, pending.generation)));
+    if (ackRevision > 0 && Number.isSafeInteger(ackRevision) &&
+        (box?.acknowledgedJournals?.[k] ?? -1) < pending.generation) {
+      if (box && !box.dirty && box.revision >= ackRevision) {
+        box = { ...box,
+          incorporated: { ...box.incorporated, [k]: pending.generation },
+          acknowledgedJournals: { ...box.acknowledgedJournals, [k]: pending.generation } };
+      } else {
+        // A receipt alone cannot rebase dirty data. Fetch the actual remote
+        // snapshot and ask for an explicit conflict choice before any PUT.
+        tabConflict = true;
+        acknowledgedJournalConflict = true;
+        blockedJournals[k] = pending.generation;
+      }
       continue;
     }
-    if (JSON.stringify(box.data) === JSON.stringify(pending.data)) continue;
+    if ((box?.incorporated?.[k] ?? -1) >= pending.generation) continue;
+    const incorporate = (value: Outbox): Outbox => ({
+      ...value,
+      incorporated: Object.fromEntries(
+        [...new Set([...Object.keys(value.incorporated ?? {}), ...Object.keys(pending.incorporated ?? {}), k])]
+          .map(key => [key, Math.max(value.incorporated?.[key] ?? -1,
+            pending.incorporated?.[key] ?? -1, key === k ? pending.generation : -1)]),
+      ),
+    });
+    if (!box) {
+      box = incorporate(pending);
+      continue;
+    }
+    if (JSON.stringify(box.data) === JSON.stringify(pending.data)) {
+      box = incorporate(box);
+      continue;
+    }
     try {
       if (!pending.base) throw new Error("A pending tab has no common base.");
       const data = mergeThreeWay(pending.base.data, box.data, pending.data);
       if (JSON.stringify(data) !== JSON.stringify(box.data))
         box = { ...box, data, dirty: true, generation: box.generation + 1 };
+      box = incorporate(box);
     } catch {
       // Leave every original journal intact; never auto-select a competing edit.
       tabConflict = true;
     }
   }
   return box;
+}
+function retireAcknowledgedJournals(sent: Outbox, revision: number) {
+  // localStorage has no compare-and-delete transaction across tabs. Only an
+  // owner may remove its own journal; persistent receipts suppress all others.
+  for (const [journal, generation] of Object.entries(sent.incorporated ?? {})) {
+    try {
+      // Immutable per-generation receipt: stale shared-cache writers cannot
+      // erase a different tab's server acknowledgement or discard decision.
+      localStorage.setItem(journalAckKey(journal, generation), String(revision));
+      if (!current.user || journal !== pendingPrefix(current.user.id) + tabId) continue;
+      const pending = parseCache(localStorage.getItem(journal));
+      if (pending?.generation === generation) localStorage.removeItem(journal);
+    } catch { /* Receipts remain in the cache; failure cannot erase newer work. */ }
+  }
 }
 function cached(user: User): Outbox | null {
   return reconcileTabs(user, parseCache(localStorage.getItem(key(user.id))));
@@ -333,12 +392,13 @@ export async function sync() {
   // the error and resumes the preserved outbox.
   if (current.status === "Sign in again to sync" && current.error) return;
   if (observeAccount()) observeTabs();
+  const needsJournalReview = tabConflict && acknowledgedJournalConflict;
   if (
     !observeAccount() ||
     activeSync ||
     !current.user ||
     current.conflict ||
-    tabConflict ||
+    (tabConflict && !needsJournalReview) ||
     !navigator.onLine
   )
     return;
@@ -346,6 +406,14 @@ export async function sync() {
     syncEpoch = epoch;
   activeSync = token;
   try {
+    if (needsJournalReview) {
+      const remote = parseRemote(await request<Remote>("/data"));
+      if (epoch !== syncEpoch) return;
+      publish({ conflict: { ...remote, incorporated: { ...blockedJournals } },
+        status: "Conflict · review changes",
+        error: "Another tab acknowledged or discarded earlier work. Review the actual cloud copy before reapplying local edits." });
+      return;
+    }
     if (current.box.dirty) {
       const sent = current.box;
       publish({ status: "Syncing" });
@@ -365,6 +433,9 @@ export async function sync() {
         result.revision,
         sent.data,
       );
+      acknowledged.acknowledgedJournals = { ...acknowledged.acknowledgedJournals,
+        ...sent.incorporated };
+      retireAcknowledgedJournals(sent, result.revision);
       publish({
         box: acknowledged,
         status: !navigator.onLine
@@ -431,6 +502,9 @@ export function resolveConflict(choice: "remote" | "merge" | "local") {
   if (!observeAccount()) return;
   const remote = current.conflict;
   if (!remote) return;
+  const incorporated = { ...current.box.incorporated, ...remote.incorporated,
+    [pendingPrefix(current.user!.id) + tabId]: current.box.generation };
+  const resolvedJournals = { ...current.box, incorporated };
   let data = remote.data;
   try {
     if (choice === "local") data = current.box.data;
@@ -449,12 +523,17 @@ export function resolveConflict(choice: "remote" | "merge" | "local") {
         base: structuredClone(remote),
         dirty: choice !== "remote",
         generation: current.box.generation + 1,
+        incorporated,
+        acknowledgedJournals: choice === "remote"
+          ? { ...current.box.acknowledgedJournals, ...incorporated }
+          : { ...current.box.acknowledgedJournals, ...remote.incorporated },
       },
       conflict: null,
       error: "",
       status: choice === "remote" ? "Synced" : "Pending sync",
     });
     persist();
+    if (choice === "remote") retireAcknowledgedJournals(resolvedJournals, remote.revision);
     void sync();
   } catch (e) {
     publish({ error: (e as Error).message });

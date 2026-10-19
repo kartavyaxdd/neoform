@@ -5,16 +5,19 @@ export function reviewRecommendation(
   entry: D.Entry,
   recommendation: ReturnType<typeof D.recommend>,
 ): ReturnType<typeof D.recommend> {
-  if (canApplyStraightProgression(entry)) return recommendation;
+  if (canApplyStraightProgression(entry) &&
+      (!recommendation.setTargets || recommendation.setTargets.length === entry.sets.filter(s => s.kind === "working").length))
+    return recommendation;
   return {
     ...recommendation,
     action: recommendation.action === "recover" ? "recover" : "hold",
     weight: undefined,
     reps: undefined,
+    setTargets: undefined,
     reason:
       recommendation.action === "recover"
         ? recommendation.reason
-        : "Review the whole sequence manually; straight-set progression does not apply to this technique context.",
+        : "Review the whole sequence and current set dose; straight-set progression does not apply to a changed dose or technique context.",
     assumptions: [
       ...(recommendation.assumptions || []),
       "Earlier straight-set performance is not an equivalent dose or a progression target for these bouts.",
@@ -176,6 +179,7 @@ export function appendBout(
   const paired = technique === "superset" || technique === "pre-exhaust";
   const set = D.setSchema.parse({
     ...input,
+    effortReported: false,
     id: D.uid(),
     kind: bout === "drop" ? "drop" : "working",
     done: false,

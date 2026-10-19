@@ -15,6 +15,7 @@ const history = (weight: number) =>
       reps: 12,
       rir: 2,
       done: true,
+      effortReported: true,
     }));
     const s = completeSession(startSession("Upper", [e]));
     s.feedback = {

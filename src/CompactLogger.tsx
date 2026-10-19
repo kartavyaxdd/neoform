@@ -143,7 +143,8 @@ export function SessionLogger({
                 e.target || { min: 8, max: 12 },
                 {
                   experience: data.profile?.experience,
-                  phase: program ? D.programPhase(program) : undefined,
+                  entry: e,
+                  phase: s.phase ?? (program ? D.programPhase(program) : undefined),
                 },
               ),
             ),
@@ -231,10 +232,11 @@ export function SessionLogger({
                             updateSet(e, {
                               ...set,
                               rir: effort === "RIR" ? n : 10 - n,
+                              effortReported: true,
                             })
                           }
                         />
-                        <small>{effort}</small>
+                        <small title={set.effortReported ? "Reported effort" : "Unconfirmed effort; report it or confirm at finish"}>{effort}{set.effortReported ? "" : " ?"}</small>
                       </label>
                     </div>
                     <Num
@@ -331,6 +333,7 @@ export function SessionLogger({
                         weight: last?.weight || 0,
                         reps: last?.reps || 8,
                         rir: last?.rir ?? 2,
+                        effortReported: false,
                         kind: "working",
                         done: history,
                       },
@@ -457,7 +460,7 @@ export function SessionLogger({
                               {rec.sourcePages.join(", ")} · {rec.policyVersion}
                             </p>
                           )}
-                          {rec.weight !== undefined && (
+                          {rec.weight !== undefined && !rec.setTargets && (
                             <p>
                               <b>
                                 {fmt(
@@ -476,6 +479,12 @@ export function SessionLogger({
                               · optional next target
                             </p>
                           )}
+                          {rec.setTargets && <p className="caption">
+                            Working-set targets: {rec.setTargets.map(t =>
+                              `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`).join(" / ")}
+                            {" "}{(e.convention || ex.convention) === "machine-label" ? "label" : unit}.
+                            Preserve the prescribed effort; stop short if technique or reserve would be lost.
+                          </p>}
                           <div className="actions wrap">
                             <Button
                               disabled={
@@ -484,17 +493,20 @@ export function SessionLogger({
                               }
                               onClick={() => {
                                 if (!canApplyStraightProgression(e)) return;
+                                let workingIndex = -1;
                                 updateEntry({
                                   ...e,
-                                  sets: e.sets.map((t) =>
-                                    !t.done && t.kind === "working"
+                                  sets: e.sets.map((t) => {
+                                    if (t.kind === "working") workingIndex++;
+                                    const row = rec.setTargets?.[workingIndex];
+                                    return !t.done && t.kind === "working"
                                       ? {
                                           ...t,
-                                          weight: rec.weight ?? t.weight,
-                                          reps: rec.reps ?? t.reps,
+                                          weight: row?.weight ?? rec.weight ?? t.weight,
+                                          reps: row?.reps ?? rec.reps ?? t.reps,
                                         }
-                                      : t,
-                                  ),
+                                      : t;
+                                  }),
                                 });
                                 change((s) => ({
                                   ...s,
@@ -627,6 +639,15 @@ export function SessionLogger({
                               }
                             />
                           </Field>
+                        </div>
+                      )}
+                      {sheet === "Targets" && e.plannedWorkingSets !== e.sets.filter(t => t.kind === "working").length && (
+                        <div className="training-coaching">
+                          <p>Added or removed sets do not silently change the prescription. Confirm a deliberate dose change; skipped work should stay incomplete.</p>
+                          <Button onClick={() => updateEntry({ ...e,
+                            plannedWorkingSets: e.sets.filter(t => t.kind === "working").length })}>
+                            Confirm planned dose: {e.sets.filter(t => t.kind === "working").length} working sets
+                          </Button>
                         </div>
                       )}
                       <p className="caption">

@@ -249,16 +249,19 @@ describe("Hevy CSV", () => {
     const state = D.emptyState();
     state.programs = [D.starterProgram("balanced")];
     state.draft = D.startSession("Unicode draft", []);
+    let oldSize = bytes(state);
     while (true) {
-      const oldSize = bytes(state),
-        session = D.startSession("Existing Unicode history", []);
-      const overhead =
-        bytes({ ...state, sessions: [...state.sessions, session] }) - oldSize;
+      const session = D.startSession("Existing Unicode history", []);
+      // Appending one JSON array member adds its bytes and, after the first,
+      // one comma. Avoid serializing a growing 2 MB fixture on every iteration.
+      const overhead = bytes(session) + (state.sessions.length ? 1 : 0);
       const room = D.MAX_STATE_BYTES - oldSize - overhead - 2200;
       if (room < 3) break;
       session.notes = "界".repeat(Math.min(600, Math.floor(room / 3)));
       state.sessions.push(session);
+      oldSize += overhead + new TextEncoder().encode(session.notes).length;
     }
+    expect(bytes(state)).toBe(oldSize);
     expect(D.stateSchema.safeParse(state).success).toBe(true);
     const before = structuredClone(state);
     const csv = sample.replace("Setup\r\ncarefully", "界".repeat(900));

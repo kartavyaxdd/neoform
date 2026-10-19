@@ -35,8 +35,7 @@ export function WorkoutHome({
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const active = s.programs.find((p) => !p.archived);
   function program(p: D.Program, open = false) {
-    const next =
-      s.sessions.filter((x) => x.programId === p.id).length % p.workouts.length;
+    const next = p.workouts.indexOf(D.nextWorkout(p, s.sessions));
     return (
       <details
         className={"program-card grouped " + (p.archived ? "archived" : "")}

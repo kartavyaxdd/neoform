@@ -110,6 +110,8 @@ Current generator limits—5–20 reps,2–4 RIR,45–180-second initial rest ta
 
 ## Acceptance gates for subsequent training-engine work
 
+October 19 correctness work (policy `neoform-book-2026-10-v2`): new set effort stays unconfirmed until explicitly reported or confirmed at finish; positive coaching requires reported effort and known completed planned dose. Legacy records remain unchanged and cannot establish those missing observations. Actual workout identity, explicit dose revision, phase-transition baselines, full current prescription matching, row-specific progression and manual machine-label changes strengthen the logger/coaching boundary. These remain conservative software policies, not a measured personal response model. Longitudinal response learning, readiness, equipment increments and durable lifetime history remain outstanding in `docs/IMPROVEMENT-PLAN.md`.
+
 - Every recommendation includes its evidence, assumptions, policy version and source linkage.
 - Unknown feedback cannot become evidence of excellent recovery; old records migrate without invented observations.
 - Pain/declining performance veto escalation; local fatigue does not automatically apply to every muscle.

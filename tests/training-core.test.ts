@@ -5,7 +5,7 @@ const history = (n = 2) =>
   Array.from({ length: n }, (_, i) => {
     const e = D.createEntry(bench);
     e.sets.forEach((s) =>
-      Object.assign(s, { done: true, weight: 60, reps: 12 }),
+      Object.assign(s, { done: true, effortReported: true, weight: 60, reps: 12 }),
     );
     const s = D.startSession("QA", [e]);
     s.startedAt = Date.parse("2026-10-10T12:00:00Z") + i * 86400000;
@@ -208,7 +208,7 @@ it("suggests broad deload review only after repeated multi-muscle below-target e
   h.forEach((s) => {
     const row = D.createEntry(D.catalog.find((x) => x.id === "row")!);
     row.sets.forEach((t) =>
-      Object.assign(t, { done: true, weight: 60, reps: 8, rir: 1 }),
+      Object.assign(t, { done: true, effortReported: true, weight: 60, reps: 8, rir: 1 }),
     );
     s.exercises.push(row);
     s.exercises[0].sets.forEach((t) => (t.rir = 1));

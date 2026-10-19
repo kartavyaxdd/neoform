@@ -17,10 +17,11 @@ const entry = (
   id,
   exerciseId: "bench",
   target: {min:8,max:10,rir:2,rest:120},
+  plannedWorkingSets: kind === 'working' ? 1 : 0,
   notes: "",
   convention,
   equipment: "Barbell" as const,
-  sets: [{ id: "set-" + id, weight, reps: 8, rir: 2, kind, done: true }],
+  sets: [{ id: "set-" + id, weight, reps: 8, rir: 2, kind, done: true, effortReported: true }],
 });
 const session = (id: string, entries: any[]): Session => ({
   id,

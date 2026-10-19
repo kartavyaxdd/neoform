@@ -263,7 +263,7 @@ export function FinishSessionFeedback({
 }: {
   draft: D.Session;
   exercises: D.Exercise[];
-  finish: (f: Feedback, m: MuscleFeedback[]) => void;
+  finish: (f: Feedback, m: MuscleFeedback[], confirmEffort: boolean) => void;
 }) {
   const [feedback, setFeedback] = useState<Feedback>(() =>
     draft.feedback.reported === true
@@ -276,6 +276,7 @@ export function FinishSessionFeedback({
   const [muscleFeedback, setMuscleFeedback] = useState<MuscleFeedback[]>(
     draft.muscleFeedback ?? [],
   );
+  const [confirmEffort, setConfirmEffort] = useState(false);
   const muscles = [
     ...new Set(
       draft.exercises
@@ -301,6 +302,11 @@ export function FinishSessionFeedback({
         completed working / drop sets.
       </p>
       <SessionFeedbackFields value={feedback} onChange={setFeedback} />
+      <label className="check-line">
+        <input type="checkbox" checked={confirmEffort} onChange={e => setConfirmEffort(e.target.checked)} />
+        I confirm the recorded RIR values describe my actual completed sets.
+      </label>
+      <p className="caption">Leave unchecked if unsure. Unconfirmed effort is saved but cannot justify progression. Edit inaccurate values before confirming.</p>
       <MuscleFeedbackFields
         value={muscleFeedback}
         onChange={setMuscleFeedback}
@@ -312,7 +318,7 @@ export function FinishSessionFeedback({
       </p>
       <Button
         variant="primary wide"
-        onClick={() => finish(feedback, muscleFeedback)}
+        onClick={() => finish(feedback, muscleFeedback, confirmEffort)}
       >
         Save completed workout
       </Button>

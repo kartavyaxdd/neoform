@@ -5,12 +5,68 @@ const now=Date.parse('2026-10-18T12:00:00Z');
 const bench=D.catalog.find(x=>x.id==='bench')!;
 function favorable(){
  return [3,1].map(days=>{
-  const e=D.createEntry(bench);e.sets.forEach(t=>Object.assign(t,{done:true,weight:60,reps:12,rir:3}));
+  const e=D.createEntry(bench);e.sets.forEach(t=>Object.assign(t,{done:true,effortReported:true,weight:60,reps:12,rir:3}));
   const s=D.startSession('Synthetic review QA',[e]);s.startedAt=now-days*86400000;s.date=new Date(s.startedAt).toISOString().slice(0,10);
   s.muscleFeedback=[{muscle:'Chest',recovered:'yes',pain:false,soreness:1}];return s;
  });
 }
 const rec=(sessions:D.Session[],at=now)=>D.recommend('bench',sessions,D.catalog,{min:8,max:12},{now:at});
+it('never treats a completed target default or legacy unknown effort as reported effort',()=>{
+ const h=favorable();h.forEach(s=>s.exercises[0].sets.forEach(t=>t.effortReported=false));
+ expect(rec(h).action).toBe('hold');expect(rec(h).reason).toMatch(/effort.*unconfirmed/i);
+ h.forEach(s=>s.exercises[0].sets.forEach(t=>delete t.effortReported));
+ expect(rec(h).action).toBe('hold');
+});
+it('does not use recovery-phase sessions as accumulation progression evidence',()=>{
+ const h=favorable();h.forEach(s=>s.phase='maintenance');
+ expect(D.recommend('bench',h,D.catalog,{min:8,max:12},{now,phase:'accumulation'}).action).toBe('hold');
+});
+it('requires two new exposures after a recovery phase and never adds volume from maintenance history',()=>{
+ const h=favorable();h.forEach(s=>s.phase='accumulation');
+ const recovery={...structuredClone(h[0]),id:D.uid(),date:'2026-10-16',phase:'deload' as const};
+ expect(D.recommend('bench',[h[0],recovery,h[1]],D.catalog,{min:8,max:12},{now,phase:'accumulation'}).action).toBe('hold');
+ h.forEach(s=>s.phase='maintenance');
+ expect(D.muscleReview('Chest',h,D.catalog,{now,phase:'accumulation'}).action).toBe('hold');
+});
+it('holds when current effort, rest or load context differ from historical prescriptions',()=>{
+ const h=favorable(); const entry=D.createEntry(bench);
+ entry.target!.rest=60;
+ expect(D.recommend('bench',h,D.catalog,entry.target!,{now,entry}).action).toBe('hold');
+ entry.target!.rest=120;entry.target!.rir=1;
+ expect(D.recommend('bench',h,D.catalog,entry.target!,{now,entry}).action).toBe('hold');
+});
+it('does not compare historical exposures with different intended effort',()=>{
+ const h=favorable();h[0].exercises[0].target!.rir=3;
+ expect(rec(h).action).toBe('hold');
+ expect(D.muscleReview('Chest',h,D.catalog,{now}).action).toBe('hold');
+});
+it('does not infer proportional resistance from a machine label in deload',()=>{
+ const p=D.starterProgram('balanced');p.currentWeek=p.deloadWeek;
+ const machine=D.catalog.find(x=>x.id==='leg-press')!;
+ const e=D.createEntry(machine);e.sets.forEach(s=>Object.assign(s,{done:true,weight:7}));
+ const s=D.startSession('Machine label',[e]);s.phase='accumulation';
+ const entries=D.prepareWorkout(p.workouts[2],p,D.catalog,[s]);
+ expect(entries.find(e=>e.exerciseId==='leg-press')!.sets[0].weight).toBe(7);
+});
+it('rep progression preserves each row and adds only one total rep per exposure',()=>{
+ const h=favorable();h.forEach(s=>s.exercises[0].sets.forEach((t,i)=>t.reps=[12,10,8][i]));
+ expect(rec(h)).toMatchObject({action:'reps',setTargets:[{weight:60,reps:12},{weight:60,reps:10},{weight:60,reps:9}]});
+});
+it('preserves planned dose and does not progress equally incomplete exposures',()=>{
+ const h=favorable().map(s=>D.completeSession({...s,exercises:s.exercises.map(e=>({...e,
+   sets:e.sets.map((t,i)=>({...t,done:i===0}))}))}));
+ expect(h[0].exercises[0].plannedWorkingSets).toBe(3);
+ expect(h[0].exercises[0].sets).toHaveLength(1);
+ expect(rec(h).action).toBe('hold');
+ expect(rec(h).reason).toMatch(/dose|planned|incomplete/i);
+});
+it('selects the next workout from actual workout identity rather than number of sessions',()=>{
+ const p=D.starterProgram('balanced');
+ const s=D.startSession(p.workouts[1].name,[],p,p.workouts[1]);
+ expect(s.workoutId).toBe(p.workouts[1].id);
+ expect(D.nextWorkout(p,[s]).id).toBe(p.workouts[2].id);
+ expect(D.nextWorkout(p,[s,{...s,id:D.uid(),startedAt:s.startedAt+1000}]).id).toBe(p.workouts[2].id);
+});
 it('unrelated unknown feedback cannot erase systemic fatigue; stale fatigue asks for confirmation, not indefinite recovery',()=>{
  const h=favorable();h[1].feedback={fatigue:5,reported:true};expect(rec(h).action).toBe('recover');
  const other=D.startSession('Unrelated unknown',[D.createEntry(D.catalog.find(x=>x.id==='squat')!)]);

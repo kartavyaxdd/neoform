@@ -398,6 +398,7 @@ export function mergeHevyImport(
               : D.convertWeight(Number(weight), preview.unit, "kg"),
           reps: Number(row.reps),
           rir: 10 - Number(row.rpe),
+          effortReported: true,
           kind,
           done: true,
         });

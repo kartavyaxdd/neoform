@@ -383,6 +383,7 @@ export const setSchema = z
     reps: z.number().int().min(1).max(100),
     rir: z.number().min(0).max(10),
     kind: z.enum(["working", "warmup", "drop"]),
+    effortReported: z.boolean().optional(),
     done: z.boolean(),
     bout: z
       .enum(["straight", "activation", "mini", "drop", "down", "giant"])
@@ -412,6 +413,7 @@ const entrySchema = z
     equipment: z.enum(equipment).optional(),
     superset: z.string().max(20).optional(),
     target: entryTarget.optional(),
+    plannedWorkingSets: z.number().int().min(0).max(40).optional(),
     sets: z.array(setSchema).max(40),
   })
   .strict();
@@ -464,6 +466,7 @@ export const sessionSchema = z
       )
       .optional(),
     programId: id.optional(),
+    workoutId: id.optional(),
     week: z.number().int().min(1).max(16).optional(),
     phase: z.enum(phases).optional(),
     exercises: z.array(entrySchema).max(60),
@@ -711,7 +714,7 @@ export function starterProgram(
   };
 }
 export type Experience = "New" | "Intermediate" | "Advanced";
-export const trainingPolicyVersion = "neoform-book-2026-10-v1";
+export const trainingPolicyVersion = "neoform-book-2026-10-v2";
 export function programPhase(p: Program): Phase {
   return (
     p.phase ?? (p.currentWeek === p.deloadWeek ? "deload" : "accumulation")
@@ -824,7 +827,7 @@ export function prepareWorkout(
       previous?.sets.find((s) => s.done && s.kind === "working")?.weight ?? 0;
     entry.sets = entry.sets.map((s) => ({
       ...s,
-      weight: phase === "deload" && late ? load / 2 : load,
+      weight: phase === "deload" && late && x.convention !== "machine-label" ? load / 2 : load,
     }));
     return [entry];
   });
@@ -834,6 +837,8 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
     id: uid(),
     exerciseId: e.id,
     notes: "",
+    plannedWorkingSets: (t?.kind ?? "working") === "working"
+      ? (t ? (deload ? Math.max(1, Math.ceil(t.sets / 2)) : t.sets) : 3) : 0,
     convention: e.convention,
     equipment: e.equipment,
     superset: t?.superset || "",
@@ -858,6 +863,7 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
         weight: 0,
         reps: t?.min || 8,
         rir: deload ? 4 : (t?.rir ?? 2),
+        effortReported: false,
         kind: t?.kind || "working",
         done: false,
       }),
@@ -868,6 +874,7 @@ export function startSession(
   name: string,
   entries: Entry[],
   program?: Program,
+  workout?: Workout,
 ): Session {
   return {
     id: uid(),
@@ -884,8 +891,18 @@ export function startSession(
       reported: false,
     },
     exercises: entries,
+    ...(workout ? { workoutId: workout.id } : {}),
     ...(program ? { programId: program.id, week: program.currentWeek, phase: programPhase(program) } : {}),
   };
+}
+export function nextWorkout(program: Program, sessions: Session[]): Workout {
+  const latest = [...sessions].filter(s => s.programId === program.id)
+    .sort((a,b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt).at(-1);
+  let index = program.workouts.findIndex(w => w.id === latest?.workoutId);
+  // Legacy history may establish identity only when its name is unambiguous.
+  if (index < 0 && latest && program.workouts.filter(w => w.name === latest.name).length === 1)
+    index = program.workouts.findIndex(w => w.name === latest.name);
+  return program.workouts[(index + 1) % program.workouts.length];
 }
 export const toggleSet = (s: Session, id: string): Session => ({
   ...s,
@@ -902,7 +919,7 @@ export const completeSession = (s: Session): Session => ({
     .map((e) => ({ ...e, sets: e.sets.filter((x) => x.done) }))
     .filter((e) => e.sets.length),
 });
-export const hard = (s: SetLog) => s.done && s.kind !== "warmup" && s.rir <= 4;
+export const hard = (s: SetLog) => s.done && s.kind !== "warmup" && s.effortReported !== false && s.rir <= 4;
 export type MuscleExposure = {
   directHardSets: number;
   indirectHardSets: number;
@@ -940,6 +957,7 @@ export function muscleExposure(
           assumptions: [
             "Completed raw bouts and declared catalog involvement, not measured growth or equivalent muscle doses.",
             "Hard-set qualification uses the original app RIR <=4 heuristic; advanced bouts have no fractional straight-set conversion. Indirect involvement is reported separately, never added to direct sets.",
+            "New unconfirmed effort is excluded. Legacy numeric effort remains a historical estimate with unknown reporting provenance; it cannot justify positive coaching decisions.",
           ],
           policyVersion: trainingPolicyVersion,
         });
@@ -1093,12 +1111,14 @@ export type CoachingOptions = {
   experience?: Experience;
   now?: number;
   phase?: Phase;
+  entry?: Entry;
 };
 export type Recommendation = {
   action: "hold" | "load" | "reps" | "recover";
   reason: string;
   weight?: number;
   reps?: number;
+  setTargets?: { weight: number; reps: number }[];
   evidence?: string[];
   assumptions?: string[];
   sourcePages?: number[];
@@ -1274,8 +1294,16 @@ export function recommend(
       `The ${options.phase} phase prioritizes recovery or retention, not escalation.`,
       recovery.evidence,
     );
-  const latestEntry = chronological(sessions)
-    .filter((s) => fresh(s, now, 21))
+  const recent = chronological(sessions).filter(s => fresh(s, now, 21));
+  const exposures = recent.filter(s => s.exercises.some(e =>
+    e.exerciseId === exerciseId && e.sets.some(t => t.done && t.kind !== "warmup")));
+  const latestExposure = exposures.at(-1);
+  if (latestExposure?.phase && latestExposure.phase !== "accumulation")
+    return result("hold", "Re-establish accumulation performance after a recovery phase before progressing.", recovery.evidence);
+  const contextPhase = options.phase ?? latestExposure?.phase;
+  const boundary = exposures.map(s => s.phase === contextPhase).lastIndexOf(false);
+  const contextual = exposures.slice(boundary + 1);
+  const latestEntry = contextual
     .flatMap((s) => s.exercises)
     .filter(
       (e) =>
@@ -1307,6 +1335,11 @@ export function recommend(
       recovery.evidence,
     );
   const wantedKey = comparableKey(latestEntry, x);
+  if (options.entry && (comparableKey(options.entry, x) !== wantedKey ||
+      options.entry.target?.rir !== latestEntry.target?.rir ||
+      options.entry.target?.rest !== latestEntry.target?.rest ||
+      options.entry.plannedWorkingSets !== latestEntry.plannedWorkingSets))
+    return result("hold", "Current equipment, method, effort, rest or set dose differs from history. Establish a new comparable baseline.", recovery.evidence);
   const matchingEntries = (s: Session) =>
     s.exercises.filter(
       (e) => e.exerciseId === exerciseId && comparableKey(e, x) === wantedKey,
@@ -1315,8 +1348,8 @@ export function recommend(
     matchingEntries(s).flatMap((e) =>
       e.sets.filter((t) => t.done && t.kind === "working"),
     );
-  const comparable = chronological(sessions)
-    .filter((s) => fresh(s, now, 21) && workingSets(s).length > 0)
+  const comparable = contextual
+    .filter((s) => workingSets(s).length > 0)
     .slice(-2);
   const evidence = [
     ...recovery.evidence,
@@ -1340,8 +1373,13 @@ export function recommend(
   const sets = comparable.flatMap(workingSets),
     latestSets = workingSets(comparable[1]);
   const entries = comparable.flatMap(matchingEntries);
+  if (sets.some(s => s.effortReported !== true))
+    return result("hold", "Actual effort is unconfirmed. Report observed RIR rather than using prescribed defaults as evidence.", evidence);
   if (entries.some((e) => !e.target))
     return result("hold", "Historical prescriptions are unknown; confirm intended effort, rest and rep context before progression.", evidence);
+  if (entries.some(e => e.plannedWorkingSets === undefined ||
+      e.plannedWorkingSets !== e.sets.filter(t => t.done && t.kind === "working").length))
+    return result("hold", "The planned set dose is unknown or incomplete. Review skipped or changed sets before progression.", evidence);
   if (
     entries.some(
       (e) =>
@@ -1380,7 +1418,8 @@ export function recommend(
   const counts = comparable.map((s) => workingSets(s).length);
   if (
     counts[0] !== counts[1] ||
-    new Set(entries.map((e) => e.target?.rest ?? null)).size > 1
+    new Set(entries.map((e) => e.target?.rest ?? null)).size > 1 ||
+    new Set(entries.map((e) => e.target?.rir ?? null)).size > 1
   )
     return result(
       "hold",
@@ -1430,7 +1469,8 @@ export function recommend(
       "load",
       "Both comparable exposures met the ceiling with reserve. Add at most 2.5% or 2.5 kg, whichever is smaller; round down to available plates or hold when equipment jumps are too coarse.",
       evidence,
-      { weight: nextWeight, reps: range.min },
+      { weight: nextWeight, reps: range.min,
+        setTargets: latestSets.map(() => ({ weight: nextWeight, reps: range.min })) },
     );
   }
   if (latestSets.every((s) => s.reps >= range.max))
@@ -1442,7 +1482,7 @@ export function recommend(
   if (sets.every((s) => s.reps >= range.min))
     return result(
       "reps",
-      "Keep load stable and try one more rep within the range. Machine labels remain raw labels on the same setup, not inferred weights.",
+      "Keep load stable and try one additional total rep on the lowest-rep eligible set. Preserve the other rows and intended reserve; machine labels remain raw labels.",
       evidence,
       {
         weight,
@@ -1450,6 +1490,11 @@ export function recommend(
           range.max,
           Math.min(...latestSets.map((s) => s.reps)) + 1,
         ),
+        setTargets: latestSets.map((s, index) => ({
+          weight: s.weight,
+          reps: s.reps + (index === latestSets.map(t => t.reps)
+            .lastIndexOf(Math.min(...latestSets.map(t => t.reps))) ? 1 : 0),
+        })),
       },
     );
   return result(
@@ -1491,7 +1536,9 @@ function musclePerformance(
     favorable = rows.length > 0;
   for (const exposures of rows) {
     const pair = exposures.slice(-2);
-    if (pair.length < 2 || pair[0].session.id === pair[1].session.id) {
+    if (pair.length < 2 || pair[0].session.id === pair[1].session.id ||
+        pair.some(p => p.session.phase !== undefined && p.session.phase !== "accumulation") ||
+        pair[0].session.phase !== pair[1].session.phase) {
       favorable = false;
       continue;
     }
@@ -1499,6 +1546,9 @@ function musclePerformance(
       x = exercises.find((x) => x.id === a.exerciseId)!;
     const valid = (e: Entry) =>
       !!e.target &&
+      e.plannedWorkingSets !== undefined &&
+      e.plannedWorkingSets === e.sets.filter(s => s.done && s.kind === "working").length &&
+      e.sets.filter(s => s.done && s.kind === "working").every(s => s.effortReported === true) &&
       e.target.rir < 5 &&
       (!e.technique || ["straight", "superset"].includes(e.technique)) &&
       !e.tempo &&
@@ -1515,6 +1565,7 @@ function musclePerformance(
       !valid(b) ||
       comparableKey(a, x) !== comparableKey(b, x) ||
       a.target!.rest !== b.target!.rest ||
+      a.target!.rir !== b.target!.rir ||
       a.target!.min !== b.target!.min ||
       a.target!.max !== b.target!.max ||
       sets(a).length !== sets(b).length
