@@ -2007,6 +2007,7 @@ function ProgramBuilder({
                         updateTarget(wi, ti, {
                           ...t,
                           exerciseId: e.target.value,
+                          setup: e.target.value === t.exerciseId ? t.setup : undefined,
                         })
                       }
                     >

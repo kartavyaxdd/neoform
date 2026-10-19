@@ -5,7 +5,7 @@ const now=Date.parse('2026-10-18T12:00:00Z');
 const bench=D.catalog.find(x=>x.id==='bench')!;
 function favorable(){
  return [3,1].map(days=>{
-  const e=D.createEntry(bench);e.sets.forEach(t=>Object.assign(t,{done:true,effortReported:true,weight:60,reps:12,rir:3}));
+  const e=D.createEntry(bench);e.setup={label:'Synthetic rack',execution:'',availableLoads:[60,61.5]};e.sets.forEach(t=>Object.assign(t,{done:true,effortReported:true,weight:60,reps:12,rir:3}));
   const s=D.startSession('Synthetic review QA',[e]);s.startedAt=now-days*86400000;s.date=new Date(s.startedAt).toISOString().slice(0,10);
   s.muscleFeedback=[{muscle:'Chest',recovered:'yes',pain:false,soreness:1}];return s;
  });
@@ -85,7 +85,7 @@ it('missing historical prescriptions remain valid records but cannot justify pos
 it('legacy scheduled and ambiguous 4-RIR deloads never compound reference reductions and new sessions retain phase provenance',()=>{
  const p=D.starterProgram('minimal');p.currentWeek=p.deloadWeek;
  p.workouts.forEach(w=>w.exercises=[D.target('bench')]);
- const h=favorable();const old=D.startSession('Legacy deload',[D.createEntry(bench,undefined,true)],p);
+ const h=favorable();h.forEach(s=>delete s.exercises[0].setup);const old=D.startSession('Legacy deload',[D.createEntry(bench,undefined,true)],p);
  // Simulate pre-upgrade records which had week metadata but no phase snapshot.
  delete (old as D.Session & {phase?:string}).phase;
  old.date='2026-10-18';old.startedAt=now;old.exercises[0].sets.forEach(t=>Object.assign(t,{done:true,weight:30}));

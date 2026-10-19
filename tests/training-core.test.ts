@@ -62,6 +62,7 @@ const report = (
   muscle: D.Exercise["muscle"] = "Chest",
 ) =>
   sessions.forEach((s) => {
+    s.exercises[0].setup = { label: "Synthetic rack", execution: "", availableLoads: [60, 61.5] };
     s.muscleFeedback = [
       { muscle, recovered: "yes", soreness: 1, fatigue: 1, pain: false },
     ];

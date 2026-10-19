@@ -68,6 +68,7 @@ describe("training vertical slice", () => {
     ).toBe("hold");
     const completed = () => {
       const s = session();
+      s.exercises[0].setup = { label: "Synthetic rack", execution: "", availableLoads: [60, 61.5] };
       s.exercises[0].sets.forEach(t => { t.done = true; t.effortReported = true; });
       return s;
     };

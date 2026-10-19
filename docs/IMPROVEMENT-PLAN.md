@@ -10,7 +10,7 @@ This is the continuation plan for K's full goal: fix the audited application, st
 - Every major release requires GitHub production-branch push and the same full SHA verified on the existing public app. Preserve the exact database, encryption master and selected public-workspace access mode.
 - At each completion candidate, three independent agents review and debate correctness, remaining scope and publication readiness. Their blockers must be resolved and verified; test counts alone are insufficient.
 
-## Foundation release in progress
+## Foundation release verified
 
 Implement and test audit B01–B09: stale-journal replay, explicit saves, stable program activation, prescribed versus completed dose, phase/context isolation, raw machine labels, per-row progression, confirmed effort and workout identity. Include changed-dose acceptance and prescription-aware Insights.
 
@@ -20,10 +20,18 @@ Actual effort is separately confirmed. Legacy records keep their original number
 
 Required evidence: regression failures before fixes, passing full core/typecheck/build/security checks, actual isolated Worker/D1 data roundtrip, explicit-save/activation and offline-reload browser checks, per-row recommendation acceptance, confirmation provenance, 360/390px layout inspection, reviewer closure, GitHub and public-release verification.
 
+Foundation release `99fccc79cec8a9c54039dd62592611d3f437fa2a` is on GitHub master and was verified on the public app through `/__release.json`, health, intended public-workspace identity and a synthetic intercepted-data mobile browser flow. GitHub code checks passed; its remote database/master preflight failed and skipped deployment. The authorized manual path deployed the same committed release with exact database and existing encryption-master metadata verified. Automated remote preflight repair remains open; no secret values were inspected or rotated.
+
+## Equipment release candidate
+
+Explicit per-session setup/ROM notes and available load lists, optional deliberate save/clear for the original workout target, setup-separated visible records, and conservative attainable load proposals are implemented. No mass updates of history or program settings occur. Setup changes after recorded working sets are locked for that session; exercise replacement clears its template setup. Unit-switch resaves preserve untouched canonical inventory. All three independent reviewers cleared the corrected focused candidate, conditional on final verification and publication. Lifetime storage, readiness and the broader response model remain open.
+
+Candidate validation: 277 core tests, typecheck, build and AI boundary check passed. Eight real isolated Worker/D1 API checks passed, including exact equipment/source-target roundtrip. Fourteen browser checks passed, including 360/390px equipment sheets, both unit-switch directions, explicit program clearing, exercise replacement with historical preservation, existing offline sync and phase/logger/accessibility flows. Regression failures were observed before the inventory/context/roundtrip fixes; setup-separated record text and unavailable-baseline holds are covered. Generated evidence and test accounts stay isolated from personal data.
+
 ## Remaining full-goal work
 
 1. **Trustworthy durable persistence:** move account history out of a single 2 MB row; normalized, paginated sessions and transactional revisions. Introduce IndexedDB outbox and coordinated journal garbage collection. Migration must preserve every existing record, support compatible rollout and restore rehearsal, and avoid querying personal data during development.
-2. **Equipment and execution context:** explicitly selected equipment increments, separate machine/setup identity, repeatable ROM/technique notes and substitution reasons. Available increments must fit conservative progression caps or yield hold; raw labels require explicit selection.
+2. **Equipment and execution context:** explicit setup identity, execution notes and available-load proposals are implemented in the equipment candidate. Remaining: substitution reasons and reusable equipment-profile management beyond individual workout targets. Available increments must fit conservative progression caps or yield hold; raw labels remain manual.
 3. **Pre-session readiness:** optional current muscle recovery, pain and broader context. Missing reports remain unknown. Distinguish current readiness from immediate post-workout feedback; never infer a recovery countdown or diagnose injury.
 4. **Individual response model:** learn from repeated confirmed, comparable exposures and follow-up recovery with transparent sample counts and uncertainty. Separate performance changes from adherence, changed equipment/rest, technique practice, illness/travel and phase effects. Evaluate holds, regression, plateau, reacclimation and recovery scenarios before offering dose changes. Never infer growth from pump/soreness.
 5. **Scheduling:** explicit workout sequence and actual weekdays, rest-day protection, deliberate repeat/skip/reschedule, and short-session alternatives. Preview redistributed work and overlapping muscle exposure; no automatic catch-up volume.

@@ -10,9 +10,12 @@ it('real isolated Worker persists book feedback, phase and technique metadata wi
  const initial=await fetch(base+'/api/data',{headers});expect(initial.status).toBe(200);const before=await initial.json() as {revision:number;data:D.State};
  const p:any=D.starterProgram('balanced');p.phase='resensitization';p.effort={mode:'ramp',startRir:4,endRir:2};
  p.workouts[0].exercises[0].technique='tempo';p.workouts[0].exercises[0].tempo={eccentric:3,pause:1,concentric:1};
+ p.workouts[0].exercises[0].setup={label:'Synthetic machine A',execution:'Seat 2',availableLoads:[10,11,12.5]};
  const legacy:any=D.startSession('Legacy QA',[D.createEntry(D.catalog[0])]);
  legacy.feedback={pump:3,soreness:1,fatigue:1,pain:false};legacy.exercises[0].sets[0].done=true;
  const draft:any=D.startSession('Book-driven QA',[D.createEntry(D.catalog[0])]);
+ draft.exercises[0].setup={label:'Synthetic rack A',execution:'Paused',availableLoads:[60,61.25,62.5]};
+ draft.exercises[0].sourceTargetId=p.workouts[0].exercises[0].id;
  draft.feedback={pump:null,soreness:null,fatigue:null,pain:null,reported:true};
  draft.muscleFeedback=[{muscle:D.catalog[0].muscle,recovered:'unknown',soreness:null,pain:null,recordedAt:Date.now()}];
  draft.exercises[0].technique='myoreps';draft.exercises[0].techniqueGroup='qa-myorep-group';

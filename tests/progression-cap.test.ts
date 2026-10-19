@@ -9,6 +9,7 @@ import {
 const history = (weight: number) =>
   [1, 2].map((n) => {
     const e = createEntry(catalog[0]);
+    e.setup = { label: "Synthetic rack", execution: "", availableLoads: [weight, weight + 0.81] };
     e.sets = e.sets.map((s) => ({
       ...s,
       weight,

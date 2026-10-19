@@ -12,6 +12,7 @@ import { useStore, change } from "./store";
 import { Button, Field, Num, Modal } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
+import { EquipmentSetup } from "./EquipmentSetup";
 import {
   canApplyStraightProgression,
   giantProgress,
@@ -144,7 +145,8 @@ export function SessionLogger({
                 {
                   experience: data.profile?.experience,
                   entry: e,
-                  phase: s.phase ?? (program ? D.programPhase(program) : undefined),
+                  phase:
+                    s.phase ?? (program ? D.programPhase(program) : undefined),
                 },
               ),
             ),
@@ -236,7 +238,16 @@ export function SessionLogger({
                             })
                           }
                         />
-                        <small title={set.effortReported ? "Reported effort" : "Unconfirmed effort; report it or confirm at finish"}>{effort}{set.effortReported ? "" : " ?"}</small>
+                        <small
+                          title={
+                            set.effortReported
+                              ? "Reported effort"
+                              : "Unconfirmed effort; report it or confirm at finish"
+                          }
+                        >
+                          {effort}
+                          {set.effortReported ? "" : " ?"}
+                        </small>
                       </label>
                     </div>
                     <Num
@@ -371,6 +382,11 @@ export function SessionLogger({
                         history={history}
                       />
                       <div className="actions wrap">
+                        {!history && (
+                          <Button onClick={() => setSheet("Equipment setup")}>
+                            Equipment setup
+                          </Button>
+                        )}
                         {swap && (
                           <Button
                             onClick={() => {
@@ -479,12 +495,23 @@ export function SessionLogger({
                               · optional next target
                             </p>
                           )}
-                          {rec.setTargets && <p className="caption">
-                            Working-set targets: {rec.setTargets.map(t =>
-                              `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`).join(" / ")}
-                            {" "}{(e.convention || ex.convention) === "machine-label" ? "label" : unit}.
-                            Preserve the prescribed effort; stop short if technique or reserve would be lost.
-                          </p>}
+                          {rec.setTargets && (
+                            <p className="caption">
+                              Working-set targets:{" "}
+                              {rec.setTargets
+                                .map(
+                                  (t) =>
+                                    `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`,
+                                )
+                                .join(" / ")}{" "}
+                              {(e.convention || ex.convention) ===
+                              "machine-label"
+                                ? "label"
+                                : unit}
+                              . Preserve the prescribed effort; stop short if
+                              technique or reserve would be lost.
+                            </p>
+                          )}
                           <div className="actions wrap">
                             <Button
                               disabled={
@@ -502,7 +529,10 @@ export function SessionLogger({
                                     return !t.done && t.kind === "working"
                                       ? {
                                           ...t,
-                                          weight: row?.weight ?? rec.weight ?? t.weight,
+                                          weight:
+                                            row?.weight ??
+                                            rec.weight ??
+                                            t.weight,
                                           reps: row?.reps ?? rec.reps ?? t.reps,
                                         }
                                       : t;
@@ -588,6 +618,54 @@ export function SessionLogger({
                       history={history}
                       addOnly
                     />
+                  ) : sheet === "Equipment setup" ? (
+                    e.sets.some((t) => t.done && t.kind !== "warmup") ? (
+                      <p>
+                        Working sets have already been recorded. Keep their
+                        setup intact; select a different setup before working
+                        sets in your next session.
+                      </p>
+                    ) : (
+                      <EquipmentSetup
+                        key={e.id}
+                        entry={e}
+                        exercise={ex}
+                        unit={unit}
+                        onSave={(setup) => updateEntry({ ...e, setup })}
+                        onUseForProgram={
+                          program &&
+                          s.workoutId &&
+                          e.sourceTargetId &&
+                          program.workouts.some(
+                            (w) =>
+                              w.id === s.workoutId &&
+                              w.exercises.some(
+                                (t) =>
+                                  t.id === e.sourceTargetId &&
+                                  t.exerciseId === e.exerciseId,
+                              ),
+                          )
+                            ? () => {
+                                change((d) => {
+                                  const p = d.programs.find(
+                                    (p) => p.id === s.programId,
+                                  );
+                                  const t = p?.workouts
+                                    .find((w) => w.id === s.workoutId)
+                                    ?.exercises.find(
+                                      (t) =>
+                                        t.id === e.sourceTargetId &&
+                                        t.exerciseId === e.exerciseId,
+                                    );
+                                  if (t) t.setup = structuredClone(e.setup);
+                                  return d;
+                                });
+                                setSheet(null);
+                              }
+                            : undefined
+                        }
+                      />
+                    )
                   ) : (
                     <>
                       <p className="target-hint">
@@ -641,15 +719,34 @@ export function SessionLogger({
                           </Field>
                         </div>
                       )}
-                      {sheet === "Targets" && e.plannedWorkingSets !== e.sets.filter(t => t.kind === "working").length && (
-                        <div className="training-coaching">
-                          <p>Added or removed sets do not silently change the prescription. Confirm a deliberate dose change; skipped work should stay incomplete.</p>
-                          <Button onClick={() => updateEntry({ ...e,
-                            plannedWorkingSets: e.sets.filter(t => t.kind === "working").length })}>
-                            Confirm planned dose: {e.sets.filter(t => t.kind === "working").length} working sets
-                          </Button>
-                        </div>
-                      )}
+                      {sheet === "Targets" &&
+                        e.plannedWorkingSets !==
+                          e.sets.filter((t) => t.kind === "working").length && (
+                          <div className="training-coaching">
+                            <p>
+                              Added or removed sets do not silently change the
+                              prescription. Confirm a deliberate dose change;
+                              skipped work should stay incomplete.
+                            </p>
+                            <Button
+                              onClick={() =>
+                                updateEntry({
+                                  ...e,
+                                  plannedWorkingSets: e.sets.filter(
+                                    (t) => t.kind === "working",
+                                  ).length,
+                                })
+                              }
+                            >
+                              Confirm planned dose:{" "}
+                              {
+                                e.sets.filter((t) => t.kind === "working")
+                                  .length
+                              }{" "}
+                              working sets
+                            </Button>
+                          </div>
+                        )}
                       <p className="caption">
                         Warm-up sets do not count toward working volume.
                       </p>

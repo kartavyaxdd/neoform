@@ -402,6 +402,14 @@ const entryTarget = z
   })
   .strict()
   .refine((t) => t.max >= t.min, "Invalid rep range");
+export const equipmentSetupSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+  execution: z.string().trim().max(300),
+  // Canonical kg for standardized loads; raw labels otherwise. No inferred grid.
+  availableLoads: z.array(z.number().finite().min(0).max(2000)).max(100)
+    .refine(values => values.every((v, i) => i === 0 || v > values[i - 1]), "Loads must be unique and increasing"),
+}).strict();
+export type EquipmentSetup = z.infer<typeof equipmentSetupSchema>;
 const entrySchema = z
   .object({
     id,
@@ -414,6 +422,8 @@ const entrySchema = z
     superset: z.string().max(20).optional(),
     target: entryTarget.optional(),
     plannedWorkingSets: z.number().int().min(0).max(40).optional(),
+    sourceTargetId: id.optional(),
+    setup: equipmentSetupSchema.optional(),
     sets: z.array(setSchema).max(40),
   })
   .strict();
@@ -477,6 +487,7 @@ export const targetSchema = z
   .object({
     id,
     exerciseId: id,
+    setup: equipmentSetupSchema.optional(),
     ...techniqueFields,
     sets: z.number().int().min(1).max(10),
     min: z.number().int().min(1).max(100),
@@ -714,7 +725,7 @@ export function starterProgram(
   };
 }
 export type Experience = "New" | "Intermediate" | "Advanced";
-export const trainingPolicyVersion = "neoform-book-2026-10-v2";
+export const trainingPolicyVersion = "neoform-book-2026-10-v3";
 export function programPhase(p: Program): Phase {
   return (
     p.phase ?? (p.currentWeek === p.deloadWeek ? "deload" : "accumulation")
@@ -836,6 +847,8 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
   return {
     id: uid(),
     exerciseId: e.id,
+    ...(t ? { sourceTargetId: t.id } : {}),
+    ...(t?.setup ? { setup: structuredClone(t.setup) } : {}),
     notes: "",
     plannedWorkingSets: (t?.kind ?? "working") === "working"
       ? (t ? (deload ? Math.max(1, Math.ceil(t.sets / 2)) : t.sets) : 3) : 0,
@@ -1030,7 +1043,8 @@ export const canonicalLoad = (
 ) =>
   convention === "machine-label" ? value : convertWeight(value, unit, "kg");
 export function comparableKey(e: Entry, x: Exercise) {
-  const base = `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}`;
+  const base = `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}` +
+    (e.setup ? "|setup:" + JSON.stringify([e.setup.label, e.setup.execution]) : "");
   // Preserve old straight-set keys, but never merge cadence/group/advanced contexts.
   const technique = e.technique ?? (e.superset ? "superset" : "straight");
   // Instance IDs group raw bouts; only a semantic pair protocol belongs in
@@ -1045,6 +1059,7 @@ export function comparableKey(e: Entry, x: Exercise) {
 export function executionContext(e: Entry, set?: SetLog, phase?: Phase) {
   const method = e.technique ?? (e.superset ? "superset" : "straight");
   return [method, e.protocol, e.tempo ? `tempo ${e.tempo.eccentric}/${e.tempo.pause}/${e.tempo.concentric}s` : undefined,
+    e.setup ? `setup ${e.setup.label}${e.setup.execution ? ": " + e.setup.execution : ""}` : undefined,
     e.repGoal ? `goal ${e.repGoal} reps` : undefined, set?.bout ?? set?.kind,
     phase ?? "unrecorded phase"].filter(Boolean).join(" · ");
 }
@@ -1451,23 +1466,28 @@ export function recommend(
       evidence,
     );
   const weight = latestSets[0].weight;
+  const available = (options.entry ?? latestEntry).setup?.availableLoads ?? [];
+  if (available.length && !available.some(load => Math.abs(load - weight) < 0.000001))
+    return result("hold", "The baseline load is not in the selected available loads. Review equipment and establish a repeatable available load before progressing.", evidence);
   if (
     sets.every((s) => s.reps >= range.max) &&
     weight > 0 &&
     !["machine-label", "added-bodyweight"].includes(x.convention) &&
     sets.every((s) => Math.abs(s.weight - weight) < 0.01)
   ) {
-    const nextWeight =
-      Math.floor((weight + Math.min(2.5, weight * 0.025)) * 100) / 100;
-    if (nextWeight <= weight)
+    const cap = weight + Math.min(2.5, weight * 0.025);
+    const nextWeight = available.find(load => load > weight + 0.000001 && load <= cap + 0.000000001);
+    if (nextWeight === undefined)
       return result(
         "hold",
-        "No load increment fits the conservative cap at numeric resolution; repeat.",
+        available.length
+          ? "No selected available load fits the smaller of 2.5% or 2.5 kg. Keep the load and reserve; do not force an equipment jump."
+          : "Rep ceiling reached. Select available loads in Equipment setup before accepting a load increase; equipment availability is unknown.",
         evidence,
       );
     return result(
       "load",
-      "Both comparable exposures met the ceiling with reserve. Add at most 2.5% or 2.5 kg, whichever is smaller; round down to available plates or hold when equipment jumps are too coarse.",
+      "Both comparable exposures met the ceiling with reserve. Use the smallest selected available load within the smaller of 2.5% or 2.5 kg; preserve setup and intended reserve.",
       evidence,
       { weight: nextWeight, reps: range.min,
         setTargets: latestSets.map(() => ({ weight: nextWeight, reps: range.min })) },
