@@ -619,7 +619,7 @@ const rawState = z
       .max(1000),
   })
   .strict();
-export const stateSchema = rawState.superRefine((s, ctx) => {
+function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
   const all = [...catalog, ...s.customExercises];
   const ids = new Set(all.map((e) => e.id));
   for (const link of s.exerciseVideos || [])
@@ -664,6 +664,9 @@ export const stateSchema = rawState.superRefine((s, ctx) => {
       ref(e.exerciseId);
     }
   }
+}
+export const stateSchema = rawState.superRefine((s,ctx)=>{
+  stateReferences(s,ctx);
   if (new TextEncoder().encode(JSON.stringify(s)).length > MAX_STATE_BYTES)
     ctx.addIssue({
       code: "custom",
@@ -671,6 +674,10 @@ export const stateSchema = rawState.superRefine((s, ctx) => {
         "Account storage exceeds the 2 MB sync/backup budget. Export a backup, then remove older sessions before adding more.",
     });
 });
+// The legacy wire/backup remains bounded until its client is upgraded. The
+// normalized protocol validates a bounded header and individual history records.
+export const historyStateSchema = rawState.extend({sessions:z.array(sessionSchema).max(50000)}).superRefine(stateReferences);
+export const stateHeaderSchema = rawState.omit({sessions:true}).superRefine((header,ctx)=>stateReferences({...header,sessions:[]},ctx));
 export type State = z.infer<typeof rawState>;
 export const restRemaining = (timer: State["timer"], now = Date.now()) =>
   !timer
@@ -1709,7 +1716,7 @@ export function mergeStates(remote: State, local: State): State {
   const merge = <T extends { id: string }>(a: T[], b: T[]) => [
     ...new Map([...a, ...b].map((x) => [x.id, x])).values(),
   ];
-  return stateSchema.parse({
+  return historyStateSchema.parse({
     ...local,
     customExercises: merge(remote.customExercises, local.customExercises),
     ...(remote.exerciseVideos || local.exerciseVideos

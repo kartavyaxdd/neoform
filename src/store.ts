@@ -1,5 +1,11 @@
 ﻿import { useSyncExternalStore } from "react";
-import { emptyState, stateSchema, uid, type State } from "./domain";
+import {
+  emptyState,
+  stateSchema,
+  historyStateSchema,
+  uid,
+  type State,
+} from "./domain";
 import {
   acknowledge,
   receiveRemote,
@@ -7,9 +13,31 @@ import {
   type Outbox,
   type Remote,
 } from "./syncPolicy";
-
-type User = { id: string; email: string; accessMode?: "single-user-local"; kind?: never } |
-  { id: "public-workspace"; kind: "workspace"; accessMode: "public-workspace"; email?: never };
+import { editState } from "./stateEdit";
+import { OfflineVault, type JournalAck } from "./offlineVault";
+import { MutationQueue } from "./mutationQueue";
+import {
+  readHistory,
+  historyChanged,
+  prepareHistoryMutation,
+  writeHistoryMutation,
+  type HistoryMutation,
+} from "./historyTransport";
+type User =
+  | {
+      id: string;
+      email: string;
+      accessMode?: "single-user-local";
+      kind?: never;
+      storageFormat?: 2;
+    }
+  | {
+      id: "public-workspace";
+      kind: "workspace";
+      accessMode: "public-workspace";
+      email?: never;
+      storageFormat?: 2;
+    };
 type Snapshot = {
   user: User | null;
   accessMode?: "single-user-local" | "public-workspace";
@@ -36,6 +64,17 @@ let current: Snapshot = {
 const listeners = new Set<() => void>();
 const accountRequests = new Set<AbortController>();
 const tabId = uid();
+let vault: OfflineVault | null = null,
+  mutationQueue: MutationQueue | null = null;
+let storageBlocked = false;
+let resolving: object | null = null;
+let diskBoxes = new Map<string, Outbox>(),
+  diskAcks = new Map<string, number>();
+let diskWrites: Promise<boolean> = Promise.resolve(false),
+  durableGeneration = -1,
+  diskStale = false;
+let pendingSend: { mutation: HistoryMutation; sent: Outbox } | null = null;
+const modern = () => current.user?.storageFormat === 2;
 let tabConflict = false;
 let acknowledgedJournalConflict = false;
 let blockedJournals: Record<string, number> = {};
@@ -51,9 +90,11 @@ function publish(p: Partial<Snapshot>) {
 }
 function invalidate() {
   epoch++;
+  resolving = null;
   for (const controller of accountRequests) controller.abort();
   accountRequests.clear();
   activeSync = null;
+  pendingSend = null;
   clearTimeout(debounce);
 }
 function accountChanged() {
@@ -108,9 +149,16 @@ export async function request<T = unknown>(
   body?: unknown,
   options?: { signal?: AbortSignal; headers?: Record<string, string> },
 ): Promise<T> {
-  if (current.accessMode === "public-workspace" &&
-      (path.startsWith("/ai/") || ["/login", "/register", "/logout", "/password", "/account"].includes(path)))
-    throw new Error("Private accounts, credentials and AI are unavailable in the public workspace.");
+  if (
+    current.accessMode === "public-workspace" &&
+    (path.startsWith("/ai/") ||
+      ["/login", "/register", "/logout", "/password", "/account"].includes(
+        path,
+      ))
+  )
+    throw new Error(
+      "Private accounts, credentials and AI are unavailable in the public workspace.",
+    );
   const bound = !["/login", "/register", "/me", "/health"].includes(path),
     requestEpoch = epoch;
   if (bound && !observeAccount())
@@ -167,6 +215,46 @@ const pendingPrefix = (id: string) => "neoform:pending:" + id + ":";
 const journalAckKey = (journal: string, generation: number) =>
   `neoform:journal-ack:${journal}:${generation}`;
 function persist() {
+  if (modern() && vault && current.user && !accountBlocked) {
+    const user = current.user,
+      box = current.box,
+      at = epoch,
+      selectedVault = vault,
+      slot = box.dirty ? pendingPrefix(user.id) + tabId : "cache";
+    diskWrites = diskWrites
+      .catch(() => false)
+      .then(async () => {
+        try {
+          if (!(await selectedVault.save(user.id, slot, box))) return false;
+          if (epoch === at && current.user?.id === user.id) {
+            diskBoxes.set(slot, box);
+            durableGeneration = Math.max(durableGeneration, box.generation);
+            localStorage.setItem("neoform:v2-event", uid());
+            if (
+              current.box.generation === box.generation &&
+              current.box.dirty &&
+              current.status === "Saving on device"
+            )
+              publish({
+                status: navigator.onLine
+                  ? "Pending sync"
+                  : "Offline · saved on device",
+                error: "",
+              });
+          }
+          return true;
+        } catch {
+          if (epoch === at)
+            publish({
+              status: "Not saved · kept in memory",
+              error:
+                "Device storage could not save this draft. Keep this tab open, export a backup or retry sync.",
+            });
+          return false;
+        }
+      });
+    return false;
+  }
   if (!current.user || accountBlocked) return false;
   let durable = false;
   try {
@@ -185,8 +273,11 @@ function persist() {
   } catch {
     if (!durable && !current.box.dirty && current.box.base)
       publish({
-        status: navigator.onLine ? "Synced" : "Saved online · offline copy unavailable",
-        error: "Device storage is full. Changes are saved online; the offline copy could not be updated.",
+        status: navigator.onLine
+          ? "Synced"
+          : "Saved online · offline copy unavailable",
+        error:
+          "Device storage is full. Changes are saved online; the offline copy could not be updated.",
       });
     else if (!durable)
       publish({
@@ -208,19 +299,33 @@ function parseCache(serialized: string | null): Outbox | null {
       box.generation >= 0 &&
       typeof box.dirty === "boolean"
     ) {
-      box.data = stateSchema.parse(box.data);
-      if (box.incorporated &&
-          (typeof box.incorporated !== "object" || Array.isArray(box.incorporated) ||
-           Object.entries(box.incorporated).some(([k, generation]) =>
-             !k.startsWith("neoform:pending:") || !Number.isSafeInteger(generation) || Number(generation) < 0)))
+      box.data = historyStateSchema.parse(box.data);
+      if (
+        box.incorporated &&
+        (typeof box.incorporated !== "object" ||
+          Array.isArray(box.incorporated) ||
+          Object.entries(box.incorporated).some(
+            ([k, generation]) =>
+              !k.startsWith("neoform:pending:") ||
+              !Number.isSafeInteger(generation) ||
+              Number(generation) < 0,
+          ))
+      )
         box.incorporated = undefined;
-      if (box.acknowledgedJournals &&
-          (typeof box.acknowledgedJournals !== "object" || Array.isArray(box.acknowledgedJournals) ||
-           Object.entries(box.acknowledgedJournals).some(([k,g]) =>
-             !k.startsWith("neoform:pending:") || !Number.isSafeInteger(g) || Number(g) < 0)))
+      if (
+        box.acknowledgedJournals &&
+        (typeof box.acknowledgedJournals !== "object" ||
+          Array.isArray(box.acknowledgedJournals) ||
+          Object.entries(box.acknowledgedJournals).some(
+            ([k, g]) =>
+              !k.startsWith("neoform:pending:") ||
+              !Number.isSafeInteger(g) ||
+              Number(g) < 0,
+          ))
+      )
         box.acknowledgedJournals = undefined;
       if (box.base?.revision === box.revision) {
-        const parsed = stateSchema.safeParse(box.base.data);
+        const parsed = historyStateSchema.safeParse(box.base.data);
         box.base = parsed.success
           ? { data: parsed.data, revision: box.revision }
           : undefined;
@@ -240,18 +345,37 @@ function reconcileTabs(user: User, initial: Outbox | null): Outbox | null {
   tabConflict = false;
   acknowledgedJournalConflict = false;
   blockedJournals = {};
-  for (const k of Object.keys(localStorage)
+  for (const k of [
+    ...new Set([
+      ...Object.keys(localStorage),
+      ...(user.storageFormat === 2 ? [...diskBoxes.keys()] : []),
+    ]),
+  ]
     .filter((k) => k.startsWith(pendingPrefix(user.id)))
     .sort()) {
-    const pending = parseCache(localStorage.getItem(k));
+    const pending =
+      user.storageFormat === 2 && diskBoxes.has(k)
+        ? diskBoxes.get(k)!
+        : parseCache(localStorage.getItem(k));
     if (!pending?.dirty) continue;
-    const ackRevision = Number(localStorage.getItem(journalAckKey(k, pending.generation)));
-    if (ackRevision > 0 && Number.isSafeInteger(ackRevision) &&
-        (box?.acknowledgedJournals?.[k] ?? -1) < pending.generation) {
+    const ackRevision = Math.max(
+      Number(localStorage.getItem(journalAckKey(k, pending.generation))),
+      diskAcks.get(journalAckKey(k, pending.generation)) ?? 0,
+    );
+    if (
+      ackRevision > 0 &&
+      Number.isSafeInteger(ackRevision) &&
+      (box?.acknowledgedJournals?.[k] ?? -1) < pending.generation
+    ) {
       if (box && !box.dirty && box.revision >= ackRevision) {
-        box = { ...box,
+        box = {
+          ...box,
           incorporated: { ...box.incorporated, [k]: pending.generation },
-          acknowledgedJournals: { ...box.acknowledgedJournals, [k]: pending.generation } };
+          acknowledgedJournals: {
+            ...box.acknowledgedJournals,
+            [k]: pending.generation,
+          },
+        };
       } else {
         // A receipt alone cannot rebase dirty data. Fetch the actual remote
         // snapshot and ask for an explicit conflict choice before any PUT.
@@ -265,13 +389,36 @@ function reconcileTabs(user: User, initial: Outbox | null): Outbox | null {
     const incorporate = (value: Outbox): Outbox => ({
       ...value,
       incorporated: Object.fromEntries(
-        [...new Set([...Object.keys(value.incorporated ?? {}), ...Object.keys(pending.incorporated ?? {}), k])]
-          .map(key => [key, Math.max(value.incorporated?.[key] ?? -1,
-            pending.incorporated?.[key] ?? -1, key === k ? pending.generation : -1)]),
+        [
+          ...new Set([
+            ...Object.keys(value.incorporated ?? {}),
+            ...Object.keys(pending.incorporated ?? {}),
+            k,
+          ]),
+        ].map((key) => [
+          key,
+          Math.max(
+            value.incorporated?.[key] ?? -1,
+            pending.incorporated?.[key] ?? -1,
+            key === k ? pending.generation : -1,
+          ),
+        ]),
       ),
     });
     if (!box) {
       box = incorporate(pending);
+      continue;
+    }
+    // The in-memory branch already contains this tab's earlier generations.
+    // Its asynchronous disk journal may lag behind the next logger edit.
+    if (
+      user.storageFormat === 2 &&
+      initial === current.box &&
+      current.user?.id === user.id &&
+      k === pendingPrefix(user.id) + tabId &&
+      box.generation >= pending.generation
+    ) {
+      box = incorporate(box);
       continue;
     }
     if (JSON.stringify(box.data) === JSON.stringify(pending.data)) {
@@ -287,6 +434,7 @@ function reconcileTabs(user: User, initial: Outbox | null): Outbox | null {
     } catch {
       // Leave every original journal intact; never auto-select a competing edit.
       tabConflict = true;
+      blockedJournals[k] = pending.generation;
     }
   }
   return box;
@@ -298,15 +446,25 @@ function retireAcknowledgedJournals(sent: Outbox, revision: number) {
     try {
       // Immutable per-generation receipt: stale shared-cache writers cannot
       // erase a different tab's server acknowledgement or discard decision.
-      localStorage.setItem(journalAckKey(journal, generation), String(revision));
-      if (!current.user || journal !== pendingPrefix(current.user.id) + tabId) continue;
+      localStorage.setItem(
+        journalAckKey(journal, generation),
+        String(revision),
+      );
+      if (!current.user || journal !== pendingPrefix(current.user.id) + tabId)
+        continue;
       const pending = parseCache(localStorage.getItem(journal));
       if (pending?.generation === generation) localStorage.removeItem(journal);
-    } catch { /* Receipts remain in the cache; failure cannot erase newer work. */ }
+    } catch {
+      /* Receipts remain in the cache; failure cannot erase newer work. */
+    }
   }
 }
 function cached(user: User): Outbox | null {
-  return reconcileTabs(user, parseCache(localStorage.getItem(key(user.id))));
+  return reconcileTabs(
+    user,
+    (user.storageFormat === 2 ? diskBoxes.get("cache") : null) ||
+      parseCache(localStorage.getItem(key(user.id))),
+  );
 }
 function observeTabs() {
   if (!current.user || accountBlocked) return;
@@ -325,16 +483,28 @@ function observeTabs() {
 }
 export function exportPendingCopies() {
   if (!current.user) return [];
-  return Object.keys(localStorage)
-    .filter((k) => k.startsWith(pendingPrefix(current.user!.id)))
-    .map((k) => parseCache(localStorage.getItem(k)))
-    .filter((box): box is Outbox => !!box?.dirty);
+  return [
+    ...(current.box.dirty ? [current.box] : []),
+    ...[...new Set([...Object.keys(localStorage), ...diskBoxes.keys()])]
+      .filter((k) => k.startsWith(pendingPrefix(current.user!.id)))
+      .map((k) => diskBoxes.get(k) || parseCache(localStorage.getItem(k)))
+      .filter((box): box is Outbox => !!box?.dirty),
+  ];
 }
 export function change(fn: (data: State) => State) {
-  if (!observeAccount() || !current.user) return false;
+  if (resolving || storageBlocked || !observeAccount() || !current.user)
+    return false;
   observeTabs();
   if (tabConflict) return false;
-  const data = stateSchema.safeParse(fn(structuredClone(current.box.data)));
+  let data: ReturnType<typeof stateSchema.safeParse>;
+  try {
+    data = modern()
+      ? { success: true, data: editState(current.box.data, fn) }
+      : stateSchema.safeParse(fn(structuredClone(current.box.data)));
+  } catch (e) {
+    publish({ error: (e as Error).message });
+    return false;
+  }
   if (!data.success) {
     publish({ error: data.error.issues[0]?.message || "Invalid change" });
     return false;
@@ -346,7 +516,12 @@ export function change(fn: (data: State) => State) {
       dirty: true,
       generation: current.box.generation + 1,
     },
-    status: navigator.onLine ? "Pending sync" : "Offline · saved on device",
+    status:
+      modern() && vault
+        ? "Saving on device"
+        : navigator.onLine
+          ? "Pending sync"
+          : "Offline · saved on device",
     error: "",
   });
   const durable = persist();
@@ -363,6 +538,11 @@ export async function saveChange(fn: (data: State) => State) {
   if (change(fn)) return true;
   const attempted = current.box;
   if (attempted === before.box) return false;
+  if (modern() && vault) {
+    await diskWrites;
+    if (saveEpoch !== epoch) return false;
+    if (durableGeneration >= attempted.generation) return true;
+  }
   await sync();
   if (saveEpoch !== epoch) return false;
   if (
@@ -384,57 +564,313 @@ export async function saveChange(fn: (data: State) => State) {
 function parseRemote(value: Remote): Remote {
   if (!Number.isInteger(value.revision) || value.revision < 0)
     throw new Error("Invalid server revision.");
-  return { data: stateSchema.parse(value.data), revision: value.revision };
+  return {
+    data: (modern() ? historyStateSchema : stateSchema).parse(value.data),
+    revision: value.revision,
+  };
+}
+async function refreshDisk(user: User) {
+  if (!vault) return;
+  const at = epoch,
+    selectedVault = vault,
+    boxes = new Map<string, Outbox>();
+  for (const slot of await selectedVault.slots(user.id))
+    if (slot === "cache" || slot.startsWith(pendingPrefix(user.id))) {
+      const box = await selectedVault.load(user.id, slot);
+      if (box) boxes.set(slot, box);
+    }
+  const acks = await selectedVault.acknowledgements(user.id);
+  if (epoch !== at) return;
+  diskBoxes = boxes;
+  diskAcks = new Map(
+    acks.map((a) => [journalAckKey(a.journal, a.generation), a.revision]),
+  );
+  diskStale = false;
+}
+async function openDevice(user: User, at = epoch) {
+  if (user.storageFormat !== 2 || typeof indexedDB === "undefined") {
+    if (epoch === at) {
+      vault = null;
+      mutationQueue = null;
+      diskBoxes = new Map();
+      diskAcks = new Map();
+    }
+    return;
+  }
+  const openedVault = await OfflineVault.open(),
+    openedQueue = await MutationQueue.open();
+  if (epoch !== at) {
+    openedVault.close();
+    openedQueue.close();
+    return;
+  }
+  for (const k of Object.keys(localStorage).filter((k) =>
+    k.startsWith(pendingPrefix(user.id)),
+  )) {
+    const box = parseCache(localStorage.getItem(k));
+    if (box?.dirty) await openedVault.save(user.id, k, box);
+  }
+  const legacy = parseCache(localStorage.getItem(key(user.id)));
+  if (legacy)
+    await openedVault.save(
+      user.id,
+      legacy.dirty ? pendingPrefix(user.id) + "legacy-cache" : "cache",
+      legacy,
+    );
+  const boxes = new Map<string, Outbox>();
+  for (const slot of await openedVault.slots(user.id))
+    if (slot === "cache" || slot.startsWith(pendingPrefix(user.id))) {
+      const box = await openedVault.load(user.id, slot);
+      if (box) boxes.set(slot, box);
+    }
+  const acks = await openedVault.acknowledgements(user.id);
+  if (epoch !== at) {
+    openedVault.close();
+    openedQueue.close();
+    return;
+  }
+  vault = openedVault;
+  mutationQueue = openedQueue;
+  diskBoxes = boxes;
+  diskAcks = new Map(
+    acks.map((a) => [journalAckKey(a.journal, a.generation), a.revision]),
+  );
+  durableGeneration = -1;
+  diskStale = false;
+}
+function capturedApi(owner: string, at: number) {
+  return async <T>(
+    path: string,
+    method?: string,
+    body?: unknown,
+  ): Promise<T> => {
+    if (epoch !== at || current.user?.id !== owner || accountBlocked)
+      throw Object.assign(
+        Error(
+          "Account changed; prepared changes remain with their original account.",
+        ),
+        { status: 412 },
+      );
+    return request<T>(path, method, body);
+  };
+}
+const remoteData = () =>
+  modern() ? readHistory(request) : request<Remote>("/data");
+async function modernWrite(sent: Outbox) {
+  const user = current.user!,
+    owner = user.id,
+    at = epoch,
+    api = capturedApi(owner, at),
+    selectedVault = vault,
+    selectedQueue = mutationQueue;
+  const check = () => {
+    if (epoch !== at || current.user?.id !== owner)
+      throw Object.assign(Error("Account changed."), { status: 412 });
+  };
+  if (!pendingSend && selectedQueue && selectedVault) {
+    const queued = (await selectedQueue!.list(owner)).sort(
+      (a, b) => a.revision - b.revision,
+    );
+    for (const mutation of queued) {
+      const acknowledged = await selectedVault!.acknowledgedOperation(
+        owner,
+        mutation.id,
+      );
+      if (acknowledged) {
+        await selectedQueue!.acknowledge(
+          owner,
+          mutation.id,
+          acknowledged.revision,
+        );
+        await selectedVault!.remove(owner, "send:" + mutation.id);
+        continue;
+      }
+      const saved = await selectedVault!.load(owner, "send:" + mutation.id);
+      if (!saved)
+        throw Error(
+          "Pending cloud transaction needs recovery; export device copies before changing accounts.",
+        );
+      check();
+      pendingSend = { mutation, sent: saved };
+      break;
+    }
+  }
+  if (!pendingSend && !sent.dirty) return null;
+  if (!pendingSend) {
+    let base = sent.base;
+    if (!base) {
+      const remote = await readHistory(api);
+      if (remote.revision !== sent.revision)
+        throw Object.assign(
+          Error("Review cloud changes before replacing them."),
+          { status: 409 },
+        );
+      base = remote;
+    }
+    const mutation = prepareHistoryMutation(
+      base.data,
+      sent.data,
+      sent.revision,
+    );
+    if (selectedVault && selectedQueue) {
+      await selectedVault!.save(owner, "send:" + mutation.id, sent);
+      await selectedQueue!.stage(owner, mutation);
+    }
+    check();
+    pendingSend = { mutation, sent };
+  }
+  check();
+  const sending = pendingSend;
+  const result = await writeHistoryMutation(api, sending.mutation);
+  return { ...result, sent: sending.sent, id: sending.mutation.id };
 }
 export async function sync() {
+  if (resolving) return;
   // Do not turn a known authentication failure into a transient "Retry sync"
   // action during background polling. Only confirmed initialize/login clears
   // the error and resumes the preserved outbox.
-  if (current.status === "Sign in again to sync" && current.error) return;
-  if (observeAccount()) observeTabs();
-  const needsJournalReview = tabConflict && acknowledgedJournalConflict;
+  if (
+    storageBlocked ||
+    (current.status === "Sign in again to sync" && current.error)
+  )
+    return;
+  if (observeAccount() && !modern()) observeTabs();
+  const needsJournalReview =
+    tabConflict && (acknowledgedJournalConflict || modern());
   if (
     !observeAccount() ||
     activeSync ||
     !current.user ||
     current.conflict ||
-    (tabConflict && !needsJournalReview) ||
+    (tabConflict && !needsJournalReview && !modern()) ||
     !navigator.onLine
   )
     return;
   const token = {},
     syncEpoch = epoch;
   activeSync = token;
+  const syncOwner = current.user.id,
+    api = capturedApi(syncOwner, syncEpoch),
+    isModern = modern();
+  const fetchRemote = () =>
+    isModern ? readHistory(api) : request<Remote>("/data");
   try {
-    if (needsJournalReview) {
-      const remote = parseRemote(await request<Remote>("/data"));
+    if (modern() && vault) {
+      await diskWrites;
+      if (diskStale) await refreshDisk(current.user);
       if (epoch !== syncEpoch) return;
-      publish({ conflict: { ...remote, incorporated: { ...blockedJournals } },
+      observeTabs();
+    }
+    if (needsJournalReview || (modern() && tabConflict)) {
+      const remote = parseRemote(await fetchRemote());
+      if (epoch !== syncEpoch) return;
+      publish({
+        conflict: { ...remote, incorporated: { ...blockedJournals } },
         status: "Conflict · review changes",
-        error: "Another tab acknowledged or discarded earlier work. Review the actual cloud copy before reapplying local edits." });
+        error:
+          "Another tab acknowledged or discarded earlier work. Review the actual cloud copy before reapplying local edits.",
+      });
       return;
     }
-    if (current.box.dirty) {
-      const sent = current.box;
+    if (
+      current.box.dirty ||
+      (modern() &&
+        mutationQueue &&
+        (await mutationQueue.list(current.user.id)).length > 0)
+    ) {
+      let sent = current.box;
       publish({ status: "Syncing" });
-      const result = await request<{ revision: number }>("/data", "PUT", {
-        data: sent.data,
-        revision: sent.revision,
-      });
+      const result = modern()
+        ? await modernWrite(sent)
+        : await request<{ revision: number; sent?: Outbox; id?: string }>(
+            "/data",
+            "PUT",
+            { data: sent.data, revision: sent.revision },
+          );
+      if (epoch !== syncEpoch) return;
+      if (!result) {
+        publish({ status: "Synced", error: "" });
+        return;
+      }
+      if (result.sent) sent = result.sent;
       if (epoch !== syncEpoch) return;
       if (
         !Number.isInteger(result.revision) ||
         result.revision !== sent.revision + 1
       )
         throw new Error("Invalid server acknowledgement.");
-      const acknowledged = acknowledge(
-        current.box,
-        sent.generation,
-        result.revision,
-        sent.data,
-      );
-      acknowledged.acknowledgedJournals = { ...acknowledged.acknowledgedJournals,
-        ...sent.incorporated };
+      let acknowledged: Outbox = modern()
+        ? {
+            ...current.box,
+            revision: Math.max(current.box.revision, result.revision),
+            base:
+              current.box.revision > result.revision
+                ? current.box.base
+                : { data: sent.data, revision: result.revision },
+            dirty:
+              current.box.revision > result.revision
+                ? current.box.dirty
+                : current.box.data !== sent.data,
+          }
+        : acknowledge(current.box, sent.generation, result.revision, sent.data);
+      acknowledged.acknowledgedJournals = {
+        ...acknowledged.acknowledgedJournals,
+        ...sent.incorporated,
+      };
+      if (modern() && vault) {
+        const owner = current.user.id,
+          selectedVault = vault,
+          selectedQueue = mutationQueue;
+        const acks = Object.entries(sent.incorporated ?? {}).map(
+          ([journal, generation]) => ({
+            journal,
+            generation,
+            revision: result.revision,
+          }),
+        );
+        await selectedVault.save(
+          owner,
+          acknowledged.dirty ? pendingPrefix(owner) + tabId : "cache",
+          acknowledged,
+          acks,
+          result.id ? { id: result.id, revision: result.revision } : undefined,
+        );
+        if (epoch !== syncEpoch) return;
+        acks.forEach((a) =>
+          diskAcks.set(journalAckKey(a.journal, a.generation), a.revision),
+        );
+        if (result.id && mutationQueue) {
+          await selectedQueue!.acknowledge(owner, result.id, result.revision);
+          await selectedVault.remove(owner, "send:" + result.id);
+        }
+        if (epoch !== syncEpoch) return;
+        for (const a of acks)
+          if (diskBoxes.get(a.journal)?.generation === a.generation)
+            diskBoxes.delete(a.journal);
+        diskBoxes.set(
+          acknowledged.dirty ? pendingPrefix(owner) + tabId : "cache",
+          acknowledged,
+        );
+        pendingSend = null;
+      }
+      if (epoch !== syncEpoch) return;
+      if (modern())
+        acknowledged = {
+          ...current.box,
+          revision: Math.max(current.box.revision, result.revision),
+          base:
+            current.box.revision > result.revision
+              ? current.box.base
+              : { data: sent.data, revision: result.revision },
+          dirty:
+            current.box.revision > result.revision
+              ? current.box.dirty
+              : current.box.data !== sent.data,
+          acknowledgedJournals: {
+            ...current.box.acknowledgedJournals,
+            ...sent.incorporated,
+          },
+        };
       retireAcknowledgedJournals(sent, result.revision);
       publish({
         box: acknowledged,
@@ -447,7 +883,16 @@ export async function sync() {
       });
       persist();
     } else {
-      const remote = parseRemote(await request<Remote>("/data"));
+      if (
+        modern() &&
+        current.box.base &&
+        !(await historyChanged(api, current.box.revision))
+      ) {
+        if (epoch !== syncEpoch) return;
+        publish({ status: "Synced", error: "" });
+        return;
+      }
+      const remote = parseRemote(await fetchRemote());
       if (epoch !== syncEpoch) return;
       const next = receiveRemote(current.box, remote);
       publish(
@@ -467,11 +912,13 @@ export async function sync() {
     if (err.status === 412) accountChanged();
     else if (err.status === 409) {
       try {
-        publish({
-          conflict: parseRemote(err.data!),
-          status: "Conflict · review changes",
-        });
+        const conflict = parseRemote(
+          modern() ? await readHistory(api) : err.data!,
+        );
+        if (epoch !== syncEpoch) return;
+        publish({ conflict, status: "Conflict · review changes" });
       } catch {
+        if (epoch !== syncEpoch) return;
         publish({
           status: "Sync paused",
           error:
@@ -498,12 +945,23 @@ export async function sync() {
     }
   }
 }
-export function resolveConflict(choice: "remote" | "merge" | "local") {
-  if (!observeAccount()) return;
+export async function resolveConflict(choice: "remote" | "merge" | "local") {
+  if (resolving || !observeAccount()) return;
+  const before = current,
+    owner = current.user!.id,
+    at = epoch,
+    selectedVault = vault,
+    selectedQueue = mutationQueue;
+  const alive = () => epoch === at && current.user?.id === owner;
   const remote = current.conflict;
   if (!remote) return;
-  const incorporated = { ...current.box.incorporated, ...remote.incorporated,
-    [pendingPrefix(current.user!.id) + tabId]: current.box.generation };
+  const resolution = {};
+  resolving = resolution;
+  const incorporated = {
+    ...current.box.incorporated,
+    ...remote.incorporated,
+    [pendingPrefix(current.user!.id) + tabId]: current.box.generation,
+  };
   const resolvedJournals = { ...current.box, incorporated };
   let data = remote.data;
   try {
@@ -524,60 +982,152 @@ export function resolveConflict(choice: "remote" | "merge" | "local") {
         dirty: choice !== "remote",
         generation: current.box.generation + 1,
         incorporated,
-        acknowledgedJournals: choice === "remote"
-          ? { ...current.box.acknowledgedJournals, ...incorporated }
-          : { ...current.box.acknowledgedJournals, ...remote.incorporated },
+        acknowledgedJournals:
+          choice === "remote"
+            ? { ...current.box.acknowledgedJournals, ...incorporated }
+            : { ...current.box.acknowledgedJournals, ...remote.incorporated },
       },
-      conflict: null,
+      conflict: modern() ? remote : null,
       error: "",
       status: choice === "remote" ? "Synced" : "Pending sync",
     });
     persist();
-    if (choice === "remote") retireAcknowledgedJournals(resolvedJournals, remote.revision);
+    if (modern() && vault) {
+      if (!(await diskWrites))
+        throw Error(
+          "Could not preserve this conflict choice on device. Export pending copies and retry.",
+        );
+      if (!alive()) return;
+      for (const mutation of await selectedQueue!.list(owner)) {
+        if (!alive()) return;
+        await selectedQueue!.discard(owner, mutation.id, remote.revision);
+        await selectedVault!.remove(owner, "send:" + mutation.id);
+      }
+      if (!alive()) return;
+      pendingSend = null;
+      if (choice === "remote") {
+        const acks = Object.entries(incorporated).map(
+          ([journal, generation]) => ({
+            journal,
+            generation,
+            revision: remote.revision,
+          }),
+        );
+        await selectedVault!.save(owner, "cache", current.box, acks);
+        if (!alive()) return;
+        diskStale = true;
+      }
+      tabConflict = false;
+      acknowledgedJournalConflict = false;
+    }
+    if (choice === "remote")
+      retireAcknowledgedJournals(resolvedJournals, remote.revision);
+    publish({
+      conflict: null,
+      status: choice === "remote" ? "Synced" : "Pending sync",
+    });
+    if (resolving === resolution) resolving = null;
     void sync();
   } catch (e) {
-    publish({ error: (e as Error).message });
+    if (!alive()) return;
+    publish({
+      box: before.box,
+      conflict: before.conflict,
+      status: before.status,
+      error: (e as Error).message,
+    });
+  } finally {
+    if (resolving === resolution) resolving = null;
   }
 }
 export async function initialize(user?: User) {
   const explicitlySignedOut = !user && !!localStorage.getItem(signedOutKey);
   if (explicitlySignedOut && !navigator.onLine) {
-    publish({ user: null, box: freshBox(), ready: true, status: "Signed out", conflict: null });
+    publish({
+      user: null,
+      box: freshBox(),
+      ready: true,
+      status: "Signed out",
+      conflict: null,
+    });
     return;
   }
   invalidate();
   const initEpoch = epoch;
   accountBlocked = false;
+  storageBlocked = false;
   tabConflict = false;
   try {
     user = user || (await request<User>("/me"));
     if (epoch !== initEpoch) return;
     // Probe safe identity metadata even after an older authenticated-mode logout.
     // Never re-open an ordinary cookie account against an explicit sign-out.
-    if (explicitlySignedOut && user.accessMode !== "single-user-local" && user.accessMode !== "public-workspace")
+    if (
+      explicitlySignedOut &&
+      user.accessMode !== "single-user-local" &&
+      user.accessMode !== "public-workspace"
+    )
       throw Object.assign(new Error("Signed out"), { status: 401 });
-    if (!user?.id || (user.accessMode === "public-workspace"
-        ? user.id !== "public-workspace" || user.kind !== "workspace" || "email" in user
-        : !user.email)) throw new Error("Invalid account identity.");
+    if (
+      !user?.id ||
+      (user.accessMode === "public-workspace"
+        ? user.id !== "public-workspace" ||
+          user.kind !== "workspace" ||
+          "email" in user
+        : !user.email)
+    )
+      throw new Error("Invalid account identity.");
+    try {
+      await openDevice(user, initEpoch);
+    } catch {
+      if (epoch !== initEpoch) return;
+      vault = null;
+      mutationQueue = null;
+      storageBlocked = true;
+      localStorage.setItem(identityKey, JSON.stringify(user));
+      publish({
+        user,
+        accessMode: user.accessMode,
+        box: freshBox(),
+        ready: true,
+        status: "Device storage needs recovery",
+        error:
+          "Could not open existing device data. Keep other tabs and backups; retry opening the app before making changes.",
+        conflict: null,
+      });
+      return;
+    }
+    if (epoch !== initEpoch) return;
     const cache = cached(user);
     localStorage.removeItem(signedOutKey);
+    localStorage.setItem(identityKey, JSON.stringify(user));
     publish({
       user,
       accessMode: user.accessMode,
       box: cache || freshBox(),
-      ready: true,
+      ready: !(user.storageFormat === 2 && navigator.onLine),
       error: "",
       conflict: null,
     });
     persist();
     if (tabConflict) observeTabs();
     await sync();
+    if (epoch === initEpoch) publish({ ready: true });
   } catch (e) {
     if (epoch !== initEpoch) return;
-    const err = e as Error & { status?: number; data?: { accessMode?: "single-user-local" } };
+    const err = e as Error & {
+      status?: number;
+      data?: { accessMode?: "single-user-local" };
+    };
     if (err.data?.accessMode === "single-user-local") {
-      publish({ user: null, accessMode: "single-user-local", ready: true,
-        status: "Local setup required", error: err.message, conflict: null });
+      publish({
+        user: null,
+        accessMode: "single-user-local",
+        ready: true,
+        status: "Local setup required",
+        error: err.message,
+        conflict: null,
+      });
       return;
     }
     if (!err.status && !localStorage.getItem(signedOutKey)) {
@@ -585,9 +1135,14 @@ export async function initialize(user?: User) {
         const identity = JSON.parse(
           localStorage.getItem(identityKey) || "null",
         );
-        const validIdentity = identity?.accessMode === "public-workspace"
-          ? identity.id === "public-workspace" && identity.kind === "workspace" && !("email" in identity)
-          : identity?.id && identity?.email;
+        const validIdentity =
+          identity?.accessMode === "public-workspace"
+            ? identity.id === "public-workspace" &&
+              identity.kind === "workspace" &&
+              !("email" in identity)
+            : identity?.id && identity?.email;
+        if (validIdentity) await openDevice(identity, initEpoch);
+        if (epoch !== initEpoch) return;
         const cache = validIdentity && cached(identity);
         if (cache) {
           publish({
@@ -628,9 +1183,13 @@ export async function login(
 }
 export async function logout() {
   if (current.accessMode === "public-workspace")
-    throw new Error("Sign-out is unavailable in the public workspace. Close this tab instead.");
+    throw new Error(
+      "Sign-out is unavailable in the public workspace. Close this tab instead.",
+    );
   if (current.user?.accessMode === "single-user-local")
-    throw new Error("Sign-out is disabled in single-user mode. Close this tab instead.");
+    throw new Error(
+      "Sign-out is disabled in single-user mode. Close this tab instead.",
+    );
   if (current.box.dirty) {
     await sync();
     if (current.box.dirty)
@@ -651,7 +1210,7 @@ export async function logout() {
       throw new Error(
         "Sync or export your pending changes before signing out.",
       );
-    clearLocal();
+    await clearLocal(true);
     if (failed)
       publish({
         status: "Signed out on this device",
@@ -660,7 +1219,11 @@ export async function logout() {
       });
   }
 }
-export function clearLocal() {
+export function clearLocal(preservePending = false) {
+  const owner = current.user?.id,
+    selectedVault = vault,
+    selectedQueue = mutationQueue,
+    priorWrites = diskWrites;
   invalidate();
   accountBlocked = false;
   for (const k of Object.keys(localStorage))
@@ -674,6 +1237,13 @@ export function clearLocal() {
     error: "",
     conflict: null,
   });
+  return (async () => {
+    await priorWrites;
+    if (owner) {
+      await selectedVault?.clearOwner(owner, preservePending);
+      await selectedQueue?.clearOwner(owner);
+    }
+  })();
 }
 window.addEventListener("storage", (event) => {
   const e = event as StorageEvent;
@@ -683,17 +1253,34 @@ window.addEventListener("storage", (event) => {
     else accountChanged();
   } else if (
     current.user &&
-    (e.key === key(current.user.id) ||
+    (e.key === "neoform:v2-event" ||
+      e.key === key(current.user.id) ||
       e.key?.startsWith(pendingPrefix(current.user.id)))
   ) {
-    if (observeAccount()) observeTabs();
+    if (observeAccount()) {
+      if (modern()) {
+        diskStale = true;
+        void sync();
+      } else observeTabs();
+    }
   }
 });
 window.addEventListener("online", () => void sync());
 window.addEventListener("offline", () => {
   if (!accountBlocked && current.user)
-    publish({ status: "Offline · saved on device" });
+    publish({
+      status:
+        modern() &&
+        vault &&
+        current.box.dirty &&
+        durableGeneration < current.box.generation
+          ? "Saving on device"
+          : "Offline · saved on device",
+    });
 });
 window.addEventListener("focus", () => void sync());
-setInterval(() => void sync(), 15000);
+setInterval(() => {
+  if (typeof document === "undefined" || document.visibilityState !== "hidden")
+    void sync();
+}, 15000);
 void initialize();

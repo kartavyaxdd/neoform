@@ -1,3 +1,4 @@
+import {readData,writeData} from "./storage-client";
 import { test, expect, type Page } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
 import * as D from "../../src/domain";
@@ -13,11 +14,11 @@ for (const [width, unit] of [
     await page.setViewportSize({ width, height: 844 });
     await fixture(page);
     if (unit === "lb") {
-      const remote = await (await page.request.get("/api/data")).json();
+      const remote = await (await readData(page)).json();
       remote.data.settings.unit = unit;
       expect(
         (
-          await page.request.put("/api/data", {
+          await writeData(page, {
             headers: { Origin: new URL(page.url()).origin },
             data: remote,
           })
@@ -56,7 +57,7 @@ for (const [width, unit] of [
       .click();
     await expect(page.getByRole("status")).toContainText("Session setup saved");
     await expect(page.locator(".sync-status")).toHaveText("Synced");
-    let state = (await (await page.request.get("/api/data")).json()).data;
+    let state = (await (await readData(page)).json()).data;
     expect(state.programs[0].workouts[0].exercises[0].setup).toBeUndefined();
     expect(state.draft.exercises[0].setup.label).toBe("QA rack A");
     expect(state.draft.exercises[0].setup.availableLoads[1]).toBeCloseTo(
@@ -82,17 +83,17 @@ for (const [width, unit] of [
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     await page.reload();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
-    state = (await (await page.request.get("/api/data")).json()).data;
+    state = (await (await readData(page)).json()).data;
     expect(state.programs[0].workouts[0].exercises[0].setup).toEqual(
       state.draft.exercises[0].setup,
     );
     const savedLoads = state.draft.exercises[0].setup.availableLoads;
     // Switching display units and editing only notes must never round canonical inventory.
-    const remote = await (await page.request.get("/api/data")).json();
+    const remote = await (await readData(page)).json();
     remote.data.settings.unit = unit === "kg" ? "lb" : "kg";
     expect(
       (
-        await page.request.put("/api/data", {
+        await writeData(page, {
           headers: { Origin: new URL(page.url()).origin },
           data: remote,
         })
@@ -107,7 +108,7 @@ for (const [width, unit] of [
       .getByRole("button", { name: "Save session setup", exact: true })
       .click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
-    state = (await (await page.request.get("/api/data")).json()).data;
+    state = (await (await readData(page)).json()).data;
     expect(state.draft.exercises[0].setup.availableLoads).toEqual(savedLoads);
     await page
       .getByRole("button", { name: "Clear session setup", exact: true })
@@ -119,7 +120,7 @@ for (const [width, unit] of [
       })
       .click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
-    state = (await (await page.request.get("/api/data")).json()).data;
+    state = (await (await readData(page)).json()).data;
     expect(state.draft.exercises[0].setup).toBeUndefined();
     expect(state.programs[0].workouts[0].exercises[0].setup).toBeUndefined();
     await page
@@ -155,7 +156,7 @@ test("changed dose and reported effort require explicit confirmation and survive
     .click();
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  let data = (await (await page.request.get("/api/data")).json()).data;
+  let data = (await (await readData(page)).json()).data;
   expect(data.draft.exercises[0].plannedWorkingSets).toBe(3);
   expect(data.draft.exercises[0].sets).toHaveLength(2);
   await page.getByRole("button", { name: "Targets", exact: true }).click();
@@ -187,7 +188,7 @@ test("changed dose and reported effort require explicit confirmation and survive
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  data = (await (await page.request.get("/api/data")).json()).data;
+  data = (await (await readData(page)).json()).data;
   const entry = data.sessions.at(-1).exercises[0];
   expect(entry.plannedWorkingSets).toBe(2);
   expect(entry.sets.every((s: D.SetLog) => s.effortReported === true)).toBe(
@@ -207,7 +208,7 @@ test("replacing a program exercise clears its equipment setup without changing h
   page,
 }) => {
   await fixture(page);
-  const remote = await (await page.request.get("/api/data")).json();
+  const remote = await (await readData(page)).json();
   const setup = {
     label: "QA squat rack",
     execution: "Comfortable depth",
@@ -223,7 +224,7 @@ test("replacing a program exercise clears its equipment setup without changing h
   const preserved = structuredClone(remote.data.sessions);
   expect(
     (
-      await page.request.put("/api/data", {
+      await writeData(page, {
         headers: { Origin: new URL(page.url()).origin },
         data: remote,
       })
@@ -237,7 +238,7 @@ test("replacing a program exercise clears its equipment setup without changing h
     .selectOption("bench");
   await dialog.getByRole("button", { name: "Save mesocycle" }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  const state = (await (await page.request.get("/api/data")).json()).data;
+  const state = (await (await readData(page)).json()).data;
   expect(state.programs[0].workouts[0].exercises[0].exerciseId).toBe("bench");
   expect(state.programs[0].workouts[0].exercises[0].setup).toBeUndefined();
   expect(state.sessions).toEqual(preserved);
@@ -255,7 +256,7 @@ test("moving an exercise stays in preview until explicit save", async ({
   await dialog.getByRole("button", { name: "Save mesocycle" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  const state = (await (await page.request.get("/api/data")).json()).data;
+  const state = (await (await readData(page)).json()).data;
   expect(state.programs[0].workouts[0].exercises[0].exerciseId).toBe("bench");
 });
 
@@ -264,7 +265,7 @@ test("reported history produces per-row targets and completion alone leaves effo
 }) => {
   await page.setViewportSize({ width: 360, height: 844 });
   await fixture(page);
-  const remote = await (await page.request.get("/api/data")).json();
+  const remote = await (await readData(page)).json();
   const squat = D.catalog.find((x) => x.id === "squat")!;
   remote.data.sessions = [3, 1].map((days) => {
     const entry = D.createEntry(squat, D.target(squat.id));
@@ -287,7 +288,7 @@ test("reported history produces per-row targets and completion alone leaves effo
   });
   expect(
     (
-      await page.request.put("/api/data", {
+      await writeData(page, {
         headers: { Origin: new URL(page.url()).origin },
         data: remote,
       })
@@ -324,19 +325,19 @@ test("reported history produces per-row targets and completion alone leaves effo
     .click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   const saved = (
-    await (await page.request.get("/api/data")).json()
+    await (await readData(page)).json()
   ).data.sessions.at(-1);
   expect(saved.exercises[0].sets[0].effortReported).toBe(false);
   expect(saved.exercises[0].plannedWorkingSets).toBe(3);
 });
 test("editing a program preserves active identity", async ({ page }) => {
   await fixture(page);
-  const remote = await (await page.request.get("/api/data")).json();
+  const remote = await (await readData(page)).json();
   remote.data.programs.push({
     ...D.starterProgram("minimal"),
     name: "Other synthetic program",
   });
-  const put = await page.request.put("/api/data", {
+  const put = await writeData(page, {
     headers: { Origin: new URL(page.url()).origin },
     data: remote,
   });
@@ -351,12 +352,12 @@ test("editing a program preserves active identity", async ({ page }) => {
 });
 test("finishing workout B recommends workout C", async ({ page }) => {
   await fixture(page);
-  const remote = await (await page.request.get("/api/data")).json();
+  const remote = await (await readData(page)).json();
   const program = remote.data.programs[0],
     s = D.startSession("Full body B", [D.createEntry(D.catalog[0])], program);
   s.exercises[0].sets[0].done = true;
   remote.data.sessions = [D.completeSession(s)];
-  const put = await page.request.put("/api/data", {
+  const put = await writeData(page, {
     headers: { Origin: new URL(page.url()).origin },
     data: remote,
   });
@@ -374,8 +375,8 @@ test("acknowledged offline work never replays over a newer edit", async ({
   page,
 }) => {
   await fixture(page);
-  await page.route("**/api/data", async (route) =>
-    route.request().method() === "PUT" ? route.abort() : route.continue(),
+  await page.route("**/api/storage/**", async (route) =>
+    ["POST","PUT"].includes(route.request().method()) ? route.abort() : route.continue(),
   );
   await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -383,15 +384,13 @@ test("acknowledged offline work never replays over a newer edit", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          Object.keys(localStorage).filter((k) =>
-            k.startsWith("neoform:pending:"),
-          ).length,
+          (document.querySelector(".sync-status")?.textContent?.includes("saved on device") || document.querySelector(".sync-status")?.textContent?.includes("sync paused")) ? 1 : 0,
       ),
     )
     .toBeGreaterThan(0);
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.unroute("**/api/data");
+  await page.unroute("**/api/storage/**");
   await page.locator(".sync-status").click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   // Old tab journals remain durable; receipts suppress replay without racing a live writer.
@@ -399,6 +398,6 @@ test("acknowledged offline work never replays over a newer edit", async ({
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.locator(".sync-status").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  const remote = await (await page.request.get("/api/data")).json();
+  const remote = await (await readData(page)).json();
   expect(remote.data.settings.theme).toBe("light");
 });

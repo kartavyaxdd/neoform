@@ -1,3 +1,4 @@
+import {readData} from "./storage-client";
 import { test, expect, type Page } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import type { State } from "../../src/domain";
@@ -5,10 +6,7 @@ const output=process.env.NEOFORM_QA_OUTPUT!;
 const synced = (page: Page) =>
   expect(page.locator(".sync-status")).toHaveText("Synced");
 async function data(page: Page): Promise<State> {
-  return page.evaluate(
-    async () =>
-      ((await (await fetch("/api/data")).json()) as { data: State }).data,
-  );
+  return (await (await readData(page)).json()).data;
 }
 async function edit(page: Page) {
   const options = page.locator(".program-options").first();

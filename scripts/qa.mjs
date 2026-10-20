@@ -14,10 +14,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const args = process.argv.slice(2);
 if (
-  args.some((a) => !["--api-only", "--browser-only"].includes(a)) ||
+  args.some((a) => !["--api-only", "--browser-only", "--public-only"].includes(a)) ||
   args.length > 1
 )
-  throw Error("Expected no arguments, --api-only or --browser-only.");
+  throw Error("Expected no arguments, --api-only, --browser-only or --public-only.");
 const root = process.cwd(),
   runId = randomUUID(),
   qaRoot = path.resolve(root, ".qa-state");
@@ -137,6 +137,7 @@ try {
     config = path.join(runDir, "wrangler.json");
   const configuration = {
     name: db,
+    ...(args.includes("--public-only")?{vars:{PUBLIC_WORKSPACE:"enabled"}}:{}),
     compatibility_date: "2026-10-01",
     main: path.join(root, "worker/index.ts"),
     alias: { "./ai-local": path.join(root, "worker/ai-disabled.ts") },
@@ -239,16 +240,19 @@ try {
     await access(process.env.NEOFORM_QA_BROWSER);
     env.NEOFORM_QA_BROWSER = process.env.NEOFORM_QA_BROWSER;
   }
+  env.NEOFORM_QA_MODE=args.includes("--public-only")?"public":"private";
   if (!args.includes("--browser-only"))
     await finish(
       launch([
         path.join(root, "node_modules/vitest/vitest.mjs"),
         "run",
         "--maxWorkers=1",
+        ...(args.includes("--public-only")?["tests/public-storage-api.test.ts"]:[
         "tests/api.test.ts",
         "tests/training-api.test.ts",
         "tests/release-api-identity.test.ts",
         "tests/v2-api.test.ts",
+        "tests/storage-api.test.ts",]),
       ]),
     );
   if (!args.includes("--api-only"))
@@ -258,7 +262,12 @@ try {
 } finally {
   await stopChildren();
   await unlink(path.join(runDir, "run.json")).catch(() => {});
-  if (ownedPort && (await listening(ownedPort)))
+  // taskkill can return before Windows finishes closing the child's sockets.
+  // Wait for closure without ever terminating a process discovered by port.
+  const closeDeadline = Date.now() + 5000;
+  while (ownedPort && await listening(ownedPort) && Date.now() < closeDeadline)
+    await delay(100);
+  if (ownedPort && await listening(ownedPort))
     throw Error(
       "Owned QA listener still responds after cleanup; release gate failed.",
     );

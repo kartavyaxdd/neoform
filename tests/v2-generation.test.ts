@@ -4,7 +4,7 @@ import {
   validateGenerated,
   saveGenerated,
 } from "../src/generation";
-import { emptyState, starterProgram } from "../src/domain";
+import { emptyState, starterProgram,startSession,MAX_BACKUP,historyStateSchema } from "../src/domain";
 const input = {
   goal: "Build muscle",
   experience: "New",
@@ -78,3 +78,5 @@ describe("bounded genuine generation contract", () => {
     expect(activated.draft).toEqual(s.draft);
   });
 });
+
+it("saves a generated program without truncating large normalized history",()=>{const state=emptyState();state.sessions=Array.from({length:1300},(_,i)=>({...startSession(String(i),[]),notes:"x".repeat(1900)}));expect(new TextEncoder().encode(JSON.stringify(state)).length).toBeGreaterThan(MAX_BACKUP);const next=saveGenerated(state,output,true);expect(next.sessions).toEqual(state.sessions);expect(next.programs).toHaveLength(1);expect(historyStateSchema.safeParse(next).success).toBe(true);});

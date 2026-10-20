@@ -42,9 +42,11 @@ import {
   X,
 } from "lucide-react";
 import * as D from "./domain";
+import {exportHistoryBackup,importHistoryBackup} from "./historyBackup";
 import {TrainingExposure} from "./TrainingExposure";
 import {
   change,
+  saveChange,
   clearLocal,
   initialize,
   login,
@@ -496,9 +498,8 @@ export default function App() {
           exercises={exercises}
           sessions={s.sessions}
           experience={s.profile?.experience}
-          save={(p) => {
-            if (
-              change((s) => ({
+          save={async (p) => {
+            if (await saveChange((s) => ({
                 ...s,
                 programs: s.programs.some(x => x.id === p.id)
                   ? s.programs.map(x => x.id === p.id ? p : x)
@@ -638,9 +639,8 @@ export default function App() {
                   session={sess}
                   exercises={exercises}
                   unit={s.settings.unit}
-                  save={(edited) => {
-                    if (
-                      change((s) => ({
+                  save={async (edited) => {
+                    if (await saveChange((s) => ({
                         ...s,
                         sessions: s.sessions.map((x) =>
                           x.id === edited.id ? edited : x,
@@ -686,7 +686,7 @@ export default function App() {
         <FinishSessionFeedback
           draft={draft}
           exercises={exercises}
-          finish={(feedback, muscleFeedback, confirmEffort) => {
+          finish={async (feedback, muscleFeedback, confirmEffort) => {
             const logged = D.completeSession({
               ...draft,
               feedback,
@@ -698,8 +698,7 @@ export default function App() {
                 Math.max(0, (Date.now() - draft.startedAt) / 1000),
               ),
             });
-            if (
-              change((s) => ({
+            if (await saveChange((s) => ({
                 ...s,
                 sessions: [...s.sessions, logged],
                 draft: null,
@@ -909,10 +908,10 @@ export default function App() {
               </p>
               <div className="actions wrap">
                 <Button
-                  onClick={() =>
+                  onClick={async () =>
                     download(
-                      "neoform-local.json",
-                      JSON.stringify({ version: 1, data: s }),
+                      "neoform-local.jsonl",
+                      await exportHistoryBackup(s),
                       "application/json",
                     )
                   }
@@ -920,13 +919,10 @@ export default function App() {
                   Export this device
                 </Button>
                 <Button
-                  onClick={() =>
+                  onClick={async () =>
                     download(
-                      "neoform-cloud.json",
-                      JSON.stringify({
-                        version: 1,
-                        data: store.conflict!.data,
-                      }),
+                      "neoform-cloud.jsonl",
+                      await exportHistoryBackup(store.conflict!.data),
                       "application/json",
                     )
                   }
@@ -1326,7 +1322,7 @@ export default function App() {
                       session={D.startSession("Past workout", [])}
                       exercises={exercises}
                       unit={s.settings.unit}
-                      save={(logged) => {
+                      save={async (logged) => {
                         if (
                           !logged.exercises.some((e) =>
                             e.sets.some((t) => t.done),
@@ -1335,8 +1331,7 @@ export default function App() {
                           setNotice("Add at least one completed set.");
                           return;
                         }
-                        if (
-                          change((s) => ({
+                        if (await saveChange((s) => ({
                             ...s,
                             sessions: [
                               ...s.sessions,
@@ -1368,9 +1363,8 @@ export default function App() {
                           <ExerciseEditor
                             exercise={D.catalog[0]}
                             isNew
-                            save={(ex) => {
-                              if (
-                                change((s) => ({
+                            save={async (ex) => {
+                              if (await saveChange((s) => ({
                                   ...s,
                                   customExercises: [...s.customExercises, ex],
                                 }))
@@ -1430,9 +1424,8 @@ export default function App() {
                                   <ExerciseEditor
                                     exercise={ex}
                                     isNew={false}
-                                    save={(edited) => {
-                                      if (
-                                        change((s) => ({
+                                    save={async (edited) => {
+                                      if (await saveChange((s) => ({
                                           ...s,
                                           customExercises:
                                             s.customExercises.map((e) =>
@@ -2997,8 +2990,8 @@ function Chart({
     </div>
   );
 }
-function download(name: string, body: string, type: string) {
-  const blob = new Blob([body], { type }),
+function download(name: string, body: string | Blob, type: string) {
+  const blob = body instanceof Blob ? body : new Blob([body], { type }),
     url = URL.createObjectURL(blob),
     a = document.createElement("a");
   a.href = url;
@@ -3137,10 +3130,10 @@ function Preferences({
             </p>
             <div className="actions wrap">
               <Button
-                onClick={() =>
+                onClick={async () =>
                   download(
-                    `neoform-${D.today()}.json`,
-                    JSON.stringify({ version: 1, data: s }),
+                    `neoform-${D.today()}.jsonl`,
+                    await exportHistoryBackup(s),
                     "application/json",
                   )
                 }
@@ -3160,11 +3153,11 @@ function Preferences({
                 <Download size={18} />
                 Export session CSV
               </Button>
-              <Button onClick={() => {
-                exportPendingCopies().forEach((box, i) => download(
-                  `neoform-pending-${i + 1}-${D.today()}.json`,
-                  JSON.stringify({ version: 1, data: box.data }), "application/json",
-                ));
+              <Button onClick={async () => {
+                await Promise.all(exportPendingCopies().map(async (box, i) => download(
+                  `neoform-pending-${i + 1}-${D.today()}.jsonl`,
+                  await exportHistoryBackup(box.data), "application/x-ndjson",
+                )));
               }}>Export pending tab copies</Button>
               <Button onClick={() => open({ title: "Import from Hevy", content: <HevyImport /> })}>
                 Import from Hevy
@@ -3174,22 +3167,20 @@ function Preferences({
               Import JSON backup
               <input
                 type="file"
-                accept=".json,application/json"
+                accept=".json,.jsonl,application/json,application/x-ndjson"
                 aria-label="Import JSON backup"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   e.target.value = "";
                   if (!file) return;
                   try {
-                    if (file.size > D.MAX_BACKUP)
-                      throw new Error("Backup exceeds 2 MB.");
-                    const incoming = D.importBackup(await file.text());
+                    const incoming = await importHistoryBackup(file);
                     open({
                       title: "Review your backup",
                       content: (
                         <>
                           <p>
-                            Validated version 1 backup:{" "}
+                            Validated backup:{" "}
                             <b>
                               {incoming.sessions.length} sessions,{" "}
                               {incoming.programs.length} programs,{" "}
@@ -3207,8 +3198,8 @@ function Preferences({
                             <Button onClick={close}>Cancel</Button>
                             <Button
                               variant="primary"
-                              onClick={() => {
-                                if (change((s) => D.mergeStates(s, incoming))) {
+                              onClick={async () => {
+                                if (await saveChange((s) => D.mergeStates(s, incoming))) {
                                   close();
                                   setNotice("Backup merged.");
                                 }
@@ -3218,8 +3209,8 @@ function Preferences({
                             </Button>
                             <Button
                               variant="danger"
-                              onClick={() => {
-                                if (change(() => incoming)) {
+                              onClick={async () => {
+                                if (await saveChange(() => incoming)) {
                                   close();
                                   setNotice(
                                     "Account data replaced from backup.",
@@ -3240,7 +3231,7 @@ function Preferences({
               />
             </label>
             <p className="caption">
-              Version 1 JSON only, maximum 2 MB. Files are unencrypted; store
+              Checksummed version 2 backups support large histories. Version 1 imports remain supported. Files are unencrypted; store
               them privately. CSV contains completed set rows with canonical kg
               or raw machine labels, equipment and convention.
             </p>
@@ -3510,8 +3501,8 @@ function DeleteAccount({ close }: { close: () => void }) {
         setBusy(true);
         try {
           await request("/account", "DELETE", { password });
+          await clearLocal();
           close();
-          clearLocal();
         } catch (e) {
           setError((e as Error).message);
         } finally {

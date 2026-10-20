@@ -9,7 +9,7 @@ function publicDb() {
     queries.push(sql);
     if (/users|sessions|account_data|account_ai_keys|rate_limits/.test(sql)) throw new Error('Private SQL forbidden');
     return {bind(...args:unknown[]) {return {
-      async first() {return row;},
+      async first() {return sql.includes('FROM storage_heads') ? null : row;},
       async run() {
         if(sql.startsWith('INSERT') && !row) {row={revision:0,body:args[0] as string};return {meta:{changes:1}};}
         if(sql.startsWith('UPDATE') && row && row.revision===args[2]) {row={revision:row.revision+1,body:args[0] as string};return {meta:{changes:1}};}
@@ -27,7 +27,7 @@ it('public persistence initializes its separate singleton and retains revision c
  expect(await (await put()).json()).toEqual({revision:1});
  expect(await (await worker.fetch(req('/api/data'),env)).json()).toEqual({revision:1,data});
  const stale=await put();expect(stale.status).toBe(409);expect(await stale.json()).toMatchObject({revision:1,data});
- expect(queries.every(sql=>sql.includes('public_workspace'))).toBe(true);
+ expect(queries.every(sql=>sql.includes('public_workspace') || (sql.includes('storage_heads') && !sql.includes('private_user')))).toBe(true);
 });
 it.each([
  ['missing Origin',{},JSON.stringify({revision:0,data:emptyState()}),403],
@@ -58,7 +58,7 @@ it('explicit public opt-in returns a workspace, not a private user or session, w
   const {env, queries} = fixture();
   const response = await worker.fetch(req(),env);
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({id:'public-workspace', kind:'workspace', accessMode:'public-workspace'});
+  expect(await response.json()).toEqual({id:'public-workspace', kind:'workspace', storageFormat:2, accessMode:'public-workspace'});
   expect(response.headers.get('set-cookie')).toBeNull();
   expect(response.headers.get('cache-control')).toBe('no-store');
   expect(queries).toEqual([]);

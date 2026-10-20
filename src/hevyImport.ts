@@ -423,14 +423,7 @@ export function mergeHevyImport(
     added++;
   }
   const next = { ...state, sessions, customExercises };
-  // Check the exact merge before Zod's name normalization. This includes all
-  // existing program/history/draft data; MAX_STATE_BYTES reserves 256 bytes
-  // for sync/backup envelopes beneath the 2 MB transport/D1 row ceiling.
-  if (new TextEncoder().encode(JSON.stringify(next)).length > D.MAX_STATE_BYTES)
-    throw Error(
-      "Merged account exceeds the 2 MB sync/backup budget; nothing merged. Export a backup and reduce the import or stored history.",
-    );
-  const valid = D.stateSchema.safeParse(next);
+  const valid = D.historyStateSchema.safeParse(next);
   if (!valid.success)
     throw Error(
       "Import exceeds account/schema limits; nothing merged. " +

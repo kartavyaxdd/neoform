@@ -318,7 +318,7 @@ export function saveGenerated(
   activate: boolean,
 ): D.State {
   const program = toProgram(generatedSchema.parse(p));
-  return D.stateSchema.parse({
+  return D.historyStateSchema.parse({
     ...s,
     programs: activate ? [program, ...s.programs] : [...s.programs, program],
   });

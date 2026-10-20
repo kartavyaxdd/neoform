@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import * as D from "./domain";
 import { Button, Field } from "./ui";
-import { change, useStore } from "./store";
+import { saveChange, useStore } from "./store";
 import {
   MAX_HEVY_BYTES,
   parseHevyCsv,
@@ -330,10 +330,10 @@ export function HevyImport() {
           <Button
             variant="primary"
             disabled={!ack || !candidate || busy}
-            onClick={() => {
+            onClick={async () => {
               try {
                 let saved: ReturnType<typeof mergeHevyImport> | undefined;
-                const ok = change((s) => {
+                const ok = await saveChange((s) => {
                   saved = mergeHevyImport(
                     s,
                     preview,

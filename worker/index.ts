@@ -2,6 +2,7 @@ import { z } from "zod";
 import { emptyState, stateSchema, MAX_BACKUP } from "../src/domain";
 import { geminiRoute, type GeminiEnv } from "./geminiRoutes";
 import { GeminiFault } from "./gemini";
+import { HistoryStorage, HistoryFault } from "./historyStorage";
 interface Env extends GeminiEnv {
   ASSETS: Fetcher;
   PUBLIC_WORKSPACE?: string;
@@ -175,7 +176,7 @@ async function issueSession(
   ]);
   if (!results[2].meta.changes)
     throw new Fault(401, "Credentials changed. Please sign in again.");
-  return json({ id: user.id, email: user.email }, status, {
+  return json({ id: user.id, email: user.email, storageFormat:2 }, status, {
     "Set-Cookie": cookie(req, token),
   });
 }
@@ -241,13 +242,21 @@ async function route(req: Request, env: Env) {
     if (expected !== null && expected !== "public-workspace")
       throw new Fault(412, "Workspace changed. Private account changes cannot sync to the public workspace.");
     if (path === "/api/me" && method === "GET")
-      return json({ id: "public-workspace", kind: "workspace", accessMode: "public-workspace" });
+      return json({ id: "public-workspace", kind: "workspace", storageFormat: 2, accessMode: "public-workspace" });
+    const storage = new HistoryStorage(env.DB, null);
+    if (path.startsWith("/api/storage/")) return storage.route(req, body);
+    if (path === "/api/data" && method === "GET" && await storage.upgraded())
+      throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
     if (path === "/api/data" && method === "GET") return json(await publicSnapshot(env));
     if (path === "/api/data" && method === "PUT") {
       const input = validate(z.object({ revision: z.number().int().min(0), data: stateSchema }).strict(), await body(req));
+      if (await storage.upgraded())
+        throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
       await publicSnapshot(env);
-      const result = await env.DB.prepare("UPDATE public_workspace SET body=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?")
+      const result = await env.DB.prepare("UPDATE public_workspace SET body=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=? AND NOT EXISTS(SELECT 1 FROM storage_heads WHERE owner='public-workspace')")
         .bind(JSON.stringify(input.data), Date.now(), input.revision).run();
+      if (!result.meta.changes && await storage.upgraded())
+        throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
       if (!result.meta.changes)
         return json({ error: "Another visitor changed the public workspace.", ...(await publicSnapshot(env)) }, 409);
       return json({ revision: input.revision + 1 });
@@ -307,10 +316,14 @@ async function route(req: Request, env: Env) {
     return issueSession(req, env, user);
   }
   const user = await authenticate(req, env);
+  const storage = new HistoryStorage(env.DB, user.id);
+  if (path.startsWith("/api/storage/")) return storage.route(req, body);
+  if (path === "/api/data" && method === "GET" && await storage.upgraded())
+    throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
   if (path.startsWith("/api/ai/"))
     return geminiRoute(req, env, user.id, body, (key, limit) => throttle(env, key, limit));
   if (path === "/api/me" && method === "GET")
-    return json({ id: user.id, email: user.email, ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) });
+    return json({ id: user.id, email: user.email, storageFormat:2, ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) });
   if (path === "/api/logout" && method === "POST" && "tokenHash" in user) {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?")
       .bind(user.tokenHash)
@@ -326,11 +339,15 @@ async function route(req: Request, env: Env) {
         .strict(),
       await body(req),
     );
+    if (await storage.upgraded())
+      throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
     const result = await env.DB.prepare(
-      "UPDATE account_data SET body=?,revision=revision+1,updated_at=? WHERE user_id=? AND revision=?",
+      "UPDATE account_data SET body=?,revision=revision+1,updated_at=? WHERE user_id=? AND revision=? AND NOT EXISTS(SELECT 1 FROM storage_heads WHERE owner=?)",
     )
-      .bind(JSON.stringify(input.data), Date.now(), user.id, input.revision)
+      .bind(JSON.stringify(input.data), Date.now(), user.id, input.revision, storage.owner)
       .run();
+    if (!result.meta.changes && await storage.upgraded())
+      throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
     if (!result.meta.changes)
       return json(
         {
@@ -394,7 +411,7 @@ export default {
       res = await route(req, env);
     } catch (e) {
       res =
-        (e instanceof Fault || e instanceof GeminiFault)
+        (e instanceof Fault || e instanceof GeminiFault || e instanceof HistoryFault)
           ? json({ error: e.message, ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) }, e.status)
           : json({ error: "Unable to process request. Please retry.", ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) }, 500);
     }

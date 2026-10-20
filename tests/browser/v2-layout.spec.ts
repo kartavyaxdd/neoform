@@ -1,3 +1,4 @@
+import {readData} from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -86,11 +87,8 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
     .getByRole("button", { name: "Workout", exact: true })
     .click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  const snapshot = () =>
-    page.evaluate(
-      async () =>
-        ((await (await fetch("/api/data")).json()) as { data: State }).data,
-    );
+  const snapshot = async () =>
+    (await (await readData(page)).json()).data;
   const before = await snapshot();
   // This fixture exercises UI/schema/save behavior. It is not provider evidence.
   await page.route("**/api/ai/generate", (route) =>

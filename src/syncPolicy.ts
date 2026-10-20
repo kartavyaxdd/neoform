@@ -1,4 +1,4 @@
-import { stateSchema, type State } from "./domain";
+import { historyStateSchema as stateSchema, type State } from "./domain";
 export type Remote = { data: State; revision: number; incorporated?: Record<string, number> };
 export type Outbox = {
   data: State;
@@ -43,7 +43,6 @@ export function receiveRemote(
     conflict: false,
   };
 }
-
 // Import precedence is deliberately separate from sync. Only a common server
 // snapshot can tell an unchanged local record from a local edit or deletion.
 export function mergeThreeWay(base: State, remote: State, local: State): State {

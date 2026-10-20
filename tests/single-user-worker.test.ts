@@ -29,7 +29,7 @@ it('opt-in local mode resolves only its exact existing account without sessions 
   const {env, queries} = fixture();
   const r = await worker.fetch(req(), env);
   expect(r.status).toBe(200);
-  expect(await r.json()).toEqual({...owner, accessMode: 'single-user-local'});
+  expect(await r.json()).toEqual({...owner, storageFormat:2, accessMode: 'single-user-local'});
   expect(r.headers.get('set-cookie')).toBeNull();
   expect(queries).toEqual([{sql: 'SELECT id,email FROM users WHERE id=?', args: [owner.id]}]);
 });
