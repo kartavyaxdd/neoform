@@ -149,7 +149,7 @@ function eligible(e: D.Entry, at: number) {
     return "execution confirmation time does not describe this session";
   return null;
 }
-function evidenceFor(
+export function evidenceFor(
   state: D.State,
   session: D.Session,
   entry: D.Entry,

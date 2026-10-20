@@ -1,0 +1,13 @@
+# Equipment substitutions and program review
+
+Quick substitutions live in the logger's Exercise options → Swap sheet. The user explicitly selects currently available equipment and an alternative sharing the original primary muscle and movement pattern. This is a catalog filter, not a claim of equivalent stimulus, load or safety. Availability is temporary and does not rewrite the profile.
+
+Only unfinished straight working sets are replaced. Completed observations, including warmups, remain unchanged. The original planned dose remains attached to any retained entry so incomplete work cannot become a confirmed complete baseline. The alternative starts at zero load with unknown effort, its own exercise/convention and no inherited setup. Its notes record the original movement and reason. No future program or completed history changes. Stale previews, unresolved applicable recovery concerns, advanced/linked sequences and finished exercises are rejected.
+
+Workout → Review program is read-only until a separate coaching proposal is accepted. It reuses the coaching engine's eligibility and context segmentation: program/workout/target identity, exercise/setup/method, phase, prescription, order, completed dose, reported effort and confirmed execution/rest. Missing observations stay unknown.
+
+The last three eligible exposures can support keeping a productive lift or reviewing repeated misses, declining comparable reps, or flat comparable reps spanning at least 14 days. Load and actual RIR vectors must match for rep-trend flags. The latest exposure must be eligible and within 21 days; non-accumulation phases require context. Reported recovery concerns take precedence. These are descriptive app heuristics, not biological plateau or growth measurements. No automatic exercise rotation or volume increase is introduced.
+
+Review next targets opens the existing deterministic coaching engine in explicit future-program scope. Its readiness and evidence gates still apply. Apply records the existing immutable coaching decision and updates future targets only. An active workout blocks application. A target already approved from the available evidence waits for a new eligible completed workout before another program-review adjustment. History, backups, account boundaries and persistence schemas are unchanged.
+
+Verification: pure preservation, eligibility, stale-preview and approval tests; browser flows at 360, 390 and 1440 pixels in private and public isolated Worker/D1 installations, including approval, partial substitution, offline resume and durable workout saving. Production browser verification uses intercepted synthetic training storage and does not read or write personal training records.

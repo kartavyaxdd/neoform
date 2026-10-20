@@ -10,15 +10,18 @@ import {
 import { DEFAULT_COACH_SETTINGS, type CoachingProposal } from "./coachingTypes";
 import { ReadinessSheet } from "./ReadinessSheet";
 import { Button, Field, Num } from "./ui";
+import { applyProgramReview, pendingProgramTarget } from "./programReview";
 
 export function CoachSheet({
   session: initial,
   entryId,
   onOpenWorkout,
+  programOnly = false,
 }: {
   session: D.Session;
   entryId?: string;
   onOpenWorkout?: () => void;
+  programOnly?: boolean;
 }) {
   const state = useStore().box.data;
   const [preview, setPreview] = useState({
@@ -59,7 +62,26 @@ export function CoachSheet({
     setError("");
     setBusy(true);
     try {
-      if (await saveChange((data) => applyCoaching(data, session, choices))) {
+      if (
+        programOnly &&
+        (state.draft ||
+          choices.some((c) => {
+            const e = session.exercises.find(
+              (e) => e.id === c.proposal.entryId,
+            );
+            return e && pendingProgramTarget(state, session, e);
+          }))
+      )
+        throw Error(
+          "Finish the active workout or assess previously approved targets before another program change.",
+        );
+      if (
+        await saveChange((data) =>
+          programOnly
+            ? applyProgramReview(data, session, choices)
+            : applyCoaching(data, session, choices),
+        )
+      ) {
         setNotice(
           "Coaching choice saved on this device. Check sync status for cloud persistence.",
         );
@@ -133,17 +155,18 @@ export function CoachSheet({
   ): CoachingChoice => ({
     proposal: p,
     choice: action,
-    scope:
-      scope[p.id] ??
-      ([
-        "rep-range",
-        "add-volume",
-        "reduce-volume",
-        "substitute",
-        "deload",
-      ].includes(p.action)
-        ? "program"
-        : "session"),
+    scope: programOnly
+      ? "program"
+      : (scope[p.id] ??
+        ([
+          "rep-range",
+          "add-volume",
+          "reduce-volume",
+          "substitute",
+          "deload",
+        ].includes(p.action)
+          ? "program"
+          : "session")),
     rows: edits[p.id],
     alternative: alternatives[p.id],
   });
@@ -155,7 +178,17 @@ export function CoachSheet({
         .filter((p) => !entryId || p.entryId === entryId)
         .map((p, index) => {
           const x = exercises.find((x) => x.id === p.exerciseId)!;
-          const canApply = !["hold", "recover"].includes(p.action);
+          const canApply =
+            !["hold", "recover"].includes(p.action) &&
+            !(
+              programOnly &&
+              (state.draft ||
+                session.exercises.some(
+                  (e) =>
+                    e.id === p.entryId &&
+                    pendingProgramTarget(state, session, e),
+                ))
+            );
           const recorded = (state.coachingEvents ?? [])
             .filter((e) => e.proposalId === p.id && e.kind === "decision")
             .at(-1);
@@ -300,6 +333,7 @@ export function CoachSheet({
                   </>
                 )}
                 {canApply &&
+                  !programOnly &&
                   !p.afterTarget &&
                   !["substitute", "deload"].includes(p.action) && (
                     <details>
@@ -371,7 +405,8 @@ export function CoachSheet({
                       void choose([choice(p, edits[p.id] ? "edit" : "accept")])
                     }
                   >
-                    {p.afterTarget ||
+                    {programOnly ||
+                    p.afterTarget ||
                     ["substitute", "deload"].includes(p.action)
                       ? "Apply to program"
                       : "Apply"}

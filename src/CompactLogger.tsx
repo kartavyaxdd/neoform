@@ -21,6 +21,7 @@ import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
 import { ReadinessSheet } from "./ReadinessSheet";
 import { CoachSheet } from "./CoachSheet";
+import { SubstitutionSheet } from "./SubstitutionSheet";
 import { giantProgress } from "./techniques";
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 export function SessionLogger({
@@ -30,7 +31,6 @@ export function SessionLogger({
   previous = [],
   setSession,
   remove,
-  swap,
   onDone,
   history = false,
 }: {
@@ -40,7 +40,6 @@ export function SessionLogger({
   previous?: D.Session[];
   setSession: (s: D.Session) => void;
   remove: (title: string, fn: () => void) => void;
-  swap?: (e: D.Entry) => void;
   onDone?: (id: string, e: D.Entry) => void;
   history?: boolean;
 }) {
@@ -526,6 +525,15 @@ export function SessionLogger({
                       entryId={e.id}
                       onOpenWorkout={() => setSheet(null)}
                     />
+                  ) : sheet === "Substitute exercise" ? (
+                    <SubstitutionSheet
+                      session={s}
+                      entry={e}
+                      onDone={(id) => {
+                        setSelected(id);
+                        setSheet(null);
+                      }}
+                    />
                   ) : sheet === "Exercise options" ? (
                     <>
                       <TechniqueSheet
@@ -546,11 +554,10 @@ export function SessionLogger({
                             Equipment setup
                           </Button>
                         )}
-                        {swap && (
+                        {!history && (
                           <Button
                             onClick={() => {
-                              setSheet(null);
-                              swap(e);
+                              setSheet("Substitute exercise");
                             }}
                           >
                             Swap

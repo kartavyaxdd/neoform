@@ -4,6 +4,7 @@ import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
 import { Levels } from "./Levels";
 import { Button, Field, Num, Modal } from "./ui";
+import { ProgramReviewSheet } from "./ProgramReviewSheet";
 import { WorkoutHome } from "./WorkoutHome";
 import { CoachSheet, CoachSettingsPanel } from "./CoachSheet";
 import {
@@ -1118,6 +1119,28 @@ export default function App() {
           {page === "train" && (
             <WorkoutHome
               state={s}
+              reviewProgram={(p) =>
+                setModal({
+                  title: "Program review",
+                  content: (
+                    <ProgramReviewSheet
+                      programId={p.id}
+                      openTargets={(session, entryId) =>
+                        setModal({
+                          title: "Program targets",
+                          content: (
+                            <CoachSheet
+                              session={session}
+                              entryId={entryId}
+                              programOnly
+                            />
+                          ),
+                        })
+                      }
+                    />
+                  ),
+                })
+              }
               start={(w, p) => {
                 if (!w || !p) {
                   start(w, p);
@@ -1233,23 +1256,6 @@ export default function App() {
                       title,
                       "This removes the item from your active draft. Completed history stays in your journal.",
                       fn,
-                    )
-                  }
-                  swap={(entry) =>
-                    pick(
-                      (ex) =>
-                        change((s) => ({
-                          ...s,
-                          draft: {
-                            ...s.draft!,
-                            exercises: s.draft!.exercises.map((e) =>
-                              e.id === entry.id
-                                ? { ...D.createEntry(ex), id: entry.id }
-                                : e,
-                            ),
-                          },
-                        })),
-                      exercises.find((e) => e.id === entry.exerciseId)?.muscle,
                     )
                   }
                   onDone={(setId, entry) => {
