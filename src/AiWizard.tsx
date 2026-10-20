@@ -284,7 +284,7 @@ export function AiWizard({ close }: { close: () => void }) {
                   )
                 }
               >
-                {["Balanced", ...D.muscles].map((x) => (
+                {["Balanced", ...D.majorMuscles].map((x) => (
                   <option key={x}>{x}</option>
                 ))}
               </select>

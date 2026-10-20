@@ -2001,6 +2001,7 @@ function ProgramBuilder({
                           ...t,
                           exerciseId: e.target.value,
                           setup: e.target.value === t.exerciseId ? t.setup : undefined,
+                          startingLoad: e.target.value === t.exerciseId ? t.startingLoad : undefined,
                         })
                       }
                     >
@@ -2051,6 +2052,10 @@ function ProgramBuilder({
                     <X size={17} />
                   </button>
                 </div>
+                <Field label={exercises.find(e => e.id === t.exerciseId)?.convention === 'machine-label' ? 'First-session machine label' : 'First-session load (kg)'}>
+                  <Num label={exercises.find(e => e.id === t.exerciseId)?.convention === 'machine-label' ? 'First-session machine label' : 'First-session load (kg)'} min={0} max={2000} step={0.25} value={t.startingLoad ?? 0} onChange={startingLoad => updateTarget(wi,ti,{...t,startingLoad})} />
+                </Field>
+                <p className="caption">An editable starting reference, not a progression recommendation. Comparable logged loads take precedence. A saved equipment setup requires a fresh load choice.</p>
                 <div className="target-fields">
                   {(["sets", "min", "max", "rir", "rest"] as const).map(
                     (key, i) => (

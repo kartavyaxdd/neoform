@@ -17,7 +17,7 @@ export const MAX_STATE_BYTES = MAX_BACKUP - 256;
 const id = z.string().min(1).max(100),
   name = z.string().trim().min(1).max(120),
   note = z.string().max(2000);
-export const muscles = [
+export const majorMuscles = [
   "Chest",
   "Back",
   "Quads",
@@ -29,6 +29,7 @@ export const muscles = [
   "Calves",
   "Core",
 ] as const;
+export const muscles = [...majorMuscles, "Forearms", "Neck"] as const;
 export const equipment = [
   "Barbell",
   "Dumbbell",
@@ -511,6 +512,7 @@ export const targetSchema = z
     exerciseId: id,
     setup: equipmentSetupSchema.optional(),
     ...techniqueFields,
+    startingLoad: z.number().finite().min(0).max(2000).optional(),
     sets: z.number().int().min(1).max(10),
     min: z.number().int().min(1).max(100),
     max: z.number().int().min(1).max(100),
@@ -864,7 +866,7 @@ export function prepareWorkout(
           e.sets.some((s) => s.done && s.kind === "working"),
       )?.e;
     const load =
-      previous?.sets.find((s) => s.done && s.kind === "working")?.weight ?? 0;
+      previous?.sets.find((s) => s.done && s.kind === "working")?.weight ?? (t.setup ? 0 : (t.startingLoad ?? 0));
     entry.sets = entry.sets.map((s) => ({
       ...s,
       weight: phase === "deload" && late && x.convention !== "machine-label" ? load / 2 : load,

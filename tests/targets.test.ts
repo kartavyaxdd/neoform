@@ -1,6 +1,9 @@
 import { it, expect } from "vitest";
 import {
   createEntry,
+  prepareWorkout,
+  targetSchema,
+  exerciseSchema,
   catalog,
   target,
   weeklyTarget,
@@ -40,4 +43,23 @@ it("never combines convention records and guards CSV formula cells", () => {
   expect(csvSessions([s], catalog)).toContain(
     "' =DANGEROUS()".replace(" ", ""),
   );
+});
+
+it("uses an explicit first-session load reference without inventing completed effort", () => {
+ const p=starterProgram('balanced'), w=p.workouts[0];
+ w.exercises=[{...target('bench'),startingLoad:25}];
+ const e=prepareWorkout(w,p,catalog,[])[0];
+ expect(e.sets.every(s=>s.weight===25 && !s.done && s.effortReported===false)).toBe(true);
+ expect(targetSchema.safeParse({...w.exercises[0],startingLoad:-1}).success).toBe(false);
+ const previous={...startSession('Prior',[createEntry(catalog[0],w.exercises[0])]),phase:'accumulation' as const};
+ previous.exercises[0].sets[0]={...previous.exercises[0].sets[0],done:true,weight:30};
+ expect(prepareWorkout(w,p,catalog,[previous])[0].sets[0].weight).toBe(30);
+ w.exercises[0].setup={label:'Different rack',execution:'Different ROM',availableLoads:[]};
+ expect(prepareWorkout(w,p,catalog,[])[0].sets[0].weight).toBe(0);
+});
+it("keeps forearm and neck exercises distinct from biceps and core", () => {
+ for(const muscle of ['Forearms','Neck']){
+  const ex=exerciseSchema.parse({...catalog[0],muscle});
+  expect(ex.muscle).toBe(muscle);
+ }
 });

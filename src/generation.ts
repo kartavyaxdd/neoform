@@ -17,7 +17,7 @@ export const generationInput = z
       .min(1)
       .max(6)
       .refine((x) => new Set(x).size === x.length),
-    emphasis: z.enum(["Balanced", ...D.muscles]),
+    emphasis: z.enum(["Balanced", ...D.majorMuscles]),
     // Omission preserves historical requests and means straight sets only.
     technique: z.enum(["straight", "tempo"]).optional(),
     limitation: z.enum([
@@ -140,7 +140,7 @@ export function auditGenerated(
 ): ProgramAudit {
   const input = generationInput.parse(preferences);
   const p = validateGenerated(output, input);
-  const muscles = D.muscles.map((muscle) => ({
+  const muscles = D.majorMuscles.map((muscle) => ({
     muscle,
     directSets: p.workouts.reduce(
       (sum, w) =>
