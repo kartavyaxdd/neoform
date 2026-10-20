@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Plus,
   Check,
@@ -8,12 +8,15 @@ import {
   Dumbbell,
 } from "lucide-react";
 import * as D from "./domain";
-import { useStore, change } from "./store";
+import { useStore, change, saveChange } from "./store";
 import { Button, Field, Num, Modal } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
 import { ReadinessSheet } from "./ReadinessSheet";
+import { CoachSheet } from "./CoachSheet";
+import { evaluateCoaching, applyCoaching, asRecommendation } from "./coaching";
+import type { CoachingProposal } from "./coachingTypes";
 import {
   canApplyStraightProgression,
   giantProgress,
@@ -46,6 +49,30 @@ export function SessionLogger({
     [effort, setEffort] = useState<"RIR" | "RPE">("RIR");
   const data = useStore().box.data;
   const decisions = data.decisions;
+  const [coachError, setCoachError] = useState("");
+  const proposals = useMemo(
+    () =>
+      history || sheet !== "Exercise options" ? [] : evaluateCoaching(data, s),
+    [data, s, history, sheet],
+  );
+  async function recordCoaching(
+    proposal: CoachingProposal,
+    choice: "accept" | "decline" | "defer",
+  ) {
+    try {
+      setCoachError("");
+      if (
+        !(await saveChange((d) =>
+          applyCoaching(d, s, [{ proposal, choice, scope: "session" }]),
+        ))
+      )
+        setCoachError(
+          "Coaching choice is not yet durable; check device and sync status.",
+        );
+    } catch (e) {
+      setCoachError((e as Error).message);
+    }
+  }
   const program = data.programs.find((p) => p.id === s.programId);
   const tabs = useRef<HTMLDivElement>(null);
   const current = s.exercises.find((x) => x.id === selected) || s.exercises[0];
@@ -136,23 +163,9 @@ export function SessionLogger({
                 D.comparableKey(x, ex) === D.comparableKey(e, ex) &&
                 x.exerciseId === e.exerciseId,
             );
-          const rec = reviewRecommendation(
-              e,
-              D.recommend(
-                e.exerciseId,
-                previous,
-                exercises,
-                e.target || { min: 8, max: 12 },
-                {
-                  experience: data.profile?.experience,
-                  entry: e,
-                  readiness: s.readiness,
-                  phase:
-                    s.phase ?? (program ? D.programPhase(program) : undefined),
-                },
-              ),
-            ),
-            recKey = `${e.id}:${previous.length}`;
+          const proposal = proposals.find((p) => p.entryId === e.id);
+          const rec = reviewRecommendation(e, asRecommendation(proposal)),
+            recKey = proposal?.id ?? `${e.id}:no-evidence`;
           return (
             <section
               className="log-exercise"
@@ -221,9 +234,11 @@ export function SessionLogger({
                           ? "5–10"
                           : set.bout === "giant"
                             ? "Goal"
-                            : e.target
-                              ? `${e.target.min}–${e.target.max}`
-                              : "8–12"}{" "}
+                            : set.prescription?.proposalId
+                              ? `${set.prescription.reps} planned (${set.prescription.min}–${set.prescription.max})`
+                              : e.target
+                                ? `${e.target.min}–${e.target.max}`
+                                : "8–12"}{" "}
                         reps
                       </span>
                       <label>
@@ -372,6 +387,11 @@ export function SessionLogger({
                 >
                   {sheet === "Info" ? (
                     <VideoInfo exercise={ex} />
+                  ) : sheet === "Next workout coach" ? (
+                    <CoachSheet
+                      session={s}
+                      onOpenWorkout={() => setSheet(null)}
+                    />
                   ) : sheet === "Exercise options" ? (
                     <>
                       <TechniqueSheet
@@ -384,7 +404,16 @@ export function SessionLogger({
                         history={history}
                       />
                       <div className="actions wrap">
-                        <Button onClick={() => setSheet("Readiness")}>Readiness</Button>
+                        <Button onClick={() => setSheet("Readiness")}>
+                          Readiness
+                        </Button>
+                        {!history && (
+                          <Button
+                            onClick={() => setSheet("Next workout coach")}
+                          >
+                            Next workout coach
+                          </Button>
+                        )}
                         {!history && (
                           <Button onClick={() => setSheet("Equipment setup")}>
                             Equipment setup
@@ -518,79 +547,42 @@ export function SessionLogger({
                           <div className="actions wrap">
                             <Button
                               disabled={
+                                !proposal ||
                                 !canApplyStraightProgression(e) ||
                                 !["load", "reps"].includes(rec.action)
                               }
-                              onClick={() => {
-                                if (!canApplyStraightProgression(e)) return;
-                                let workingIndex = -1;
-                                updateEntry({
-                                  ...e,
-                                  sets: e.sets.map((t) => {
-                                    if (t.kind === "working") workingIndex++;
-                                    const row = rec.setTargets?.[workingIndex];
-                                    return !t.done && t.kind === "working"
-                                      ? {
-                                          ...t,
-                                          weight:
-                                            row?.weight ??
-                                            rec.weight ??
-                                            t.weight,
-                                          reps: row?.reps ?? rec.reps ?? t.reps,
-                                        }
-                                      : t;
-                                  }),
-                                });
-                                change((s) => ({
-                                  ...s,
-                                  decisions: [
-                                    ...s.decisions.slice(-999),
-                                    {
-                                      key: recKey,
-                                      choice: "accept",
-                                      at: Date.now(),
-                                    },
-                                  ],
-                                }));
-                              }}
+                              onClick={() =>
+                                proposal &&
+                                void recordCoaching(proposal, "accept")
+                              }
                             >
                               Accept for unlogged sets
                             </Button>
                             <Button
+                              disabled={!proposal}
                               onClick={() =>
-                                change((s) => ({
-                                  ...s,
-                                  decisions: [
-                                    ...s.decisions.slice(-999),
-                                    {
-                                      key: recKey,
-                                      choice: "defer",
-                                      at: Date.now(),
-                                    },
-                                  ],
-                                }))
+                                proposal &&
+                                void recordCoaching(proposal, "defer")
                               }
                             >
                               Defer
                             </Button>
                             <Button
+                              disabled={!proposal}
                               onClick={() =>
-                                change((s) => ({
-                                  ...s,
-                                  decisions: [
-                                    ...s.decisions.slice(-999),
-                                    {
-                                      key: recKey,
-                                      choice: "decline",
-                                      at: Date.now(),
-                                    },
-                                  ],
-                                }))
+                                proposal &&
+                                void recordCoaching(proposal, "decline")
                               }
                             >
                               Decline
                             </Button>
+                            <Button
+                              onClick={() => setSheet("Next workout coach")}
+                            >
+                              Review all coaching proposals
+                            </Button>
                           </div>
+                          {coachError && <p role="alert">{coachError}</p>}
                           {decisions.some((d) => d.key === recKey) && (
                             <p className="caption" role="status">
                               Choice recorded:{" "}
@@ -622,11 +614,32 @@ export function SessionLogger({
                       addOnly
                     />
                   ) : sheet === "Readiness" ? (
-                    <ReadinessSheet key={e.id} value={s.readiness} muscles={[...new Set([ex.muscle,...ex.secondary,...s.exercises.flatMap(e=>{
-                      const x=exercises.find(x=>x.id===e.exerciseId);return x?[x.muscle,...x.secondary]:[];
-                    })])]}
-                      readOnly={history || s.exercises.some(e=>e.sets.some(t=>t.done && t.kind!=="warmup"))}
-                      onSave={readiness=>{setSession({...s,readiness});setSheet(null);}} />
+                    <ReadinessSheet
+                      key={e.id}
+                      value={s.readiness}
+                      muscles={[
+                        ...new Set([
+                          ex.muscle,
+                          ...ex.secondary,
+                          ...s.exercises.flatMap((e) => {
+                            const x = exercises.find(
+                              (x) => x.id === e.exerciseId,
+                            );
+                            return x ? [x.muscle, ...x.secondary] : [];
+                          }),
+                        ]),
+                      ]}
+                      readOnly={
+                        history ||
+                        s.exercises.some((e) =>
+                          e.sets.some((t) => t.done && t.kind !== "warmup"),
+                        )
+                      }
+                      onSave={(readiness) => {
+                        setSession({ ...s, readiness });
+                        setSheet(null);
+                      }}
+                    />
                   ) : sheet === "Equipment setup" ? (
                     e.sets.some((t) => t.done && t.kind !== "warmup") ? (
                       <p>
@@ -666,7 +679,11 @@ export function SessionLogger({
                                         t.id === e.sourceTargetId &&
                                         t.exerciseId === e.exerciseId,
                                     );
-                                  if (t) t.setup = structuredClone(e.setup);
+                                  if (t) {
+                                    t.setup = structuredClone(e.setup);
+                                    t.nextRows = undefined;
+                                    t.coachingProposalId = undefined;
+                                  }
                                   return d;
                                 });
                                 setSheet(null);
@@ -728,6 +745,47 @@ export function SessionLogger({
                           </Field>
                         </div>
                       )}
+                      {sheet === "Targets" &&
+                        e.target &&
+                        !e.sets.some((t) => t.done && t.kind !== "warmup") &&
+                        !e.sets.some((t) => t.prescription?.proposalId) && (
+                          <Button
+                            disabled={e.sets.some(
+                              (t) =>
+                                t.kind === "working" &&
+                                (t.reps < e.target!.min ||
+                                  t.reps > e.target!.max),
+                            )}
+                            onClick={() => {
+                              let ordinal = 0;
+                              updateEntry({
+                                ...e,
+                                plannedWorkingSets: e.sets.filter(
+                                  (t) => t.kind === "working",
+                                ).length,
+                                sets: e.sets.map((t) =>
+                                  t.kind !== "working"
+                                    ? t
+                                    : {
+                                        ...t,
+                                        effortReported: false,
+                                        prescription: {
+                                          weight: t.weight,
+                                          reps: t.reps,
+                                          min: e.target!.min,
+                                          max: e.target!.max,
+                                          rir: e.target!.rir,
+                                          rest: e.target!.rest,
+                                          ordinal: ordinal++,
+                                        },
+                                      },
+                                ),
+                              });
+                            }}
+                          >
+                            Use current unlogged rows as manual plan
+                          </Button>
+                        )}
                       {sheet === "Targets" &&
                         e.plannedWorkingSets !==
                           e.sets.filter((t) => t.kind === "working").length && (

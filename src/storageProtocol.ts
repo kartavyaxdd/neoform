@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { coachingEventSchema } from "./coachingTypes";
 import {
   catalog,
   sessionSchema,
@@ -21,7 +22,7 @@ export const storageHeader = stateHeaderSchema.refine(
   (h) => new TextEncoder().encode(JSON.stringify(h)).length <= MAX_STATE_BYTES,
   "A single metadata record exceeds the storage row limit.",
 );
-export type StateHeader = Omit<State, "sessions">;
+export type StateHeader = Omit<State, "sessions" | "coachingEvents">;
 export const storagePart = z
   .object({
     upserts: z
@@ -35,6 +36,18 @@ export const storagePart = z
       )
       .max(200),
     deletes: z.array(storageId).max(200),
+    coachingUpserts: z
+      .array(
+        z
+          .object({
+            position: z.number().int().min(0).max(99999),
+            event: coachingEventSchema,
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
+    coachingDeletes: z.array(storageId).max(200).optional(),
   })
   .strict()
   .superRefine((p, ctx) => {
@@ -46,6 +59,19 @@ export const storagePart = z
       });
     if (new Set(p.upserts.map((r) => r.position)).size !== p.upserts.length)
       ctx.addIssue({ code: "custom", message: "Duplicate history positions." });
+    const eventIds = [
+      ...(p.coachingUpserts ?? []).map((r) => r.event.id),
+      ...(p.coachingDeletes ?? []),
+    ];
+    if (
+      new Set(eventIds).size !== eventIds.length ||
+      new Set((p.coachingUpserts ?? []).map((r) => r.position)).size !==
+        (p.coachingUpserts ?? []).length
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Duplicate coaching records or positions",
+      });
     if (textBytes(p) > MAX_BACKUP)
       ctx.addIssue({
         code: "custom",
@@ -58,6 +84,7 @@ const plan = {
   revision: storageBaseRevision,
   header: storageHeader,
   count: z.number().int().min(0).max(50000),
+  coachingCount: z.number().int().min(0).max(100000).optional(),
 };
 export const storageCommit = z
   .object({ ...plan, changes: storagePart })
@@ -97,7 +124,7 @@ export const storageHash = async (value: unknown) =>
     .map((v) => v.toString(16).padStart(2, "0"))
     .join("");
 export function headerOf(state: State): StateHeader {
-  const { sessions: _, ...head } = state;
+  const { sessions: _, coachingEvents: _events, ...head } = state;
   return head;
 }
 export function validateHistoryRecord(session: Session, header: StateHeader) {
@@ -122,15 +149,41 @@ export function historyDelta(base: State, next: State): HistoryPart {
     ]),
   );
   const nextIds = new Set(next.sessions.map((s) => s.id));
+  const eventsBefore = new Map(
+    (base.coachingEvents ?? []).map((event, position) => [
+      event.id,
+      { event, position },
+    ]),
+  );
+  const eventIds = new Set((next.coachingEvents ?? []).map((e) => e.id));
   return {
     upserts: next.sessions.flatMap((session, position) => {
       const old = prior.get(session.id);
       return !old ||
         old.position !== position ||
-        old.session !== session && JSON.stringify(old.session) !== JSON.stringify(session)
+        (old.session !== session &&
+          JSON.stringify(old.session) !== JSON.stringify(session))
         ? [{ position, session }]
         : [];
     }),
     deletes: base.sessions.filter((s) => !nextIds.has(s.id)).map((s) => s.id),
+    ...(base.coachingEvents || next.coachingEvents
+      ? {
+          coachingUpserts: (next.coachingEvents ?? []).flatMap(
+            (event, position) => {
+              const old = eventsBefore.get(event.id);
+              return !old ||
+                old.position !== position ||
+                (old.event !== event &&
+                  JSON.stringify(old.event) !== JSON.stringify(event))
+                ? [{ position, event }]
+                : [];
+            },
+          ),
+          coachingDeletes: (base.coachingEvents ?? [])
+            .filter((e) => !eventIds.has(e.id))
+            .map((e) => e.id),
+        }
+      : {}),
   };
 }

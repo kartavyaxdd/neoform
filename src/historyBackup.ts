@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { coachingEventSchema, type CoachingEvent } from "./coachingTypes";
 import {
   MAX_BACKUP,
   historyStateSchema,
@@ -13,11 +14,27 @@ import {
   textBytes,
   validateHistoryRecord,
 } from "./storageProtocol";
-const startSchema = z
+const legacyStartSchema = z
   .object({
     version: z.literal(2),
     header: storageHeader,
     count: z.number().int().min(0).max(50000),
+  })
+  .strict();
+const startSchema = z.union([
+  legacyStartSchema,
+  legacyStartSchema
+    .extend({
+      version: z.literal(3),
+      coachingCount: z.number().int().min(0).max(100000),
+    })
+    .strict(),
+]);
+const coachingRecordSchema = z
+  .object({
+    type: z.literal("coaching"),
+    position: z.number().int().min(0).max(99999),
+    event: coachingEventSchema,
   })
   .strict();
 const recordSchema = z
@@ -35,9 +52,12 @@ const endSchema = z
   .strict();
 export async function exportHistoryBackup(data: State): Promise<Blob> {
   const header = startSchema.parse({
-    version: 2,
+    version: data.coachingEvents?.length ? 3 : 2,
     header: headerOf(data),
     count: data.sessions.length,
+    ...(data.coachingEvents?.length
+      ? { coachingCount: data.coachingEvents.length }
+      : {}),
   });
   const pieces: BlobPart[] = [JSON.stringify(header) + "\n"],
     hashes = [await storageHash(header)];
@@ -47,6 +67,21 @@ export async function exportHistoryBackup(data: State): Promise<Blob> {
     const row = { type: "session", position: i, session };
     if (textBytes(row) > MAX_BACKUP)
       throw Error("A workout exceeds the backup record limit.");
+    pieces.push(JSON.stringify(row) + "\n");
+    hashes.push(await storageHash(row));
+  }
+  for (
+    let position = 0;
+    position < (data.coachingEvents?.length ?? 0);
+    position++
+  ) {
+    const row = coachingRecordSchema.parse({
+      type: "coaching",
+      position,
+      event: data.coachingEvents![position],
+    });
+    if (textBytes(row) > MAX_BACKUP)
+      throw Error("Coaching record exceeds the backup budget");
     pieces.push(JSON.stringify(row) + "\n");
     hashes.push(await storageHash(row));
   }
@@ -98,6 +133,8 @@ export async function importHistoryBackup(blob: Blob): Promise<State> {
   const sessions: State["sessions"] = [],
     hashes: string[] = [],
     ids = new Set<string>();
+  const events: CoachingEvent[] = [];
+  const eventIds = new Set<string>();
   for await (const line of lines(blob)) {
     if (!line.trim()) continue;
     if (ended) throw Error("Unexpected data after backup checksum.");
@@ -111,12 +148,32 @@ export async function importHistoryBackup(blob: Blob): Promise<State> {
       const end = endSchema.parse(raw);
       if (
         sessions.length !== header.count ||
+        events.length !== (header.version === 3 ? header.coachingCount : 0) ||
         end.checksum !== (await storageHash(hashes))
       )
         throw Error("Backup is incomplete or its checksum differs.");
       ended = true;
       continue;
     }
+    if (raw.type === "coaching") {
+      if (header.version !== 3 || sessions.length !== header.count)
+        throw Error(
+          "Coaching records require version 3 and complete workout records",
+        );
+      const row = coachingRecordSchema.parse(raw);
+      if (
+        row.position !== events.length ||
+        events.length >= header.coachingCount ||
+        eventIds.has(row.event.id)
+      )
+        throw Error("Invalid coaching record ordering or identity");
+      events.push(row.event);
+      eventIds.add(row.event.id);
+      hashes.push(await storageHash(row));
+      continue;
+    }
+    if (events.length)
+      throw Error("Workout records cannot follow coaching records");
     const row = recordSchema.parse(raw);
     if (
       row.position !== sessions.length ||
@@ -131,5 +188,9 @@ export async function importHistoryBackup(blob: Blob): Promise<State> {
   }
   if (!header || !ended)
     throw Error("Backup is incomplete: final checksum missing.");
-  return historyStateSchema.parse({ ...header.header, sessions });
+  return historyStateSchema.parse({
+    ...header.header,
+    sessions,
+    ...(events.length ? { coachingEvents: events } : {}),
+  });
 }

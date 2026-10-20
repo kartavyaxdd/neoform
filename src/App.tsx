@@ -1,11 +1,26 @@
 import { Button, Field, Num, Modal } from "./ui";
 import { WorkoutHome } from "./WorkoutHome";
+import { CoachSheet, CoachSettingsPanel } from "./CoachSheet";
+import {
+  classifyCoachingOutcomes,
+  asRecommendation,
+  evaluateCoaching,
+} from "./coaching";
 import { VideoInfo } from "./VideoInfo";
 import { HevyImport } from "./HevyImport.jsx";
 import { GeminiKeySettings } from "./GeminiKeySettings";
 import { AiWizard } from "./AiWizard";
 import { SessionLogger } from "./CompactLogger";
-import { FinishSessionFeedback, SessionFeedbackFields, MuscleFeedbackFields, FeedbackSummary, PhaseControls, PhasePreview, MuscleReview, DecisionEvidence } from "./TrainingFeedback";
+import {
+  FinishSessionFeedback,
+  SessionFeedbackFields,
+  MuscleFeedbackFields,
+  FeedbackSummary,
+  PhaseControls,
+  PhasePreview,
+  MuscleReview,
+  DecisionEvidence,
+} from "./TrainingFeedback";
 import {
   cloneElement,
   isValidElement,
@@ -42,8 +57,8 @@ import {
   X,
 } from "lucide-react";
 import * as D from "./domain";
-import {exportHistoryBackup,importHistoryBackup} from "./historyBackup";
-import {TrainingExposure} from "./TrainingExposure";
+import { exportHistoryBackup, importHistoryBackup } from "./historyBackup";
+import { TrainingExposure } from "./TrainingExposure";
 import {
   change,
   saveChange,
@@ -237,7 +252,15 @@ function Auth() {
   );
 }
 function PublicWorkspaceNotice() {
-  return <p className="banner public-workspace-notice" role="note">Public workspace: anyone with this URL can view/change data<span className="caption"> · Cloud sync · Do not enter private information.</span></p>;
+  return (
+    <p className="banner public-workspace-notice" role="note">
+      Public workspace: anyone with this URL can view/change data
+      <span className="caption">
+        {" "}
+        · Cloud sync · Do not enter private information.
+      </span>
+    </p>
+  );
 }
 function Onboarding() {
   const store = useStore(),
@@ -499,10 +522,11 @@ export default function App() {
           sessions={s.sessions}
           experience={s.profile?.experience}
           save={async (p) => {
-            if (await saveChange((s) => ({
+            if (
+              await saveChange((s) => ({
                 ...s,
-                programs: s.programs.some(x => x.id === p.id)
-                  ? s.programs.map(x => x.id === p.id ? p : x)
+                programs: s.programs.some((x) => x.id === p.id)
+                  ? s.programs.map((x) => (x.id === p.id ? p : x))
                   : [...s.programs, p],
               }))
             )
@@ -517,18 +541,25 @@ export default function App() {
       title: "Create",
       content: (
         <div className="create-menu">
-          {store.accessMode === "public-workspace" ? <p>AI is unavailable in public mode. Private Gemini keys are never used. Create programs manually or use an editable starter template.</p> :
-          <Button
-            onClick={() =>
-              setModal({
-                title: "AI program maker",
-                content: <AiWizard close={close} />,
-              })
-            }
-          >
-            <Flame size={20} />
-            AI program
-          </Button>}
+          {store.accessMode === "public-workspace" ? (
+            <p>
+              AI is unavailable in public mode. Private Gemini keys are never
+              used. Create programs manually or use an editable starter
+              template.
+            </p>
+          ) : (
+            <Button
+              onClick={() =>
+                setModal({
+                  title: "AI program maker",
+                  content: <AiWizard close={close} />,
+                })
+              }
+            >
+              <Flame size={20} />
+              AI program
+            </Button>
+          )}
           <Button
             onClick={() =>
               editProgram({
@@ -606,18 +637,38 @@ export default function App() {
       return;
     }
     if (p && D.programPhase(p) === "active-rest") {
-      setModal({title: "Active rest", content: <div className="training-coaching"><p>No hard workout is started in active rest. This program is paused for lifting; take time off or choose easy activity without a hard-set target.</p><p>To resume programmed lifting, explicitly edit the phase and save your mesocycle. Completed history stays unchanged.</p><Button onClick={() => editProgram(p)}>Review phase</Button></div>});
+      setModal({
+        title: "Active rest",
+        content: (
+          <div className="training-coaching">
+            <p>
+              No hard workout is started in active rest. This program is paused
+              for lifting; take time off or choose easy activity without a
+              hard-set target.
+            </p>
+            <p>
+              To resume programmed lifting, explicitly edit the phase and save
+              your mesocycle. Completed history stays unchanged.
+            </p>
+            <Button onClick={() => editProgram(p)}>Review phase</Button>
+          </div>
+        ),
+      });
       return;
     }
-    const entries = w && p
-      ? D.prepareWorkout(w, p, exercises, s.sessions, s.profile?.experience)
-      : (w?.exercises ?? []).flatMap(t => {
-          const ex = exercises.find(e => e.id === t.exerciseId);
-          return ex ? [D.createEntry(ex, t)] : [];
-        });
+    const entries =
+      w && p
+        ? D.prepareWorkout(w, p, exercises, s.sessions, s.profile?.experience)
+        : (w?.exercises ?? []).flatMap((t) => {
+            const ex = exercises.find((e) => e.id === t.exerciseId);
+            return ex ? [D.createEntry(ex, t)] : [];
+          });
     change((s) => ({
       ...s,
-      draft: D.startSession(w?.name || "Open session", entries, p, w),
+      draft: {
+        ...D.startSession(w?.name || "Open session", entries, p, w),
+        bodyweight: s.coaching?.bodyweight,
+      },
       timer: null,
     }));
     go("session");
@@ -640,8 +691,13 @@ export default function App() {
                   exercises={exercises}
                   unit={s.settings.unit}
                   save={async (edited) => {
-                    if (await saveChange((s) => ({
+                    if (
+                      await saveChange((s) => ({
                         ...s,
+                        coachingEvents: [
+                          ...(s.coachingEvents ?? []),
+                          ...classifyCoachingOutcomes(s, edited),
+                        ],
                         sessions: s.sessions.map((x) =>
                           x.id === edited.id ? edited : x,
                         ),
@@ -686,21 +742,31 @@ export default function App() {
         <FinishSessionFeedback
           draft={draft}
           exercises={exercises}
-          finish={async (feedback, muscleFeedback, confirmEffort) => {
+          finish={async (feedback, muscleFeedback, confirmEffort, contexts) => {
             const logged = D.completeSession({
               ...draft,
               feedback,
               muscleFeedback,
-              exercises: draft.exercises.map(e => ({ ...e, sets: e.sets.map(t =>
-                confirmEffort && t.done ? { ...t, effortReported: true } : t) })),
+              exercises: draft.exercises.map((e) => ({
+                ...e,
+                coachingContext: contexts[e.id] ?? e.coachingContext,
+                sets: e.sets.map((t) =>
+                  confirmEffort && t.done ? { ...t, effortReported: true } : t,
+                ),
+              })),
               duration: Math.min(
                 86400,
                 Math.max(0, (Date.now() - draft.startedAt) / 1000),
               ),
             });
-            if (await saveChange((s) => ({
+            if (
+              await saveChange((s) => ({
                 ...s,
                 sessions: [...s.sessions, logged],
+                coachingEvents: [
+                  ...(s.coachingEvents ?? []),
+                  ...classifyCoachingOutcomes(s, logged),
+                ],
                 draft: null,
                 timer: null,
               }))
@@ -722,10 +788,21 @@ export default function App() {
       </main>
     );
   if (!store.user && store.accessMode === "single-user-local")
-    return <main className="loading"><Brand /><h1>Single-user / this PC</h1>
-      <p role="alert">{store.error || "Local setup required. Check SINGLE_USER_ID and restart the local server."}</p>
-      <p>Your existing account and pending device changes have not been removed.</p>
-      <Button onClick={() => void initialize()}>Retry local setup</Button></main>;
+    return (
+      <main className="loading">
+        <Brand />
+        <h1>Single-user / this PC</h1>
+        <p role="alert">
+          {store.error ||
+            "Local setup required. Check SINGLE_USER_ID and restart the local server."}
+        </p>
+        <p>
+          Your existing account and pending device changes have not been
+          removed.
+        </p>
+        <Button onClick={() => void initialize()}>Retry local setup</Button>
+      </main>
+    );
   if (!store.user) return <Auth />;
   if (!s.profile) return <Onboarding />;
   const thisWeek = new Date();
@@ -781,7 +858,10 @@ export default function App() {
           <div className="private">
             <ShieldCheck size={18} />
             <span>
-              {store.accessMode === "public-workspace" ? "Public shared workspace" : "Private by default"}<small>Built around your training.</small>
+              {store.accessMode === "public-workspace"
+                ? "Public shared workspace"
+                : "Private by default"}
+              <small>Built around your training.</small>
             </span>
           </div>
           <button
@@ -799,13 +879,15 @@ export default function App() {
               <b>{s.profile.name}</b>
               <small>{s.profile.experience} lifter</small>
             </div>
-            {!store.user.accessMode && <button
-              aria-label="Sign out"
-              className="icon-button"
-              onClick={() => void logout().catch((e) => setNotice(e.message))}
-            >
-              <LogOut size={18} />
-            </button>}
+            {!store.user.accessMode && (
+              <button
+                aria-label="Sign out"
+                className="icon-button"
+                onClick={() => void logout().catch((e) => setNotice(e.message))}
+              >
+                <LogOut size={18} />
+              </button>
+            )}
           </div>
         </div>
       </aside>
@@ -861,24 +943,28 @@ export default function App() {
             <div className="banner error" role="alert">
               {store.error}
               {store.status === "Sign in again to sync" ||
-              store.status.startsWith("Account changed") ? store.accessMode === "public-workspace" ? (
-                <Button onClick={() => void initialize()}>Reopen workspace</Button>
-              ) : (
-                <Button
-                  onClick={() =>
-                    setModal({
-                      title: "Restore account access",
-                      content: (
-                        <Reauthenticate
-                          email={store.user!.email || ""}
-                          close={close}
-                        />
-                      ),
-                    })
-                  }
-                >
-                  Sign in to sync
-                </Button>
+              store.status.startsWith("Account changed") ? (
+                store.accessMode === "public-workspace" ? (
+                  <Button onClick={() => void initialize()}>
+                    Reopen workspace
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() =>
+                      setModal({
+                        title: "Restore account access",
+                        content: (
+                          <Reauthenticate
+                            email={store.user!.email || ""}
+                            close={close}
+                          />
+                        ),
+                      })
+                    }
+                  >
+                    Sign in to sync
+                  </Button>
+                )
               ) : (
                 <Button onClick={() => void sync()}>Retry sync</Button>
               )}
@@ -1044,14 +1130,18 @@ export default function App() {
                           s.draft
                             ? go("session")
                             : activeProgram
-                              ? start(D.nextWorkout(activeProgram, s.sessions), activeProgram)
+                              ? start(
+                                  D.nextWorkout(activeProgram, s.sessions),
+                                  activeProgram,
+                                )
                               : go("train")
                         }
                       >
                         {s.draft
                           ? "Resume session"
                           : activeProgram
-                            ? "Start " + D.nextWorkout(activeProgram, s.sessions).name
+                            ? "Start " +
+                              D.nextWorkout(activeProgram, s.sessions).name
                             : "Build a program"}
                         <ArrowRight size={18} />
                       </Button>
@@ -1182,6 +1272,34 @@ export default function App() {
               history={() => go("history")}
               library={() => go("exercises")}
               detail={sessionDetail}
+              coach={(w, p) =>
+                setModal({
+                  title: "Next workout coach",
+                  content: (
+                    <CoachSheet
+                      session={
+                        s.draft ??
+                        D.startSession(
+                          w.name,
+                          D.prepareWorkout(
+                            w,
+                            p,
+                            exercises,
+                            s.sessions,
+                            s.profile?.experience,
+                          ),
+                          p,
+                          w,
+                        )
+                      }
+                      onOpenWorkout={() => {
+                        close();
+                        go("session");
+                      }}
+                    />
+                  ),
+                })
+              }
             />
           )}
           {page === "session" &&
@@ -1331,7 +1449,8 @@ export default function App() {
                           setNotice("Add at least one completed set.");
                           return;
                         }
-                        if (await saveChange((s) => ({
+                        if (
+                          await saveChange((s) => ({
                             ...s,
                             sessions: [
                               ...s.sessions,
@@ -1364,7 +1483,8 @@ export default function App() {
                             exercise={D.catalog[0]}
                             isNew
                             save={async (ex) => {
-                              if (await saveChange((s) => ({
+                              if (
+                                await saveChange((s) => ({
                                   ...s,
                                   customExercises: [...s.customExercises, ex],
                                 }))
@@ -1425,7 +1545,8 @@ export default function App() {
                                     exercise={ex}
                                     isNew={false}
                                     save={async (edited) => {
-                                      if (await saveChange((s) => ({
+                                      if (
+                                        await saveChange((s) => ({
                                           ...s,
                                           customExercises:
                                             s.customExercises.map((e) =>
@@ -1464,7 +1585,13 @@ export default function App() {
                     change((s) => ({
                       ...s,
                       programs: s.programs.map((x) =>
-                        x.id === p.id ? { ...x, currentWeek: x.deloadWeek, phase: "deload" as const } : x,
+                        x.id === p.id
+                          ? {
+                              ...x,
+                              currentWeek: x.deloadWeek,
+                              phase: "deload" as const,
+                            }
+                          : x,
                       ),
                     })),
                 )
@@ -1899,7 +2026,11 @@ function ProgramBuilder({
   const updateTarget = (wi: number, ti: number, t: D.Target) =>
     updateWorkout(wi, {
       ...p.workouts[wi],
-      exercises: p.workouts[wi].exercises.map((x, j) => (j === ti ? t : x)),
+      exercises: p.workouts[wi].exercises.map((x, j) =>
+        j === ti
+          ? { ...t, nextRows: undefined, coachingProposalId: undefined }
+          : x,
+      ),
     });
   return (
     <form
@@ -1965,7 +2096,12 @@ function ProgramBuilder({
         </Field>
       </div>
       <PhaseControls program={p} onChange={setP} />
-      <PhasePreview program={p} exercises={exercises} sessions={sessions} experience={experience} />
+      <PhasePreview
+        program={p}
+        exercises={exercises}
+        sessions={sessions}
+        experience={experience}
+      />
       <div className="builder-workouts">
         {p.workouts.map((w, wi) => (
           <section className="builder-workout" key={w.id}>
@@ -2000,8 +2136,14 @@ function ProgramBuilder({
                         updateTarget(wi, ti, {
                           ...t,
                           exerciseId: e.target.value,
-                          setup: e.target.value === t.exerciseId ? t.setup : undefined,
-                          startingLoad: e.target.value === t.exerciseId ? t.startingLoad : undefined,
+                          setup:
+                            e.target.value === t.exerciseId
+                              ? t.setup
+                              : undefined,
+                          startingLoad:
+                            e.target.value === t.exerciseId
+                              ? t.startingLoad
+                              : undefined,
                         })
                       }
                     >
@@ -2052,10 +2194,35 @@ function ProgramBuilder({
                     <X size={17} />
                   </button>
                 </div>
-                <Field label={exercises.find(e => e.id === t.exerciseId)?.convention === 'machine-label' ? 'First-session machine label' : 'First-session load (kg)'}>
-                  <Num label={exercises.find(e => e.id === t.exerciseId)?.convention === 'machine-label' ? 'First-session machine label' : 'First-session load (kg)'} min={0} max={2000} step={0.25} value={t.startingLoad ?? 0} onChange={startingLoad => updateTarget(wi,ti,{...t,startingLoad})} />
+                <Field
+                  label={
+                    exercises.find((e) => e.id === t.exerciseId)?.convention ===
+                    "machine-label"
+                      ? "First-session machine label"
+                      : "First-session load (kg)"
+                  }
+                >
+                  <Num
+                    label={
+                      exercises.find((e) => e.id === t.exerciseId)
+                        ?.convention === "machine-label"
+                        ? "First-session machine label"
+                        : "First-session load (kg)"
+                    }
+                    min={0}
+                    max={2000}
+                    step={0.25}
+                    value={t.startingLoad ?? 0}
+                    onChange={(startingLoad) =>
+                      updateTarget(wi, ti, { ...t, startingLoad })
+                    }
+                  />
                 </Field>
-                <p className="caption">An editable starting reference, not a progression recommendation. Comparable logged loads take precedence. A saved equipment setup requires a fresh load choice.</p>
+                <p className="caption">
+                  An editable starting reference, not a progression
+                  recommendation. Comparable logged loads take precedence. A
+                  saved equipment setup requires a fresh load choice.
+                </p>
                 <div className="target-fields">
                   {(["sets", "min", "max", "rir", "rest"] as const).map(
                     (key, i) => (
@@ -2306,7 +2473,12 @@ function HistoryDetail({
         />
         <Stat
           label="HARD SETS"
-          value={String(Object.values(D.directVolume([s], exercises)).reduce((a,b)=>a+b,0))}
+          value={String(
+            Object.values(D.directVolume([s], exercises)).reduce(
+              (a, b) => a + b,
+              0,
+            ),
+          )}
           detail="Straight/down sets, ≤4 RIR; advanced bouts separate"
         />
       </div>
@@ -2519,7 +2691,18 @@ function HistoryEditor({
         value={s.feedback}
         onChange={(feedback) => setS({ ...s, feedback })}
       />
-      <MuscleFeedbackFields value={s.muscleFeedback ?? []} onChange={muscleFeedback => setS({...s, muscleFeedback})} muscles={[...new Set(s.exercises.flatMap(entry => { const ex=exercises.find(ex=>ex.id===entry.exerciseId); return ex ? [ex.muscle,...ex.secondary] : []; }))]} />
+      <MuscleFeedbackFields
+        value={s.muscleFeedback ?? []}
+        onChange={(muscleFeedback) => setS({ ...s, muscleFeedback })}
+        muscles={[
+          ...new Set(
+            s.exercises.flatMap((entry) => {
+              const ex = exercises.find((ex) => ex.id === entry.exerciseId);
+              return ex ? [ex.muscle, ...ex.secondary] : [];
+            }),
+          ),
+        ]}
+      />
       {error && (
         <p className="error" role="alert">
           {error}
@@ -2578,22 +2761,57 @@ function Insights({
   });
   const performance = ex
     ? D.performanceTimeline(ex.id, s.sessions, exercises).map((point) => ({
-        label: niceDate(point.date), reps: point.reps, context: point.context,
+        label: niceDate(point.date),
+        reps: point.reps,
+        context: point.context,
         value: D.displayLoad(point.weight, ex.convention, displayUnit),
       }))
     : [];
-  const reviewProgram = s.programs.find(p => !p.archived);
-  const reviewWorkout = reviewProgram?.workouts.find(w => w.exercises.some(t => t.exerciseId === ex?.id));
-  const reviewEntry = reviewProgram && reviewWorkout
-    ? D.prepareWorkout(reviewWorkout, reviewProgram, exercises, s.sessions, s.profile?.experience).find(e => e.exerciseId === ex?.id)
-    : undefined;
-  const reviewRange = reviewEntry?.target ?? [...s.sessions]
-    .sort((a,b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
-    .flatMap(s => s.exercises).filter(e => e.exerciseId === ex?.id).at(-1)?.target;
-  const rec = ex && reviewRange
-    ? D.recommend(ex.id, s.sessions, exercises, reviewRange, {experience:s.profile?.experience,
-      phase:reviewProgram ? D.programPhase(reviewProgram) : undefined,entry:reviewEntry,readiness:s.draft?.readiness})
-    : null;
+  const reviewProgram = s.programs.find((p) => !p.archived);
+  const reviewWorkout = reviewProgram?.workouts.find((w) =>
+    w.exercises.some((t) => t.exerciseId === ex?.id),
+  );
+  const reviewEntry =
+    reviewProgram && reviewWorkout
+      ? D.prepareWorkout(
+          reviewWorkout,
+          reviewProgram,
+          exercises,
+          s.sessions,
+          s.profile?.experience,
+        ).find((e) => e.exerciseId === ex?.id)
+      : undefined;
+  const reviewRange =
+    reviewEntry?.target ??
+    [...s.sessions]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+      .flatMap((s) => s.exercises)
+      .filter((e) => e.exerciseId === ex?.id)
+      .at(-1)?.target;
+  const reviewSession =
+    reviewProgram && reviewWorkout
+      ? D.startSession(
+          reviewWorkout.name,
+          D.prepareWorkout(
+            reviewWorkout,
+            reviewProgram,
+            exercises,
+            s.sessions,
+            s.profile?.experience,
+          ),
+          reviewProgram,
+          reviewWorkout,
+        )
+      : undefined;
+  if (reviewSession) reviewSession.readiness = s.draft?.readiness;
+  const rec =
+    ex && reviewSession
+      ? asRecommendation(
+          evaluateCoaching(s, reviewSession).find(
+            (p) => p.exerciseId === ex.id,
+          ),
+        )
+      : null;
   const recs = D.records(s.sessions, exercises);
   const latest = [...s.sessions].sort(
     (a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt,
@@ -2609,7 +2827,14 @@ function Insights({
         title="See the shape of your effort."
         text="Real training data. Useful context. No invented streaks."
       />
-      <MuscleReview sessions={s.sessions} exercises={exercises} experience={s.profile?.experience} program={s.programs.find(p=>!p.archived)} readiness={s.draft?.readiness} onReviewProgram={onReviewProgram} />
+      <MuscleReview
+        sessions={s.sessions}
+        exercises={exercises}
+        experience={s.profile?.experience}
+        program={s.programs.find((p) => !p.archived)}
+        readiness={s.draft?.readiness}
+        onReviewProgram={onReviewProgram}
+      />
       <div className="stat-grid">
         <Stat
           label="TOTAL SESSIONS"
@@ -2661,7 +2886,10 @@ function Insights({
               </table>
             </details>
             <p className="caption">
-              Completed direct straight/down sets at ≤4 RIR. Advanced bouts and indirect involvement are shown separately below, never converted into equivalent growth sets. These are estimates, not personal volume landmarks.
+              Completed direct straight/down sets at ≤4 RIR. Advanced bouts and
+              indirect involvement are shown separately below, never converted
+              into equivalent growth sets. These are estimates, not personal
+              volume landmarks.
             </p>
           </section>
           <section className="panel">
@@ -2684,8 +2912,9 @@ function Insights({
             </div>
             {ex && (
               <p className="caption">
-                Raw completed-bout timeline—not a comparable strength trend. Method and phase differ; load and reps belong to the same bout. {ex.equipment} ·{" "}
-                {D.conventionLabels[ex.convention]} ·{" "}
+                Raw completed-bout timeline—not a comparable strength trend.
+                Method and phase differ; load and reps belong to the same bout.{" "}
+                {ex.equipment} · {D.conventionLabels[ex.convention]} ·{" "}
                 {ex.convention === "machine-label"
                   ? "raw label"
                   : s.settings.unit}
@@ -2720,7 +2949,10 @@ function Insights({
                     <tbody>
                       {performance.slice(-12).map((x, i) => (
                         <tr key={i}>
-                          <td>{x.label}<small>{x.context}</small></td>
+                          <td>
+                            {x.label}
+                            <small>{x.context}</small>
+                          </td>
                           <td>{fmt(x.value)}</td>
                           <td>{x.reps}</td>
                         </tr>
@@ -2760,12 +2992,23 @@ function Insights({
                     {ex?.convention === "machine-label"
                       ? "label"
                       : s.settings.unit}{" "}
-                    × {rec.reps} reps · review against your {reviewRange?.min}–{reviewRange?.max} rep range
+                    × {rec.reps} reps · review against your {reviewRange?.min}–
+                    {reviewRange?.max} rep range
                   </p>
                 )}
-                {rec.setTargets && <p>Working-set targets: {rec.setTargets.map(t =>
-                  `${fmt(D.displayLoad(t.weight, ex!.convention, displayUnit))} × ${t.reps}`).join(" / ")}
-                  {" "}{ex?.convention === "machine-label" ? "label" : displayUnit}.</p>}
+                {rec.setTargets && (
+                  <p>
+                    Working-set targets:{" "}
+                    {rec.setTargets
+                      .map(
+                        (t) =>
+                          `${fmt(D.displayLoad(t.weight, ex!.convention, displayUnit))} × ${t.reps}`,
+                      )
+                      .join(" / ")}{" "}
+                    {ex?.convention === "machine-label" ? "label" : displayUnit}
+                    .
+                  </p>
+                )}
                 <p className="caption">
                   Apply suggestions through “Accept for unlogged sets” in an
                   active workout. No automatic program or load changes.
@@ -2776,7 +3019,12 @@ function Insights({
           <section className="panel">
             <h2>Comparable records</h2>
             <p className="caption">
-              Best raw load, then reps at that load, separated by exercise, equipment, convention, method/bout, semantic pair protocol and recorded phase. Legacy unknown pairs are not assumed comparable. Advanced-sequence progression stays manual. No warmups. Epley e1RM is shown only for qualifying straight total-barbell work; it is an estimate, not a tested maximum.
+              Best raw load, then reps at that load, separated by exercise,
+              equipment, convention, method/bout, semantic pair protocol and
+              recorded phase. Legacy unknown pairs are not assumed comparable.
+              Advanced-sequence progression stays manual. No warmups. Epley e1RM
+              is shown only for qualifying straight total-barbell work; it is an
+              estimate, not a tested maximum.
             </p>
             {recs.length ? (
               <div className="table-wrap">
@@ -2796,7 +3044,8 @@ function Insights({
                           <small>
                             {r.equipment} · {D.conventionLabels[r.convention]} ·{" "}
                             {niceDate(r.date)}
-                          </small><small>{r.context}</small>
+                          </small>
+                          <small>{r.context}</small>
                         </td>
                         <td>
                           {fmt(
@@ -2877,8 +3126,15 @@ function Insights({
             <p className="caption">Marked days contain logged sessions.</p>
           </section>
           <section className="panel">
-<h2>This week's muscle volume</h2>
-            <TrainingExposure sessions={s.sessions.filter(x=>new Date(x.date+"T12:00:00")>=weekStart && x.date<=D.today())} exercises={exercises} />
+            <h2>This week's muscle volume</h2>
+            <TrainingExposure
+              sessions={s.sessions.filter(
+                (x) =>
+                  new Date(x.date + "T12:00:00") >= weekStart &&
+                  x.date <= D.today(),
+              )}
+              exercises={exercises}
+            />
             <VolumeBars
               values={D.directVolume(
                 s.sessions.filter(
@@ -2900,14 +3156,17 @@ function Insights({
                 <p>Last session · {niceDate(latest.date)}</p>
                 <FeedbackSummary session={latest} />
                 {(latest.feedback.pain === true ||
-                  (latest.feedback.reported === true && (
-                    (latest.feedback.soreness != null && latest.feedback.soreness >= 4) ||
-                    (latest.feedback.fatigue != null && latest.feedback.fatigue >= 4)))) && (
+                  (latest.feedback.reported === true &&
+                    ((latest.feedback.soreness != null &&
+                      latest.feedback.soreness >= 4) ||
+                      (latest.feedback.fatigue != null &&
+                        latest.feedback.fatigue >= 4)))) && (
                   <>
                     <p>
-                      Unscoped recovery signals need review. Local muscle reports
-                      are reviewed separately above; they do not automatically
-                      deload unrelated muscles. Persistent pain needs qualified support.
+                      Unscoped recovery signals need review. Local muscle
+                      reports are reviewed separately above; they do not
+                      automatically deload unrelated muscles. Persistent pain
+                      needs qualified support.
                     </p>
                     {s.programs
                       .filter((p) => !p.archived)
@@ -3126,7 +3385,22 @@ function Preferences({
               converted.
             </p>
           </section>
-          {publicWorkspace ? <section className="panel"><h2>AI is unavailable in public mode</h2><p>Private Gemini keys are never bound to this workspace. Manual programs, starter templates, workouts and imports remain available.</p></section> : <GeminiKeySettings />}
+          {publicWorkspace ? (
+            <section className="panel">
+              <h2>AI is unavailable in public mode</h2>
+              <p>
+                Private Gemini keys are never bound to this workspace. Manual
+                programs, starter templates, workouts and imports remain
+                available.
+              </p>
+            </section>
+          ) : (
+            <GeminiKeySettings />
+          )}
+          <section className="panel">
+            <h2>Built-in workout coach</h2>
+            <CoachSettingsPanel />
+          </section>
           <section className="panel">
             <h2>Your data, portable.</h2>
             <p>
@@ -3158,13 +3432,26 @@ function Preferences({
                 <Download size={18} />
                 Export session CSV
               </Button>
-              <Button onClick={async () => {
-                await Promise.all(exportPendingCopies().map(async (box, i) => download(
-                  `neoform-pending-${i + 1}-${D.today()}.jsonl`,
-                  await exportHistoryBackup(box.data), "application/x-ndjson",
-                )));
-              }}>Export pending tab copies</Button>
-              <Button onClick={() => open({ title: "Import from Hevy", content: <HevyImport /> })}>
+              <Button
+                onClick={async () => {
+                  await Promise.all(
+                    exportPendingCopies().map(async (box, i) =>
+                      download(
+                        `neoform-pending-${i + 1}-${D.today()}.jsonl`,
+                        await exportHistoryBackup(box.data),
+                        "application/x-ndjson",
+                      ),
+                    ),
+                  );
+                }}
+              >
+                Export pending tab copies
+              </Button>
+              <Button
+                onClick={() =>
+                  open({ title: "Import from Hevy", content: <HevyImport /> })
+                }
+              >
                 Import from Hevy
               </Button>
             </div>
@@ -3204,7 +3491,11 @@ function Preferences({
                             <Button
                               variant="primary"
                               onClick={async () => {
-                                if (await saveChange((s) => D.mergeStates(s, incoming))) {
+                                if (
+                                  await saveChange((s) =>
+                                    D.mergeStates(s, incoming),
+                                  )
+                                ) {
                                   close();
                                   setNotice("Backup merged.");
                                 }
@@ -3236,49 +3527,71 @@ function Preferences({
               />
             </label>
             <p className="caption">
-              Checksummed version 2 backups support large histories. Version 1 imports remain supported. Files are unencrypted; store
-              them privately. CSV contains completed set rows with canonical kg
-              or raw machine labels, equipment and convention.
+              Checksummed version 2 backups support large histories. Version 1
+              imports remain supported. Files are unencrypted; store them
+              privately. CSV contains completed set rows with canonical kg or
+              raw machine labels, equipment and convention.
             </p>
           </section>
           <section className="panel">
             <h2>{publicWorkspace ? "Workspace access" : "Account & access"}</h2>
             <p>{userEmail}</p>
-            {publicWorkspace ? <p>No account or sign-in. This shared workspace is publicly readable and writable. Existing private accounts remain separate and cannot be accessed in this mode.</p> : singleUser ? <><p>Single-user / this PC</p><p className="caption">Opens your existing local account without sign-in. Access changes are disabled; restart with the authenticated configuration to manage credentials. Do not share or tunnel this server.</p></> : <>
-            <div className="actions wrap">
-              <Button
-                onClick={() =>
-                  open({
-                    title: "Change your password",
-                    content: <PasswordForm close={close} />,
-                  })
-                }
-              >
-                Change password
-              </Button>
-              <Button
-                onClick={() => void logout().catch((e) => setNotice(e.message))}
-              >
-                <LogOut size={17} />
-                Sign out
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() =>
-                  open({
-                    title: "Permanently delete account",
-                    content: <DeleteAccount close={close} />,
-                  })
-                }
-              >
-                Delete account & data
-              </Button>
-            </div>
-            <p className="caption">
-              Password change signs out other devices. Sign out clears this
-              device's account cache after syncing. Email password reset is
-              unavailable; keep your passphrase safe.
-            </p></>}
+            {publicWorkspace ? (
+              <p>
+                No account or sign-in. This shared workspace is publicly
+                readable and writable. Existing private accounts remain separate
+                and cannot be accessed in this mode.
+              </p>
+            ) : singleUser ? (
+              <>
+                <p>Single-user / this PC</p>
+                <p className="caption">
+                  Opens your existing local account without sign-in. Access
+                  changes are disabled; restart with the authenticated
+                  configuration to manage credentials. Do not share or tunnel
+                  this server.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="actions wrap">
+                  <Button
+                    onClick={() =>
+                      open({
+                        title: "Change your password",
+                        content: <PasswordForm close={close} />,
+                      })
+                    }
+                  >
+                    Change password
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      void logout().catch((e) => setNotice(e.message))
+                    }
+                  >
+                    <LogOut size={17} />
+                    Sign out
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      open({
+                        title: "Permanently delete account",
+                        content: <DeleteAccount close={close} />,
+                      })
+                    }
+                  >
+                    Delete account & data
+                  </Button>
+                </div>
+                <p className="caption">
+                  Password change signs out other devices. Sign out clears this
+                  device's account cache after syncing. Email password reset is
+                  unavailable; keep your passphrase safe.
+                </p>
+              </>
+            )}
           </section>
         </div>
         <div className="stack">
@@ -3288,16 +3601,25 @@ function Preferences({
             <details open>
               <summary>Effort, sets & comparisons</summary>
               <p>
-                RIR is reps in reserve; RPE = 10 − RIR here. Direct straight/down sets at ≤4 RIR are counted separately from advanced raw bouts. No fractional growth credits are inferred. Warmups do not
-                contribute to volume, records or progression. Load convention
-                matters: per dumbbell means one implement; total means both
-                sides combined. Machine labels are not standardized.
+                RIR is reps in reserve; RPE = 10 − RIR here. Direct
+                straight/down sets at ≤4 RIR are counted separately from
+                advanced raw bouts. No fractional growth credits are inferred.
+                Warmups do not contribute to volume, records or progression.
+                Load convention matters: per dumbbell means one implement; total
+                means both sides combined. Machine labels are not standardized.
               </p>
             </details>
             <details>
               <summary>How progression works</summary>
               <p>
-                Two recent comparable exposures with known prescriptions and explicit current recovery are needed. Unresolved pain/systemic fatigue and missing context veto escalation. Beginners keep at least 2 RIR. The original load cap is the smaller of 2.5% and 2.5 kg, subject to available equipment. Method, bout and phase contexts remain separate; advanced sequence progression stays manual. Acceptance is explicit, never a promise of optimal growth.
+                Two recent comparable exposures with known prescriptions and
+                explicit current recovery are needed. Unresolved pain/systemic
+                fatigue and missing context veto escalation. Beginners keep at
+                least 2 RIR. The original load cap is the smaller of 2.5% and
+                2.5 kg, subject to available equipment. Method, bout and phase
+                contexts remain separate; advanced sequence progression stays
+                manual. Acceptance is explicit, never a promise of optimal
+                growth.
               </p>
             </details>
             <details>
@@ -3314,17 +3636,28 @@ function Preferences({
             </details>
             <details>
               <summary>Privacy & recovery</summary>
-              {publicWorkspace ? <p>Anyone with this URL can read, edit, import, replace or clear shared training data. Do not enter private information. AI and private accounts are unavailable. Export a backup before making shared changes; the device cache and exported files are unencrypted.</p> : <p>
-                Only your authenticated account can read its data.
-                Demonstrations use third-party YouTube content. AI sends only
-                bounded training preferences to Google Gemini using your
-                account's encrypted API key; Google charges and quotas may apply.
-                Data is stored in D1; offline cache is unencrypted on
-                your device. Exports are private files. Account deletion removes
-                backend records and this browser cache; other offline devices
-                retain their local copy until sign-out. Treat persistent pain as
-                a reason to seek qualified advice, not to force a load increase.
-              </p>}
+              {publicWorkspace ? (
+                <p>
+                  Anyone with this URL can read, edit, import, replace or clear
+                  shared training data. Do not enter private information. AI and
+                  private accounts are unavailable. Export a backup before
+                  making shared changes; the device cache and exported files are
+                  unencrypted.
+                </p>
+              ) : (
+                <p>
+                  Only your authenticated account can read its data.
+                  Demonstrations use third-party YouTube content. AI sends only
+                  bounded training preferences to Google Gemini using your
+                  account's encrypted API key; Google charges and quotas may
+                  apply. Data is stored in D1; offline cache is unencrypted on
+                  your device. Exports are private files. Account deletion
+                  removes backend records and this browser cache; other offline
+                  devices retain their local copy until sign-out. Treat
+                  persistent pain as a reason to seek qualified advice, not to
+                  force a load increase.
+                </p>
+              )}
             </details>
             <details>
               <summary>Install & references</summary>
@@ -3358,7 +3691,11 @@ function Preferences({
           <section className="quiet-card">
             <ShieldCheck size={22} />
             <div>
-              <h3>{publicWorkspace ? "Shared with every visitor." : "Built around your privacy."}</h3>
+              <h3>
+                {publicWorkspace
+                  ? "Shared with every visitor."
+                  : "Built around your privacy."}
+              </h3>
               <p>
                 Export any time. Change your plan any time. Your training is
                 yours to keep.
@@ -3370,7 +3707,9 @@ function Preferences({
             onClick={() =>
               confirm(
                 "Clear training data?",
-                publicWorkspace ? "This removes shared programs, custom exercises, sessions and active draft for EVERY visitor. Export a backup first." : "This removes programs, custom exercises, sessions and active draft from your account. Your login and profile are retained. Export a backup first.",
+                publicWorkspace
+                  ? "This removes shared programs, custom exercises, sessions and active draft for EVERY visitor. Export a backup first."
+                  : "This removes programs, custom exercises, sessions and active draft from your account. Your login and profile are retained. Export a backup first.",
                 () =>
                   change((s) => ({
                     ...D.emptyState(),

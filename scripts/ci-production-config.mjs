@@ -82,7 +82,7 @@ async function run(command, env) {
     if (tracked.stdout.split('\0').some(name => /(^|\/)(\.dev\.vars(?:\..*)?|\.env(?:\..*)?|\.local-state|\.wrangler|ai-local\.ts)(\/|$)/.test(name)))
       throw new Error('Checkout contains forbidden local credential/state paths.');
     const migrations = (await readdir('migrations')).filter(name => name.endsWith('.sql')).sort();
-    if (JSON.stringify(migrations) !== JSON.stringify(['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql']))
+    if (JSON.stringify(migrations) !== JSON.stringify(['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql', '0005_coaching_events.sql']))
       throw new Error('Unexpected migrations: review and explicitly update the CI migration allowlist.');
     await writeFile('.ci-production.json', JSON.stringify(config, null, 2) + '\n', { flag: 'wx' });
   } else if (command === 'preflight') await checkExistingProduction(env);

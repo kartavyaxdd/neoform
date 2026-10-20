@@ -16,14 +16,36 @@ export async function fixture(page: Page) {
   await expect(page.locator(".sync-status")).toHaveText("Synced");
 }
 export async function currentReadiness(page: Page, muscle: string) {
-  await page.getByRole("button",{name:"Exercise options",exact:true}).click();
-  await page.getByRole("button",{name:"Readiness",exact:true}).click();
-  await page.getByLabel("Systemic fatigue now",{exact:true}).selectOption("1");
-  await page.getByLabel("Unscoped pain now",{exact:true}).selectOption("no");
-  await page.getByLabel("Broader context today",{exact:true}).selectOption("usual");
-  await page.getByLabel(`${muscle} readiness`,{exact:true}).selectOption("yes");
-  await page.getByLabel(`${muscle} pain now`,{exact:true}).selectOption("no");
-  await page.getByLabel(`${muscle} soreness now`,{exact:true}).selectOption("1");
-  await page.getByRole("checkbox",{name:"These answers describe how I feel now.",exact:true}).check();
-  await page.getByRole("button",{name:"Save current readiness",exact:true}).click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Readiness", exact: true }).click();
+  await page
+    .getByLabel("Systemic fatigue now", { exact: true })
+    .selectOption("1");
+  await page
+    .getByLabel("Unscoped pain now", { exact: true })
+    .selectOption("no");
+  await page
+    .getByLabel("Broader context today", { exact: true })
+    .selectOption("usual");
+  await page
+    .getByLabel(`${muscle} readiness`, { exact: true })
+    .selectOption("yes");
+  await page
+    .getByLabel(`${muscle} pain now`, { exact: true })
+    .selectOption("no");
+  await page
+    .getByLabel(`${muscle} soreness now`, { exact: true })
+    .selectOption("1");
+  await page
+    .getByRole("checkbox", {
+      name: "These answers describe how I feel now.",
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("button", { name: "Save current readiness", exact: true })
+    .click();
+  await expect(page.locator(".sync-status")).toHaveText("Synced");
 }

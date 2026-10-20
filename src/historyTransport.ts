@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { coachingEventSchema, type CoachingEvent } from "./coachingTypes";
 import {
   historyStateSchema,
   sessionSchema,
@@ -29,6 +30,7 @@ export type HistoryMutation = {
   revision: number;
   header: StateHeader;
   count: number;
+  coachingCount?: number;
   parts: HistoryPart[];
 };
 const ackSchema = z.object({ revision: storageRevision }).strict();
@@ -37,6 +39,7 @@ const headSchema = z
     revision: storageRevision,
     header: storageHeader,
     count: z.number().int().min(0).max(50000),
+    coachingCount: z.number().int().min(0).max(100000).optional(),
   })
   .strict();
 const pageSchema = z
@@ -59,7 +62,7 @@ export function partitionHistory(changes: HistoryPart): HistoryPart[] {
   const parts: HistoryPart[] = [];
   let part: HistoryPart = { upserts: [], deletes: [] },
     bytes = textBytes(part);
-  const append = <K extends keyof HistoryPart>(
+  const append = <K extends "upserts" | "deletes">(
     kind: K,
     value: HistoryPart[K][number],
   ) => {
@@ -84,6 +87,23 @@ export function partitionHistory(changes: HistoryPart): HistoryPart[] {
   changes.deletes.forEach((id) => append("deletes", id));
   if (part.upserts.length || part.deletes.length || !parts.length)
     parts.push(part);
+  // Ledger parts share the immutable upload manifest and byte/record budgets.
+  for (const key of ["coachingUpserts", "coachingDeletes"] as const) {
+    for (const value of changes[key] ?? []) {
+      let tail = parts[parts.length - 1];
+      const current = tail[key] ?? [];
+      const candidate = { ...tail, [key]: [...current, value] };
+      if (current.length >= 200 || textBytes(candidate) > MAX_BACKUP) {
+        tail = { upserts: [], deletes: [] };
+        parts.push(tail);
+      }
+      if (key === "coachingUpserts")
+        (tail.coachingUpserts ??= []).push(
+          value as NonNullable<HistoryPart["coachingUpserts"]>[number],
+        );
+      else (tail.coachingDeletes ??= []).push(value as string);
+    }
+  }
   if (parts.length > 1024) throw Error("Too many history transfer parts.");
   return parts;
 }
@@ -102,7 +122,16 @@ export function prepareHistoryMutation(
   const delta = historyDelta(base, next);
   for (const r of delta.upserts) validateHistoryRecord(r.session, header);
   const parts = partitionHistory(delta).map((p) => storagePart.parse(p));
-  return { id, revision, header, count: next.sessions.length, parts };
+  return {
+    id,
+    revision,
+    header,
+    count: next.sessions.length,
+    parts,
+    ...(base.coachingEvents || next.coachingEvents
+      ? { coachingCount: next.coachingEvents?.length ?? 0 }
+      : {}),
+  };
 }
 
 export async function writeHistoryMutation(
@@ -175,9 +204,59 @@ export async function readHistory(
       }
       if (sessions.length !== head.count)
         throw Error("Incomplete workout history.");
+      const events: CoachingEvent[] = [];
+      if (head.coachingCount) {
+        let cursor = -1;
+        while (true) {
+          const raw = await api(
+            `/storage/coaching?revision=${head.revision}&after=${cursor}`,
+          );
+          if (textBytes(raw) > MAX_BACKUP)
+            throw Error("Coaching page exceeds the transfer limit");
+          const page = z
+            .object({
+              records: z
+                .array(
+                  z
+                    .object({
+                      position: z.number().int().min(0).max(99999),
+                      event: coachingEventSchema,
+                    })
+                    .strict(),
+                )
+                .max(32),
+              next: z.number().int().min(0).max(99999).nullable(),
+            })
+            .strict()
+            .parse(raw);
+          for (const row of page.records) {
+            if (
+              row.position !== events.length ||
+              events.some((e) => e.id === row.event.id) ||
+              events.length >= head.coachingCount
+            )
+              throw Error("Invalid coaching ordering or duplicate record");
+            events.push(row.event);
+          }
+          if (page.next === null) break;
+          if (
+            !page.records.length ||
+            page.next !== page.records.at(-1)!.position ||
+            page.next <= cursor
+          )
+            throw Error("Coaching cursor did not advance");
+          cursor = page.next;
+        }
+        if (events.length !== head.coachingCount)
+          throw Error("Incomplete coaching history");
+      }
       return {
         revision: head.revision,
-        data: historyStateSchema.parse({ ...head.header, sessions }),
+        data: historyStateSchema.parse({
+          ...head.header,
+          sessions,
+          ...(events.length ? { coachingEvents: events } : {}),
+        }),
       };
     } catch (e) {
       if ((e as { status?: number }).status !== 409 || attempt === 2) throw e;

@@ -1,4 +1,5 @@
 import { produce, freeze } from "immer";
+import { coachingEventSchema } from "./coachingTypes";
 import { sessionSchema, type State } from "./domain";
 import {
   headerOf,
@@ -26,5 +27,20 @@ export function editState(base: State, fn: (data: State) => State): State {
       return record;
     });
   }
-  return freeze({ ...header, sessions }, true) as State;
+  let events = next.coachingEvents;
+  if (events && events !== base.coachingEvents) {
+    if (
+      events.length > 100000 ||
+      new Set(events.map((e) => e.id)).size !== events.length
+    )
+      throw Error("Invalid coaching ledger");
+    const before = new Map((base.coachingEvents ?? []).map((e) => [e.id, e]));
+    events = events.map((e) =>
+      before.get(e.id) === e ? e : coachingEventSchema.parse(e),
+    );
+  }
+  return freeze(
+    { ...header, sessions, ...(events ? { coachingEvents: events } : {}) },
+    true,
+  ) as State;
 }

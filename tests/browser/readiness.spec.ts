@@ -1,4 +1,4 @@
-import {readData,writeData} from "./storage-client";
+import { readData, writeData } from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
 import * as D from "../../src/domain";
@@ -13,7 +13,10 @@ for (const width of [360, 390])
     const remote = await (await readData(page)).json();
     const squat = D.catalog.find((x) => x.id === "squat")!;
     remote.data.sessions = [3, 1].map((days) => {
-      const e = D.createEntry(squat, D.target(squat.id));
+      const e = D.createEntry(
+        squat,
+        remote.data.programs[0].workouts[0].exercises[0],
+      );
       e.sets.forEach((t) =>
         Object.assign(t, {
           weight: 60,
@@ -23,12 +26,25 @@ for (const width of [360, 390])
           effortReported: true,
         }),
       );
-      const s = D.startSession("Synthetic comparable", [e]);
+      const s = D.startSession(
+        "Synthetic comparable",
+        [e],
+        remote.data.programs[0],
+        remote.data.programs[0].workouts[0],
+      );
       s.startedAt -= days * 86400000;
       const date = new Date(s.startedAt);
       s.date = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
       s.phase = "accumulation";
       s.feedback = { reported: true, pain: false, fatigue: 1, soreness: 1 };
+      s.exercises[0].coachingContext = {
+        execution: "consistent",
+        rest: "usual",
+        recordedAt: s.startedAt,
+      };
+      s.exercises[0].sets.forEach((t) => {
+        t.prescription = { ...t.prescription!, weight: t.weight };
+      });
       return s;
     });
     expect(
@@ -41,6 +57,7 @@ for (const width of [360, 390])
     ).toBe(200);
     const preserved = structuredClone(remote.data.sessions);
     await page.reload();
+    await page.getByText("Program options", { exact: true }).click();
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
@@ -83,11 +100,15 @@ for (const width of [360, 390])
     await page
       .getByLabel("Broader context today", { exact: true })
       .selectOption("changed");
-    await page.getByText("Other workout muscles",{exact:true}).click();
-    await page.getByLabel("Chest readiness",{exact:true}).selectOption("yes");
-    await page.getByLabel("Chest pain now",{exact:true}).selectOption("no");
-    await page.getByLabel("Chest soreness now",{exact:true}).selectOption("1");
-    await page.getByText("Other workout muscles",{exact:true}).click();
+    await page.getByText("Other workout muscles", { exact: true }).click();
+    await page
+      .getByLabel("Chest readiness", { exact: true })
+      .selectOption("yes");
+    await page.getByLabel("Chest pain now", { exact: true }).selectOption("no");
+    await page
+      .getByLabel("Chest soreness now", { exact: true })
+      .selectOption("1");
+    await page.getByText("Other workout muscles", { exact: true }).click();
     await page.getByRole("checkbox", { name: "Travel", exact: true }).check();
     await page
       .getByRole("checkbox", {
@@ -151,20 +172,57 @@ for (const width of [360, 390])
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     state = (await (await readData(page)).json()).data;
     expect(state.sessions.at(-1).readiness).toEqual(report);
-    expect(report.muscles.find((r:D.Readiness["muscles"][number])=>r.muscle==="Chest").recovered).toBe("yes");
+    expect(
+      report.muscles.find(
+        (r: D.Readiness["muscles"][number]) => r.muscle === "Chest",
+      ).recovered,
+    ).toBe("yes");
     expect(state.sessions.at(-1).feedback.reported).not.toBe(true);
     expect(state.sessions.slice(0, 2)).toEqual(preserved);
   });
-test("read-only readiness labels each muscle's own age",async({page})=>{
+test("read-only readiness labels each muscle's own age", async ({ page }) => {
   await fixture(page);
-  const remote=await(await readData(page)).json();
-  remote.data.draft=D.startSession("Synthetic mixed-age readiness",[D.createEntry(D.catalog.find(x=>x.id==="squat")!)]);
-  remote.data.draft.exercises[0].sets[0].done=true;
-  remote.data.draft.readiness={recordedAt:Date.now(),fatigue:1,pain:false,context:"usual",factors:[],muscles:[{muscle:"Quads",recovered:"yes",pain:false,soreness:1,recordedAt:Date.now()-13*3600000}]};
-  expect((await writeData(page,{headers:{Origin:new URL(page.url()).origin},data:remote})).status()).toBe(200);
+  const remote = await (await readData(page)).json();
+  remote.data.draft = D.startSession("Synthetic mixed-age readiness", [
+    D.createEntry(D.catalog.find((x) => x.id === "squat")!),
+  ]);
+  remote.data.draft.exercises[0].sets[0].done = true;
+  remote.data.draft.readiness = {
+    recordedAt: Date.now(),
+    fatigue: 1,
+    pain: false,
+    context: "usual",
+    factors: [],
+    muscles: [
+      {
+        muscle: "Quads",
+        recovered: "yes",
+        pain: false,
+        soreness: 1,
+        recordedAt: Date.now() - 13 * 3600000,
+      },
+    ],
+  };
+  expect(
+    (
+      await writeData(page, {
+        headers: { Origin: new URL(page.url()).origin },
+        data: remote,
+      })
+    ).status(),
+  ).toBe(200);
   await page.reload();
-  await page.getByRole("button",{name:"Resume session",exact:true}).click();
-  await page.getByRole("button",{name:"Exercise options",exact:true}).click();await page.getByRole("button",{name:"Readiness",exact:true}).click();
-  await expect(page.getByText("General context reported",{exact:false})).toContainText("within the app's 12-hour");
-  await expect(page.getByText("Quads: recovery",{exact:false})).toContainText("outside the app's check-in window");
+  await page
+    .getByRole("button", { name: "Resume session", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Readiness", exact: true }).click();
+  await expect(
+    page.getByText("General context reported", { exact: false }),
+  ).toContainText("within the app's 12-hour");
+  await expect(
+    page.getByText("Quads: recovery", { exact: false }),
+  ).toContainText("outside the app's check-in window");
 });

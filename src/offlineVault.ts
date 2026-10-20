@@ -1,4 +1,5 @@
 import { historyStateSchema, type State } from "./domain";
+import type { CoachingEvent } from "./coachingTypes";
 import { headerOf, historyDelta, type StateHeader } from "./storageProtocol";
 import type { Outbox } from "./syncPolicy";
 type Meta = Omit<Outbox, "data" | "base"> & {
@@ -8,6 +9,8 @@ type Meta = Omit<Outbox, "data" | "base"> & {
   data: StateHeader;
   dataCount: number;
   baseCount: number;
+  dataCoachCount?: number;
+  baseCoachCount?: number;
   base?: { revision: number; data: StateHeader };
 };
 export type JournalAck = {
@@ -148,6 +151,28 @@ export class OfflineVault {
             }),
           );
         }
+        for (const [kind, state, prior] of [
+          ["data-coaching", box.data, before?.data],
+          ["base-coaching", box.base?.data, before?.base?.data],
+        ] as const) {
+          if (reset || !state) rows.delete(range(owner, slot, kind));
+          if (!state) continue;
+          const oldEvents = new Map(
+            (prior?.coachingEvents ?? []).map((event, position) => [
+              event.id,
+              { event, position },
+            ]),
+          );
+          const ids = new Set((state.coachingEvents ?? []).map((e) => e.id));
+          if (!reset)
+            for (const id of oldEvents.keys())
+              if (!ids.has(id)) rows.delete([owner, slot, kind, id]);
+          (state.coachingEvents ?? []).forEach((event, position) => {
+            const old = oldEvents.get(event.id);
+            if (reset || old?.event !== event || old?.position !== position)
+              rows.put({ owner, slot, kind, id: event.id, position, event });
+          });
+        }
         const { data, base, ...rest } = box;
         boxes.put({
           ...rest,
@@ -157,6 +182,8 @@ export class OfflineVault {
           data: headerOf(data),
           dataCount: data.sessions.length,
           baseCount: base?.data.sessions.length ?? 0,
+          dataCoachCount: data.coachingEvents?.length ?? 0,
+          baseCoachCount: base?.data.coachingEvents?.length ?? 0,
           ...(base
             ? { base: { revision: base.revision, data: headerOf(base.data) } }
             : {}),
@@ -196,6 +223,7 @@ export class OfflineVault {
         kind: string;
         position: number;
         session: State["sessions"][number];
+        event?: CoachingEvent;
       }[];
       const sessions = (kind: string) =>
         records
@@ -208,6 +236,21 @@ export class OfflineVault {
               );
             return r.session;
           });
+      const events = (kind: string, count: number) => {
+        const values = records
+          .filter((r) => r.kind === kind)
+          .sort((a, b) => a.position - b.position);
+        if (
+          values.length !== count ||
+          values.some((r, i) => r.position !== i || !r.event)
+        )
+          throw Error(
+            "Incomplete device coaching history. Keep recovery copies.",
+          );
+        return values.map((r) => r.event!);
+      };
+      const dataEvents = events("data-coaching", meta.dataCoachCount ?? 0),
+        baseEvents = events("base-coaching", meta.baseCoachCount ?? 0);
       if (
         records.filter((r) => r.kind === "data").length !== meta.dataCount ||
         records.filter((r) => r.kind === "base").length !== meta.baseCount
@@ -219,13 +262,19 @@ export class OfflineVault {
         slot: __,
         dataCount: ___,
         baseCount: ____,
+        dataCoachCount: _dataEvents,
+        baseCoachCount: _baseEvents,
         data,
         base,
         ...rest
       } = meta;
       return {
         ...rest,
-        data: historyStateSchema.parse({ ...data, sessions: sessions("data") }),
+        data: historyStateSchema.parse({
+          ...data,
+          sessions: sessions("data"),
+          ...(dataEvents.length ? { coachingEvents: dataEvents } : {}),
+        }),
         ...(base
           ? {
               base: {
@@ -233,6 +282,7 @@ export class OfflineVault {
                 data: historyStateSchema.parse({
                   ...base.data,
                   sessions: sessions("base"),
+                  ...(baseEvents.length ? { coachingEvents: baseEvents } : {}),
                 }),
               },
             }

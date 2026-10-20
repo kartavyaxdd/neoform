@@ -6,16 +6,20 @@ export default defineConfig({
   testDir: "./tests/browser",
   // Provider-independent end-to-end release gates. Live-provider and special
   // access-mode rehearsals require their separate isolated configurations.
-  testMatch: process.env.NEOFORM_QA_MODE === "public" ? ["public-storage.spec.ts"] : [
-    "readiness.spec.ts",
-    "reliability.spec.ts",
-    "training-phase.spec.ts",
-    "v2-layout.spec.ts",
-    "v2-accessibility.spec.ts",
-    "mutation-queue.spec.ts",
-    "storage-release.spec.ts",
-    "store-races.spec.ts",
-  ],
+  testMatch:
+    process.env.NEOFORM_QA_MODE === "public"
+      ? ["public-storage.spec.ts", "coaching.spec.ts"]
+      : [
+          "coaching.spec.ts",
+          "readiness.spec.ts",
+          "reliability.spec.ts",
+          "training-phase.spec.ts",
+          "v2-layout.spec.ts",
+          "v2-accessibility.spec.ts",
+          "mutation-queue.spec.ts",
+          "storage-release.spec.ts",
+          "store-races.spec.ts",
+        ],
   timeout: 90000,
   expect: { timeout: 12000 },
   fullyParallel: false,

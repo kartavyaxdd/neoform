@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as D from "../src/domain";
 vi.mock("../src/store", () => ({
   useStore: () => ({
-    box: { data: { decisions: [], programs: [], profile: null } },
+    box: { data: D.emptyState() },
   }),
   change: vi.fn(),
 }));

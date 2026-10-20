@@ -84,7 +84,9 @@ export function SessionFeedbackFields({
   function update(patch: Partial<Feedback>) {
     // Historical defaults are not retroactively attested by editing one field.
     const next = {
-      ...(value.reported === true ? value : {...unknownFeedback(), pain: value.pain === true ? true : null}),
+      ...(value.reported === true
+        ? value
+        : { ...unknownFeedback(), pain: value.pain === true ? true : null }),
       ...patch,
     };
     next.reported = [next.pump, next.soreness, next.fatigue, next.pain].some(
@@ -263,7 +265,12 @@ export function FinishSessionFeedback({
 }: {
   draft: D.Session;
   exercises: D.Exercise[];
-  finish: (f: Feedback, m: MuscleFeedback[], confirmEffort: boolean) => void;
+  finish: (
+    f: Feedback,
+    m: MuscleFeedback[],
+    confirmEffort: boolean,
+    contexts: Record<string, NonNullable<D.Entry["coachingContext"]>>,
+  ) => void;
 }) {
   const [feedback, setFeedback] = useState<Feedback>(() =>
     draft.feedback.reported === true
@@ -277,6 +284,30 @@ export function FinishSessionFeedback({
     draft.muscleFeedback ?? [],
   );
   const [confirmEffort, setConfirmEffort] = useState(false);
+  const [contexts, setContexts] = useState<
+    Record<string, NonNullable<D.Entry["coachingContext"]>>
+  >(() =>
+    Object.fromEntries(
+      draft.exercises
+        .filter((e) => e.coachingContext)
+        .map((e) => [e.id, e.coachingContext!]),
+    ),
+  );
+  const updateContext = (
+    entryId: string,
+    patch: Partial<NonNullable<D.Entry["coachingContext"]>>,
+  ) =>
+    setContexts((old) => ({
+      ...old,
+      [entryId]: {
+        ...(old[entryId] ?? {
+          execution: "unknown",
+          rest: "unknown",
+          recordedAt: 0,
+        }),
+        ...patch,
+      },
+    }));
   const muscles = [
     ...new Set(
       draft.exercises
@@ -303,10 +334,98 @@ export function FinishSessionFeedback({
       </p>
       <SessionFeedbackFields value={feedback} onChange={setFeedback} />
       <label className="check-line">
-        <input type="checkbox" checked={confirmEffort} onChange={e => setConfirmEffort(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={confirmEffort}
+          onChange={(e) => setConfirmEffort(e.target.checked)}
+        />
         I confirm the recorded RIR values describe my actual completed sets.
       </label>
-      <p className="caption">Leave unchecked if unsure. Unconfirmed effort is saved but cannot justify progression. Edit inaccurate values before confirming.</p>
+      <p className="caption">
+        Leave unchecked if unsure. Unconfirmed effort is saved but cannot
+        justify progression. Edit inaccurate values before confirming.
+      </p>
+      <details>
+        <summary>Execution, rest and changed sets</summary>
+        <p className="caption">
+          Confirm what happened for each movement. Unanswered fields stay
+          unknown and do not justify escalation.
+        </p>
+        {draft.exercises.map((e) => {
+          const name =
+            exercises.find((x) => x.id === e.exerciseId)?.name ?? "Exercise";
+          return (
+            <fieldset key={e.id}>
+              <legend>{name}</legend>
+              <div className="form-grid">
+                <Field label={`${name} execution this session`}>
+                  <select
+                    value={contexts[e.id]?.execution ?? "unknown"}
+                    onChange={(ev) =>
+                      updateContext(e.id, {
+                        execution: ev.target.value as
+                          "consistent" | "changed" | "unknown",
+                      })
+                    }
+                  >
+                    <option value="unknown">Unknown / not reported</option>
+                    <option value="consistent">
+                      Consistent setup and execution
+                    </option>
+                    <option value="changed">Execution changed</option>
+                  </select>
+                </Field>
+                <Field label={`${name} rest this session`}>
+                  <select
+                    value={contexts[e.id]?.rest ?? "unknown"}
+                    onChange={(ev) =>
+                      updateContext(e.id, {
+                        rest: ev.target.value as
+                          "usual" | "shorter" | "longer" | "unknown",
+                      })
+                    }
+                  >
+                    <option value="unknown">Unknown / not reported</option>
+                    <option value="usual">Usual / as planned</option>
+                    <option value="shorter">Shorter than planned</option>
+                    <option value="longer">Longer than planned</option>
+                  </select>
+                </Field>
+                {(e.plannedWorkingSets !==
+                  e.sets.filter((t) => t.done && t.kind === "working").length ||
+                  e.sets.some(
+                    (t) =>
+                      t.kind === "working" &&
+                      t.prescription &&
+                      t.weight !== t.prescription.weight,
+                  )) && (
+                  <Field label={`${name} changed dose reason`}>
+                    <select
+                      value={contexts[e.id]?.skipReason ?? "unknown"}
+                      onChange={(ev) =>
+                        updateContext(e.id, {
+                          skipReason: ev.target.value as NonNullable<
+                            D.Entry["coachingContext"]
+                          >["skipReason"],
+                        })
+                      }
+                    >
+                      <option value="unknown">Unknown / not reported</option>
+                      <option value="time">Time limit</option>
+                      <option value="equipment">Equipment unavailable</option>
+                      <option value="performance">
+                        Could not complete targets
+                      </option>
+                      <option value="pain">Pain</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </Field>
+                )}
+              </div>
+            </fieldset>
+          );
+        })}
+      </details>
       <MuscleFeedbackFields
         value={muscleFeedback}
         onChange={setMuscleFeedback}
@@ -318,7 +437,19 @@ export function FinishSessionFeedback({
       </p>
       <Button
         variant="primary wide"
-        onClick={() => finish(feedback, muscleFeedback, confirmEffort)}
+        onClick={() =>
+          finish(
+            feedback,
+            muscleFeedback,
+            confirmEffort,
+            Object.fromEntries(
+              Object.entries(contexts).map(([id, context]) => [
+                id,
+                { ...context, recordedAt: Date.now() },
+              ]),
+            ),
+          )
+        }
       >
         Save completed workout
       </Button>

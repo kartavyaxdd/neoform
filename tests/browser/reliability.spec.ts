@@ -1,4 +1,4 @@
-import {readData,writeData} from "./storage-client";
+import { readData, writeData } from "./storage-client";
 import { test, expect, type Page } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
 import * as D from "../../src/domain";
@@ -268,7 +268,10 @@ test("reported history produces per-row targets and completion alone leaves effo
   const remote = await (await readData(page)).json();
   const squat = D.catalog.find((x) => x.id === "squat")!;
   remote.data.sessions = [3, 1].map((days) => {
-    const entry = D.createEntry(squat, D.target(squat.id));
+    const entry = D.createEntry(
+      squat,
+      remote.data.programs[0].workouts[0].exercises[0],
+    );
     entry.sets = entry.sets.map((t, i) => ({
       ...t,
       weight: 60,
@@ -277,13 +280,26 @@ test("reported history produces per-row targets and completion alone leaves effo
       done: true,
       effortReported: true,
     }));
-    const s = D.startSession("Synthetic performance", [entry]);
+    const s = D.startSession(
+      "Synthetic performance",
+      [entry],
+      remote.data.programs[0],
+      remote.data.programs[0].workouts[0],
+    );
     s.phase = "accumulation";
     const date = new Date();
     date.setDate(date.getDate() - days);
     s.startedAt = date.getTime();
     s.date = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     s.feedback = { reported: true, pain: false, fatigue: 1, soreness: 1 };
+    s.exercises[0].coachingContext = {
+      execution: "consistent",
+      rest: "usual",
+      recordedAt: s.startedAt,
+    };
+    s.exercises[0].sets.forEach((t) => {
+      t.prescription = { ...t.prescription!, weight: t.weight };
+    });
     return s;
   });
   expect(
@@ -295,10 +311,11 @@ test("reported history produces per-row targets and completion alone leaves effo
     ).status(),
   ).toBe(200);
   await page.reload();
+  await page.getByText("Program options", { exact: true }).click();
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
-  await currentReadiness(page,"Quads");
+  await currentReadiness(page, "Quads");
   await page
     .getByRole("button", { name: "Exercise options", exact: true })
     .click();
@@ -324,9 +341,7 @@ test("reported history produces per-row targets and completion alone leaves effo
     .getByRole("button", { name: "Save completed workout", exact: true })
     .click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  const saved = (
-    await (await readData(page)).json()
-  ).data.sessions.at(-1);
+  const saved = (await (await readData(page)).json()).data.sessions.at(-1);
   expect(saved.exercises[0].sets[0].effortReported).toBe(false);
   expect(saved.exercises[0].plannedWorkingSets).toBe(3);
 });
@@ -376,15 +391,23 @@ test("acknowledged offline work never replays over a newer edit", async ({
 }) => {
   await fixture(page);
   await page.route("**/api/storage/**", async (route) =>
-    ["POST","PUT"].includes(route.request().method()) ? route.abort() : route.continue(),
+    ["POST", "PUT"].includes(route.request().method())
+      ? route.abort()
+      : route.continue(),
   );
   await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          (document.querySelector(".sync-status")?.textContent?.includes("saved on device") || document.querySelector(".sync-status")?.textContent?.includes("sync paused")) ? 1 : 0,
+      page.evaluate(() =>
+        document
+          .querySelector(".sync-status")
+          ?.textContent?.includes("saved on device") ||
+        document
+          .querySelector(".sync-status")
+          ?.textContent?.includes("sync paused")
+          ? 1
+          : 0,
       ),
     )
     .toBeGreaterThan(0);

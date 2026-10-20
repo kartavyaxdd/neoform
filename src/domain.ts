@@ -1,6 +1,19 @@
 import { z } from "zod";
 import { videoId } from "./videos";
-import { recoveryObservations, recoveryTime, readinessFresh } from "./readiness";
+import {
+  recoveryObservations,
+  recoveryTime,
+  readinessFresh,
+} from "./readiness";
+import {
+  setPrescriptionSchema,
+  coachingContextSchema,
+  coachingEventSchema,
+  coachSettingsSchema,
+  proposalRowSchema,
+  bodyweightReportSchema,
+  coachingAssignmentSchema,
+} from "./coachingTypes";
 export const uid = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   // LAN HTTP lacks randomUUID; getRandomValues remains cryptographically secure.
@@ -386,6 +399,7 @@ export const setSchema = z
     rir: z.number().min(0).max(10),
     kind: z.enum(["working", "warmup", "drop"]),
     effortReported: z.boolean().optional(),
+    prescription: setPrescriptionSchema.optional(),
     done: z.boolean(),
     bout: z
       .enum(["straight", "activation", "mini", "drop", "down", "giant"])
@@ -404,13 +418,20 @@ const entryTarget = z
   })
   .strict()
   .refine((t) => t.max >= t.min, "Invalid rep range");
-export const equipmentSetupSchema = z.object({
-  label: z.string().trim().min(1).max(120),
-  execution: z.string().trim().max(300),
-  // Canonical kg for standardized loads; raw labels otherwise. No inferred grid.
-  availableLoads: z.array(z.number().finite().min(0).max(2000)).max(100)
-    .refine(values => values.every((v, i) => i === 0 || v > values[i - 1]), "Loads must be unique and increasing"),
-}).strict();
+export const equipmentSetupSchema = z
+  .object({
+    label: z.string().trim().min(1).max(120),
+    execution: z.string().trim().max(300),
+    // Canonical kg for standardized loads; raw labels otherwise. No inferred grid.
+    availableLoads: z
+      .array(z.number().finite().min(0).max(2000))
+      .max(100)
+      .refine(
+        (values) => values.every((v, i) => i === 0 || v > values[i - 1]),
+        "Loads must be unique and increasing",
+      ),
+  })
+  .strict();
 export type EquipmentSetup = z.infer<typeof equipmentSetupSchema>;
 const entrySchema = z
   .object({
@@ -426,6 +447,7 @@ const entrySchema = z
     plannedWorkingSets: z.number().int().min(0).max(40).optional(),
     sourceTargetId: id.optional(),
     setup: equipmentSetupSchema.optional(),
+    coachingContext: coachingContextSchema.optional(),
     sets: z.array(setSchema).max(40),
   })
   .strict();
@@ -448,25 +470,57 @@ const date = z
       new Date(d + "T12:00:00Z").toISOString().slice(0, 10) === d,
     "Invalid date",
   );
-export const readinessFactors = ["poor-sleep", "illness", "travel", "unusual-activity", "other"] as const;
-export const readinessSchema = z.object({
-  recordedAt: z.number().finite().min(0),
-  fatigue: z.number().int().min(1).max(5).nullable(),
-  pain: z.boolean().nullable(),
-  context: z.enum(["unknown", "usual", "changed"]),
-  factors: z.array(z.enum(readinessFactors)).max(readinessFactors.length)
-    .refine(values => new Set(values).size === values.length, "Duplicate context factors"),
-  muscles: z.array(z.object({
-    muscle: z.enum(muscles),
-    recovered: z.enum(["yes", "no", "unknown"]),
+export const readinessFactors = [
+  "poor-sleep",
+  "illness",
+  "travel",
+  "unusual-activity",
+  "other",
+] as const;
+export const readinessSchema = z
+  .object({
+    recordedAt: z.number().finite().min(0),
+    fatigue: z.number().int().min(1).max(5).nullable(),
     pain: z.boolean().nullable(),
-    soreness: z.number().int().min(1).max(5).nullable(),
-    fatigue: z.number().int().min(1).max(5).nullable().optional(),
-    recordedAt: z.number().finite().min(0).optional(),
-  }).strict()).max(muscles.length)
-    .refine(values => new Set(values.map(r=>r.muscle)).size === values.length, "Duplicate readiness muscles"),
-}).strict().refine(r => r.context === "changed" || r.factors.length === 0, "Context factors require changed context")
-  .refine(r=>r.muscles.every(row=>row.recordedAt === undefined || row.recordedAt <= r.recordedAt), "Muscle report cannot be later than the check-in");
+    context: z.enum(["unknown", "usual", "changed"]),
+    factors: z
+      .array(z.enum(readinessFactors))
+      .max(readinessFactors.length)
+      .refine(
+        (values) => new Set(values).size === values.length,
+        "Duplicate context factors",
+      ),
+    muscles: z
+      .array(
+        z
+          .object({
+            muscle: z.enum(muscles),
+            recovered: z.enum(["yes", "no", "unknown"]),
+            pain: z.boolean().nullable(),
+            soreness: z.number().int().min(1).max(5).nullable(),
+            fatigue: z.number().int().min(1).max(5).nullable().optional(),
+            recordedAt: z.number().finite().min(0).optional(),
+          })
+          .strict(),
+      )
+      .max(muscles.length)
+      .refine(
+        (values) => new Set(values.map((r) => r.muscle)).size === values.length,
+        "Duplicate readiness muscles",
+      ),
+  })
+  .strict()
+  .refine(
+    (r) => r.context === "changed" || r.factors.length === 0,
+    "Context factors require changed context",
+  )
+  .refine(
+    (r) =>
+      r.muscles.every(
+        (row) => row.recordedAt === undefined || row.recordedAt <= r.recordedAt,
+      ),
+    "Muscle report cannot be later than the check-in",
+  );
 export type Readiness = z.infer<typeof readinessSchema>;
 export const sessionSchema = z
   .object({
@@ -478,6 +532,8 @@ export const sessionSchema = z
     notes: note,
     feedback: feedbackSchema,
     readiness: readinessSchema.optional(),
+    bodyweight: bodyweightReportSchema.optional(),
+    coachingAssignments: z.array(coachingAssignmentSchema).max(60).optional(),
     muscleFeedback: z
       .array(
         z
@@ -513,6 +569,8 @@ export const targetSchema = z
     setup: equipmentSetupSchema.optional(),
     ...techniqueFields,
     startingLoad: z.number().finite().min(0).max(2000).optional(),
+    nextRows: z.array(proposalRowSchema).max(10).optional(),
+    coachingProposalId: id.optional(),
     sets: z.number().int().min(1).max(10),
     min: z.number().int().min(1).max(100),
     max: z.number().int().min(1).max(100),
@@ -522,7 +580,16 @@ export const targetSchema = z
     superset: z.string().max(20),
   })
   .strict()
-  .refine((t) => t.max >= t.min, "Max reps must be at least min reps");
+  .refine((t) => t.max >= t.min, "Max reps must be at least min reps")
+  .refine(
+    (t) =>
+      !t.nextRows ||
+      (t.nextRows.length === t.sets &&
+        t.nextRows.every(
+          (r, i) => r.ordinal === i && r.reps >= t.min && r.reps <= t.max,
+        )),
+    "Reviewed rows must match the target count, order and rep range",
+  );
 export type Target = z.infer<typeof targetSchema>;
 export const workoutSchema = z
   .object({
@@ -571,6 +638,8 @@ const profileSchema = z
 const rawState = z
   .object({
     profile: profileSchema.nullable(),
+    coaching: coachSettingsSchema.optional(),
+    coachingEvents: z.array(coachingEventSchema).max(100000).optional(),
     settings: z
       .object({
         unit: z.enum(["kg", "lb"]),
@@ -645,6 +714,7 @@ function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
   unique(all, "customExercises");
   unique(s.programs, "programs");
   unique(s.sessions, "sessions");
+  unique(s.coachingEvents ?? [], "coachingEvents");
   const ref = (eid: string) => {
     if (!ids.has(eid))
       ctx.addIssue({ code: "custom", message: "Unknown exercise reference" });
@@ -667,8 +737,8 @@ function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
     }
   }
 }
-export const stateSchema = rawState.superRefine((s,ctx)=>{
-  stateReferences(s,ctx);
+export const stateSchema = rawState.superRefine((s, ctx) => {
+  stateReferences(s, ctx);
   if (new TextEncoder().encode(JSON.stringify(s)).length > MAX_STATE_BYTES)
     ctx.addIssue({
       code: "custom",
@@ -678,8 +748,14 @@ export const stateSchema = rawState.superRefine((s,ctx)=>{
 });
 // The legacy wire/backup remains bounded until its client is upgraded. The
 // normalized protocol validates a bounded header and individual history records.
-export const historyStateSchema = rawState.extend({sessions:z.array(sessionSchema).max(50000)}).superRefine(stateReferences);
-export const stateHeaderSchema = rawState.omit({sessions:true}).superRefine((header,ctx)=>stateReferences({...header,sessions:[]},ctx));
+export const historyStateSchema = rawState
+  .extend({ sessions: z.array(sessionSchema).max(50000) })
+  .superRefine(stateReferences);
+export const stateHeaderSchema = rawState
+  .omit({ sessions: true, coachingEvents: true })
+  .superRefine((header, ctx) =>
+    stateReferences({ ...header, sessions: [] }, ctx),
+  );
 export type State = z.infer<typeof rawState>;
 export const restRemaining = (timer: State["timer"], now = Date.now()) =>
   !timer
@@ -764,7 +840,11 @@ export function programPhase(p: Program): Phase {
 }
 // Original conservative recipes, based on physical PDF pp.166–170,277.
 // They are not measured maintenance volume or a biological reset.
-function phaseTarget(t: Target, p: Program, experience?: Experience): Target {
+export function phaseTarget(
+  t: Target,
+  p: Program,
+  experience?: Experience,
+): Target {
   const phase = programPhase(p);
   const progress = Math.max(
     0,
@@ -856,21 +936,69 @@ export function prepareWorkout(
       .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
       .reverse()
       .filter((s) => !s.phase || s.phase === "accumulation")
-      .filter((s) => !(s.programId === program.id && s.week === program.deloadWeek && !s.phase))
-      .flatMap((s) => s.exercises.map((e) => ({e, confirmed: s.phase === "accumulation"})))
+      .filter(
+        (s) =>
+          !(
+            s.programId === program.id &&
+            s.week === program.deloadWeek &&
+            !s.phase
+          ),
+      )
+      .flatMap((s) =>
+        s.exercises.map((e) => ({ e, confirmed: s.phase === "accumulation" })),
+      )
       .find(
-        ({e, confirmed}) =>
+        ({ e, confirmed }) =>
           e.exerciseId === x.id &&
-          e.target !== undefined && e.target.rir < (phase === "deload" && !confirmed ? 4 : 5) &&
+          e.target !== undefined &&
+          e.target.rir < (phase === "deload" && !confirmed ? 4 : 5) &&
           comparableKey(e, x) === comparableKey(entry, x) &&
           e.sets.some((s) => s.done && s.kind === "working"),
       )?.e;
     const load =
-      previous?.sets.find((s) => s.done && s.kind === "working")?.weight ?? (t.setup ? 0 : (t.startingLoad ?? 0));
-    entry.sets = entry.sets.map((s) => ({
-      ...s,
-      weight: phase === "deload" && late && x.convention !== "machine-label" ? load / 2 : load,
-    }));
+      previous?.sets.find((s) => s.done && s.kind === "working")?.weight ??
+      (t.setup ? 0 : (t.startingLoad ?? 0));
+    entry.sets = entry.sets.map((s, ordinal) => {
+      const rowLoad =
+        phase === "accumulation"
+          ? (previous?.sets.filter((t) => t.done && t.kind === "working")[
+              ordinal
+            ]?.weight ?? load)
+          : load;
+      return {
+        ...s,
+        weight:
+          phase === "accumulation" && t.nextRows?.[ordinal]
+            ? t.nextRows[ordinal].weight
+            : phase === "deload" && late && x.convention !== "machine-label"
+              ? load / 2
+              : rowLoad,
+        reps:
+          phase === "accumulation" && t.nextRows?.[ordinal]
+            ? t.nextRows[ordinal].reps
+            : s.reps,
+        prescription: s.prescription
+          ? {
+              ...s.prescription,
+              weight:
+                phase === "accumulation" && t.nextRows?.[ordinal]
+                  ? t.nextRows[ordinal].weight
+                  : phase === "deload" &&
+                      late &&
+                      x.convention !== "machine-label"
+                    ? load / 2
+                    : rowLoad,
+              reps:
+                phase === "accumulation" && t.nextRows?.[ordinal]
+                  ? t.nextRows[ordinal].reps
+                  : s.reps,
+              ...(phase === "accumulation" && t.coachingProposalId
+                ? { proposalId: t.coachingProposalId }
+                : {}),
+            }
+          : undefined,
+      };
+    });
     return [entry];
   });
 }
@@ -881,8 +1009,14 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
     ...(t ? { sourceTargetId: t.id } : {}),
     ...(t?.setup ? { setup: structuredClone(t.setup) } : {}),
     notes: "",
-    plannedWorkingSets: (t?.kind ?? "working") === "working"
-      ? (t ? (deload ? Math.max(1, Math.ceil(t.sets / 2)) : t.sets) : 3) : 0,
+    plannedWorkingSets:
+      (t?.kind ?? "working") === "working"
+        ? t
+          ? deload
+            ? Math.max(1, Math.ceil(t.sets / 2))
+            : t.sets
+          : 3
+        : 0,
     convention: e.convention,
     equipment: e.equipment,
     superset: t?.superset || "",
@@ -902,7 +1036,7 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
       {
         length: t ? (deload ? Math.max(1, Math.ceil(t.sets / 2)) : t.sets) : 3,
       },
-      () => ({
+      (_, ordinal) => ({
         id: uid(),
         weight: 0,
         reps: t?.min || 8,
@@ -910,6 +1044,15 @@ export function createEntry(e: Exercise, t?: Target, deload = false): Entry {
         effortReported: false,
         kind: t?.kind || "working",
         done: false,
+        prescription: {
+          weight: 0,
+          reps: t?.min || 8,
+          min: t?.min || 8,
+          max: t?.max || 12,
+          rir: deload ? 4 : (t?.rir ?? 2),
+          rest: t?.rest ?? 120,
+          ordinal,
+        },
       }),
     ),
   };
@@ -935,17 +1078,42 @@ export function startSession(
       reported: false,
     },
     exercises: entries,
+    ...(entries.some((e) => e.sets.some((t) => t.prescription?.proposalId))
+      ? {
+          coachingAssignments: entries.flatMap((e) =>
+            [
+              ...new Set(
+                e.sets.flatMap((t) =>
+                  t.prescription?.proposalId ? [t.prescription.proposalId] : [],
+                ),
+              ),
+            ].map((proposalId) => ({ proposalId, entryId: e.id })),
+          ),
+        }
+      : {}),
     ...(workout ? { workoutId: workout.id } : {}),
-    ...(program ? { programId: program.id, week: program.currentWeek, phase: programPhase(program) } : {}),
+    ...(program
+      ? {
+          programId: program.id,
+          week: program.currentWeek,
+          phase: programPhase(program),
+        }
+      : {}),
   };
 }
 export function nextWorkout(program: Program, sessions: Session[]): Workout {
-  const latest = [...sessions].filter(s => s.programId === program.id)
-    .sort((a,b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt).at(-1);
-  let index = program.workouts.findIndex(w => w.id === latest?.workoutId);
+  const latest = [...sessions]
+    .filter((s) => s.programId === program.id)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+    .at(-1);
+  let index = program.workouts.findIndex((w) => w.id === latest?.workoutId);
   // Legacy history may establish identity only when its name is unambiguous.
-  if (index < 0 && latest && program.workouts.filter(w => w.name === latest.name).length === 1)
-    index = program.workouts.findIndex(w => w.name === latest.name);
+  if (
+    index < 0 &&
+    latest &&
+    program.workouts.filter((w) => w.name === latest.name).length === 1
+  )
+    index = program.workouts.findIndex((w) => w.name === latest.name);
   return program.workouts[(index + 1) % program.workouts.length];
 }
 export const toggleSet = (s: Session, id: string): Session => ({
@@ -963,7 +1131,8 @@ export const completeSession = (s: Session): Session => ({
     .map((e) => ({ ...e, sets: e.sets.filter((x) => x.done) }))
     .filter((e) => e.sets.length),
 });
-export const hard = (s: SetLog) => s.done && s.kind !== "warmup" && s.effortReported !== false && s.rir <= 4;
+export const hard = (s: SetLog) =>
+  s.done && s.kind !== "warmup" && s.effortReported !== false && s.rir <= 4;
 export type MuscleExposure = {
   directHardSets: number;
   indirectHardSets: number;
@@ -1020,21 +1189,43 @@ export function muscleExposure(
   return result;
 }
 export function directVolume(sessions: Session[], exercises: Exercise[]) {
-  return Object.fromEntries(Object.entries(muscleExposure(sessions, exercises))
-    .map(([muscle, row]) => [muscle, row.directHardSets]));
+  return Object.fromEntries(
+    Object.entries(muscleExposure(sessions, exercises)).map(([muscle, row]) => [
+      muscle,
+      row.directHardSets,
+    ]),
+  );
 }
 // Deliberately a raw-bout timeline, not a comparable strength trend. Each
 // point's load and repetitions belong to the same actual completed bout.
-export function performanceTimeline(exerciseId: string, sessions: Session[], exercises: Exercise[]) {
+export function performanceTimeline(
+  exerciseId: string,
+  sessions: Session[],
+  exercises: Exercise[],
+) {
   const x = exercises.find((x) => x.id === exerciseId);
   if (!x) return [];
-  return [...sessions].sort((a,b) => a.date.localeCompare(b.date) || a.startedAt-b.startedAt)
-    .flatMap((session) => session.exercises.filter((e) => e.exerciseId === exerciseId &&
-      (e.equipment ?? x.equipment) === x.equipment && (e.convention ?? x.convention) === x.convention)
-      .flatMap((e) => e.sets.filter((set) => set.done && set.kind !== "warmup").map((set) => ({
-        date: session.date, weight: set.weight, reps: set.reps,
-        context: executionContext(e, set, session.phase),
-      }))));
+  return [...sessions]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startedAt - b.startedAt)
+    .flatMap((session) =>
+      session.exercises
+        .filter(
+          (e) =>
+            e.exerciseId === exerciseId &&
+            (e.equipment ?? x.equipment) === x.equipment &&
+            (e.convention ?? x.convention) === x.convention,
+        )
+        .flatMap((e) =>
+          e.sets
+            .filter((set) => set.done && set.kind !== "warmup")
+            .map((set) => ({
+              date: session.date,
+              weight: set.weight,
+              reps: set.reps,
+              context: executionContext(e, set, session.phase),
+            })),
+        ),
+    );
 }
 // Legacy API: raw completed direct hard bouts, not equivalent growth sets.
 export function volume(sessions: Session[], exercises: Exercise[]) {
@@ -1074,25 +1265,46 @@ export const canonicalLoad = (
 ) =>
   convention === "machine-label" ? value : convertWeight(value, unit, "kg");
 export function comparableKey(e: Entry, x: Exercise) {
-  const base = `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}` +
-    (e.setup ? "|setup:" + JSON.stringify([e.setup.label, e.setup.execution]) : "");
+  const base =
+    `${x.id}|${e.convention || x.convention}|${e.equipment || x.equipment}` +
+    (e.setup
+      ? "|setup:" + JSON.stringify([e.setup.label, e.setup.execution])
+      : "");
   // Preserve old straight-set keys, but never merge cadence/group/advanced contexts.
   const technique = e.technique ?? (e.superset ? "superset" : "straight");
   // Instance IDs group raw bouts; only a semantic pair protocol belongs in
   // cross-session comparison. Legacy unknown pairs stay deliberately distinct.
   const groupContext = ["myoreps", "drop-set", "giant-set"].includes(technique)
     ? "sequence"
-    : e.protocol ?? e.techniqueGroup ?? e.superset ?? "";
+    : (e.protocol ?? e.techniqueGroup ?? e.superset ?? "");
   return technique === "straight" && !e.tempo && !e.techniqueGroup && !e.repGoal
     ? base
-    : base + "|" + JSON.stringify([technique, groupContext, e.repGoal ?? null, e.tempo ?? null]);
+    : base +
+        "|" +
+        JSON.stringify([
+          technique,
+          groupContext,
+          e.repGoal ?? null,
+          e.tempo ?? null,
+        ]);
 }
 export function executionContext(e: Entry, set?: SetLog, phase?: Phase) {
   const method = e.technique ?? (e.superset ? "superset" : "straight");
-  return [method, e.protocol, e.tempo ? `tempo ${e.tempo.eccentric}/${e.tempo.pause}/${e.tempo.concentric}s` : undefined,
-    e.setup ? `setup ${e.setup.label}${e.setup.execution ? ": " + e.setup.execution : ""}` : undefined,
-    e.repGoal ? `goal ${e.repGoal} reps` : undefined, set?.bout ?? set?.kind,
-    phase ?? "unrecorded phase"].filter(Boolean).join(" · ");
+  return [
+    method,
+    e.protocol,
+    e.tempo
+      ? `tempo ${e.tempo.eccentric}/${e.tempo.pause}/${e.tempo.concentric}s`
+      : undefined,
+    e.setup
+      ? `setup ${e.setup.label}${e.setup.execution ? ": " + e.setup.execution : ""}`
+      : undefined,
+    e.repGoal ? `goal ${e.repGoal} reps` : undefined,
+    set?.bout ?? set?.kind,
+    phase ?? "unrecorded phase",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 export function records(sessions: Session[], exercises: Exercise[]) {
   const result = new Map<
@@ -1115,7 +1327,8 @@ export function records(sessions: Session[], exercises: Exercise[]) {
       if (!x) continue;
       for (const set of e.sets.filter((t) => t.done && t.kind !== "warmup")) {
         const key =
-          comparableKey(e, x) + `|phase:${s.phase ?? "unrecorded"}` +
+          comparableKey(e, x) +
+          `|phase:${s.phase ?? "unrecorded"}` +
           (set.kind === "drop" || (set.bout && set.bout !== "straight")
             ? `|bout:${set.bout ?? set.kind}`
             : "");
@@ -1191,7 +1404,7 @@ const involves = (
       e.sets.some((s) => s.done && s.kind !== "warmup")
     );
   });
-function recoveryStatus(
+export function recoveryStatus(
   muscle: Exercise["muscle"],
   sessions: Session[],
   exercises: Exercise[],
@@ -1200,7 +1413,11 @@ function recoveryStatus(
 ) {
   const ordered = recoveryObservations(sessions, readiness, now),
     latest = ordered.at(-1);
-  const localRows = ordered.flatMap(s=>(s.muscleFeedback??[]).filter(r=>r.muscle===muscle).map(row=>({session:s,row})));
+  const localRows = ordered.flatMap((s) =>
+    (s.muscleFeedback ?? [])
+      .filter((r) => r.muscle === muscle)
+      .map((row) => ({ session: s, row })),
+  );
   const evidence: string[] = [];
   const painReport = [...ordered]
     .reverse()
@@ -1221,29 +1438,50 @@ function recoveryStatus(
   }
   // Follow the latest actual systemic observation, not the last unrelated
   // workout. Unknown reports cannot establish that a previous flag resolved.
-  const systemic = [...ordered].reverse().find((s) =>
-    typeof s.feedback.fatigue === "number" &&
-    (s.feedback.reported === true || s.feedback.fatigue >= 4),
-  );
+  const systemic = [...ordered]
+    .reverse()
+    .find(
+      (s) =>
+        typeof s.feedback.fatigue === "number" &&
+        (s.feedback.reported === true || s.feedback.fatigue >= 4),
+    );
   if (systemic && (systemic.feedback.fatigue ?? 0) >= 4) {
     const recent = fresh(systemic, now, 7);
-    evidence.push(recent
-      ? `${systemic.date}: unresolved high systemic fatigue; later unknown feedback does not clear it.`
-      : `${systemic.date}: old systemic fatigue report needs current confirmation; it is not a diagnosis of present fatigue.`);
+    evidence.push(
+      recent
+        ? `${systemic.date}: unresolved high systemic fatigue; later unknown feedback does not clear it.`
+        : `${systemic.date}: old systemic fatigue report needs current confirmation; it is not a diagnosis of present fatigue.`,
+    );
     return { blocked: recent, positive: false, evidence };
   }
   const relevant = ordered.filter((s) => involves(s, muscle, exercises)).at(-1);
-  const current = readiness?.muscles.find(r=>r.muscle === muscle);
+  const current = readiness?.muscles.find((r) => r.muscle === muscle);
   const currentAt = current?.recordedAt ?? readiness?.recordedAt;
-  const currentFresh = readinessFresh(readiness, now) && currentAt !== undefined && readinessFresh({recordedAt:currentAt}, now) && (!relevant || currentAt >= recoveryTime(relevant));
-  const currentLocalGood = currentFresh && current?.recovered === "yes" && current.pain === false &&
-    current.soreness !== null && current.soreness <= 2;
-  const actualRecovery = localRows.filter(({row})=>row.recovered && row.recovered!=="unknown").at(-1);
-  const actualFatigue = localRows.filter(({row})=>typeof row.fatigue === "number").at(-1);
-  const actualSoreness = localRows.filter(({row})=>typeof row.soreness === "number").at(-1);
-  const localFlag = [actualRecovery?.row.recovered === "no" ? actualRecovery : undefined,
-    (actualFatigue?.row.fatigue??0)>=4 ? actualFatigue : undefined,
-    (actualSoreness?.row.soreness??0)>=4 ? actualSoreness : undefined].find(report=>report && fresh(report.session,now,7));
+  const currentFresh =
+    readinessFresh(readiness, now) &&
+    currentAt !== undefined &&
+    readinessFresh({ recordedAt: currentAt }, now) &&
+    (!relevant || currentAt >= recoveryTime(relevant));
+  const currentLocalGood =
+    currentFresh &&
+    current?.recovered === "yes" &&
+    current.pain === false &&
+    current.soreness !== null &&
+    current.soreness <= 2;
+  const actualRecovery = localRows
+    .filter(({ row }) => row.recovered && row.recovered !== "unknown")
+    .at(-1);
+  const actualFatigue = localRows
+    .filter(({ row }) => typeof row.fatigue === "number")
+    .at(-1);
+  const actualSoreness = localRows
+    .filter(({ row }) => typeof row.soreness === "number")
+    .at(-1);
+  const localFlag = [
+    actualRecovery?.row.recovered === "no" ? actualRecovery : undefined,
+    (actualFatigue?.row.fatigue ?? 0) >= 4 ? actualFatigue : undefined,
+    (actualSoreness?.row.soreness ?? 0) >= 4 ? actualSoreness : undefined,
+  ].find((report) => report && fresh(report.session, now, 7));
   if (localFlag) {
     evidence.push(
       `${localFlag.session.date}: ${muscle} incomplete local recovery, high soreness or fatigue; unknown answers do not clear an actual report.`,
@@ -1253,17 +1491,25 @@ function recoveryStatus(
   if (
     relevant &&
     fresh(relevant, now, 7) &&
-    (relevant.feedback.soreness ?? 0) >= 4
-    && !currentLocalGood
+    (relevant.feedback.soreness ?? 0) >= 4 &&
+    !currentLocalGood
   ) {
     evidence.push(
       `${relevant.date}: high unscoped soreness after ${muscle} involvement.`,
     );
     return { blocked: true, positive: false, evidence };
   }
-  const positive = !!(currentLocalGood && readiness?.pain === false && readiness.fatigue !== null && readiness.fatigue <= 2 && readiness.context === "usual");
+  const positive = !!(
+    currentLocalGood &&
+    readiness?.pain === false &&
+    readiness.fatigue !== null &&
+    readiness.fatigue <= 2 &&
+    readiness.context === "usual"
+  );
   if (readiness && currentFresh && readiness.context === "changed")
-    evidence.push(`Current context changed: ${readiness.factors.join(", ") || "unspecified"}. This does not establish what caused performance changes; hold escalation for review.`);
+    evidence.push(
+      `Current context changed: ${readiness.factors.join(", ") || "unspecified"}. This does not establish what caused performance changes; hold escalation for review.`,
+    );
   evidence.push(
     positive
       ? `${muscle}: fresh pre-session readiness reported after the last exposure; pain-free, low soreness and systemic fatigue, usual context.`
@@ -1304,7 +1550,13 @@ export function recommend(
   });
   if (!x) return result("hold", "Exercise unavailable.");
   const now = options.now ?? Date.now();
-  const recovery = recoveryStatus(x.muscle, sessions, exercises, now, options.readiness);
+  const recovery = recoveryStatus(
+    x.muscle,
+    sessions,
+    exercises,
+    now,
+    options.readiness,
+  );
   const support = x.secondary
     .map((m) => recoveryStatus(m, sessions, exercises, now, options.readiness))
     .find((r) => r.blocked);
@@ -1326,14 +1578,25 @@ export function recommend(
       `The ${options.phase} phase prioritizes recovery or retention, not escalation.`,
       recovery.evidence,
     );
-  const recent = chronological(sessions).filter(s => fresh(s, now, 21));
-  const exposures = recent.filter(s => s.exercises.some(e =>
-    e.exerciseId === exerciseId && e.sets.some(t => t.done && t.kind !== "warmup")));
+  const recent = chronological(sessions).filter((s) => fresh(s, now, 21));
+  const exposures = recent.filter((s) =>
+    s.exercises.some(
+      (e) =>
+        e.exerciseId === exerciseId &&
+        e.sets.some((t) => t.done && t.kind !== "warmup"),
+    ),
+  );
   const latestExposure = exposures.at(-1);
   if (latestExposure?.phase && latestExposure.phase !== "accumulation")
-    return result("hold", "Re-establish accumulation performance after a recovery phase before progressing.", recovery.evidence);
+    return result(
+      "hold",
+      "Re-establish accumulation performance after a recovery phase before progressing.",
+      recovery.evidence,
+    );
   const contextPhase = options.phase ?? latestExposure?.phase;
-  const boundary = exposures.map(s => s.phase === contextPhase).lastIndexOf(false);
+  const boundary = exposures
+    .map((s) => s.phase === contextPhase)
+    .lastIndexOf(false);
   const contextual = exposures.slice(boundary + 1);
   const latestEntry = contextual
     .flatMap((s) => s.exercises)
@@ -1367,11 +1630,18 @@ export function recommend(
       recovery.evidence,
     );
   const wantedKey = comparableKey(latestEntry, x);
-  if (options.entry && (comparableKey(options.entry, x) !== wantedKey ||
+  if (
+    options.entry &&
+    (comparableKey(options.entry, x) !== wantedKey ||
       options.entry.target?.rir !== latestEntry.target?.rir ||
       options.entry.target?.rest !== latestEntry.target?.rest ||
-      options.entry.plannedWorkingSets !== latestEntry.plannedWorkingSets))
-    return result("hold", "Current equipment, method, effort, rest or set dose differs from history. Establish a new comparable baseline.", recovery.evidence);
+      options.entry.plannedWorkingSets !== latestEntry.plannedWorkingSets)
+  )
+    return result(
+      "hold",
+      "Current equipment, method, effort, rest or set dose differs from history. Establish a new comparable baseline.",
+      recovery.evidence,
+    );
   const matchingEntries = (s: Session) =>
     s.exercises.filter(
       (e) => e.exerciseId === exerciseId && comparableKey(e, x) === wantedKey,
@@ -1405,13 +1675,31 @@ export function recommend(
   const sets = comparable.flatMap(workingSets),
     latestSets = workingSets(comparable[1]);
   const entries = comparable.flatMap(matchingEntries);
-  if (sets.some(s => s.effortReported !== true))
-    return result("hold", "Actual effort is unconfirmed. Report observed RIR rather than using prescribed defaults as evidence.", evidence);
+  if (sets.some((s) => s.effortReported !== true))
+    return result(
+      "hold",
+      "Actual effort is unconfirmed. Report observed RIR rather than using prescribed defaults as evidence.",
+      evidence,
+    );
   if (entries.some((e) => !e.target))
-    return result("hold", "Historical prescriptions are unknown; confirm intended effort, rest and rep context before progression.", evidence);
-  if (entries.some(e => e.plannedWorkingSets === undefined ||
-      e.plannedWorkingSets !== e.sets.filter(t => t.done && t.kind === "working").length))
-    return result("hold", "The planned set dose is unknown or incomplete. Review skipped or changed sets before progression.", evidence);
+    return result(
+      "hold",
+      "Historical prescriptions are unknown; confirm intended effort, rest and rep context before progression.",
+      evidence,
+    );
+  if (
+    entries.some(
+      (e) =>
+        e.plannedWorkingSets === undefined ||
+        e.plannedWorkingSets !==
+          e.sets.filter((t) => t.done && t.kind === "working").length,
+    )
+  )
+    return result(
+      "hold",
+      "The planned set dose is unknown or incomplete. Review skipped or changed sets before progression.",
+      evidence,
+    );
   if (
     entries.some(
       (e) =>
@@ -1484,8 +1772,15 @@ export function recommend(
     );
   const weight = latestSets[0].weight;
   const available = (options.entry ?? latestEntry).setup?.availableLoads ?? [];
-  if (available.length && !available.some(load => Math.abs(load - weight) < 0.000001))
-    return result("hold", "The baseline load is not in the selected available loads. Review equipment and establish a repeatable available load before progressing.", evidence);
+  if (
+    available.length &&
+    !available.some((load) => Math.abs(load - weight) < 0.000001)
+  )
+    return result(
+      "hold",
+      "The baseline load is not in the selected available loads. Review equipment and establish a repeatable available load before progressing.",
+      evidence,
+    );
   if (
     sets.every((s) => s.reps >= range.max) &&
     weight > 0 &&
@@ -1493,7 +1788,9 @@ export function recommend(
     sets.every((s) => Math.abs(s.weight - weight) < 0.01)
   ) {
     const cap = weight + Math.min(2.5, weight * 0.025);
-    const nextWeight = available.find(load => load > weight + 0.000001 && load <= cap + 0.000000001);
+    const nextWeight = available.find(
+      (load) => load > weight + 0.000001 && load <= cap + 0.000000001,
+    );
     if (nextWeight === undefined)
       return result(
         "hold",
@@ -1506,8 +1803,14 @@ export function recommend(
       "load",
       "Both comparable exposures met the ceiling with reserve. Use the smallest selected available load within the smaller of 2.5% or 2.5 kg; preserve setup and intended reserve.",
       evidence,
-      { weight: nextWeight, reps: range.min,
-        setTargets: latestSets.map(() => ({ weight: nextWeight, reps: range.min })) },
+      {
+        weight: nextWeight,
+        reps: range.min,
+        setTargets: latestSets.map(() => ({
+          weight: nextWeight,
+          reps: range.min,
+        })),
+      },
     );
   }
   if (latestSets.every((s) => s.reps >= range.max))
@@ -1529,8 +1832,14 @@ export function recommend(
         ),
         setTargets: latestSets.map((s, index) => ({
           weight: s.weight,
-          reps: s.reps + (index === latestSets.map(t => t.reps)
-            .lastIndexOf(Math.min(...latestSets.map(t => t.reps))) ? 1 : 0),
+          reps:
+            s.reps +
+            (index ===
+            latestSets
+              .map((t) => t.reps)
+              .lastIndexOf(Math.min(...latestSets.map((t) => t.reps)))
+              ? 1
+              : 0),
         })),
       },
     );
@@ -1573,9 +1882,15 @@ function musclePerformance(
     favorable = rows.length > 0;
   for (const exposures of rows) {
     const pair = exposures.slice(-2);
-    if (pair.length < 2 || pair[0].session.id === pair[1].session.id ||
-        pair.some(p => p.session.phase !== undefined && p.session.phase !== "accumulation") ||
-        pair[0].session.phase !== pair[1].session.phase) {
+    if (
+      pair.length < 2 ||
+      pair[0].session.id === pair[1].session.id ||
+      pair.some(
+        (p) =>
+          p.session.phase !== undefined && p.session.phase !== "accumulation",
+      ) ||
+      pair[0].session.phase !== pair[1].session.phase
+    ) {
       favorable = false;
       continue;
     }
@@ -1584,8 +1899,11 @@ function musclePerformance(
     const valid = (e: Entry) =>
       !!e.target &&
       e.plannedWorkingSets !== undefined &&
-      e.plannedWorkingSets === e.sets.filter(s => s.done && s.kind === "working").length &&
-      e.sets.filter(s => s.done && s.kind === "working").every(s => s.effortReported === true) &&
+      e.plannedWorkingSets ===
+        e.sets.filter((s) => s.done && s.kind === "working").length &&
+      e.sets
+        .filter((s) => s.done && s.kind === "working")
+        .every((s) => s.effortReported === true) &&
       e.target.rir < 5 &&
       (!e.technique || ["straight", "superset"].includes(e.technique)) &&
       !e.tempo &&
@@ -1638,7 +1956,13 @@ export function muscleReview(
   options: CoachingOptions = {},
 ): MuscleReview {
   const now = options.now ?? Date.now(),
-    recovery = recoveryStatus(muscle, sessions, exercises, now, options.readiness);
+    recovery = recoveryStatus(
+      muscle,
+      sessions,
+      exercises,
+      now,
+      options.readiness,
+    );
   const performance = musclePerformance(muscle, sessions, exercises, now);
   const evidence = [...recovery.evidence, ...performance.evidence];
   const result = (
@@ -1686,11 +2010,20 @@ export function muscleReview(
       "hold",
       `The ${options.phase} goal is recovery/retention; do not infer a biological sensitivity reset or add growth work.`,
     );
-  const repeatedRecovery = chronological(sessions).filter(s=>involves(s,muscle,exercises)).slice(-2);
-  const earlyRecoveryReported = repeatedRecovery.length === 2 && repeatedRecovery.every(s=>{
-    const row=s.muscleFeedback?.find(r=>r.muscle===muscle);
-    return row?.recovered === "yes" && row.pain === false && (row.soreness??0)<4 && (row.fatigue??0)<4;
-  });
+  const repeatedRecovery = chronological(sessions)
+    .filter((s) => involves(s, muscle, exercises))
+    .slice(-2);
+  const earlyRecoveryReported =
+    repeatedRecovery.length === 2 &&
+    repeatedRecovery.every((s) => {
+      const row = s.muscleFeedback?.find((r) => r.muscle === muscle);
+      return (
+        row?.recovered === "yes" &&
+        row.pain === false &&
+        (row.soreness ?? 0) < 4 &&
+        (row.fatigue ?? 0) < 4
+      );
+    });
   if (recovery.positive && performance.favorable && earlyRecoveryReported)
     return result(
       "volume-review",
@@ -1735,6 +2068,14 @@ export function mergeStates(remote: State, local: State): State {
       : {}),
     programs: merge(remote.programs, local.programs),
     sessions: merge(remote.sessions, local.sessions),
+    ...(remote.coachingEvents || local.coachingEvents
+      ? {
+          coachingEvents: merge(
+            remote.coachingEvents ?? [],
+            local.coachingEvents ?? [],
+          ),
+        }
+      : {}),
   });
 }
 export function csvSessions(

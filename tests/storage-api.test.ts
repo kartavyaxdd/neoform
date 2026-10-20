@@ -4,6 +4,7 @@ import { readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { qaTarget } from "./qa-target";
 import * as D from "../src/domain";
+import { syntheticCoachingEvent } from "./coaching-fixture";
 import {
   headerOf,
   historyDelta,
@@ -20,6 +21,69 @@ import {
 } from "../src/historyTransport";
 const base = qaTarget(),
   password = "synthetic-storage-only-passphrase";
+it("commits coaching and prescriptions together with immutable records, pinned pages, isolation and retry receipts", async () => {
+  const a = await account(),
+    b = await account();
+  const api: HistoryRequest = async <T>(
+    path: string,
+    method?: string,
+    body?: unknown,
+  ) => {
+    const response = await a.api(path, method, body),
+      data = (await response.json()) as { error?: string };
+    if (!response.ok)
+      throw Object.assign(Error(data.error), { status: response.status });
+    return data as T;
+  };
+  const before = await readHistory(api),
+    state = {
+      ...D.emptyState(),
+      coachingEvents: Array.from({ length: 201 }, (_, i) =>
+        syntheticCoachingEvent(i),
+      ),
+    };
+  state.programs = [D.starterProgram("balanced")];
+  state.programs[0].workouts[0].exercises[0].startingLoad = 40;
+  const mutation = prepareHistoryMutation(before.data, state, 0);
+  await writeHistoryMutation(api, mutation);
+  expect((await readHistory(api)).data).toEqual(state);
+  expect(await writeHistoryMutation(api, mutation)).toEqual({ revision: 1 });
+  const isolated = await b.api("/storage/head");
+  expect(
+    ((await isolated.json()) as { coachingCount?: number }).coachingCount ?? 0,
+  ).toBe(0);
+  const edited = structuredClone(state);
+  edited.coachingEvents[0].note = "unauthorized content rewrite";
+  await expect(
+    writeHistoryMutation(api, prepareHistoryMutation(state, edited, 1)),
+  ).rejects.toMatchObject({ status: 400 });
+  expect((await readHistory(api)).data).toEqual(state);
+  const trigger = "qa_coach_" + crypto.randomUUID().replaceAll("-", ""),
+    db = isolatedDatabase();
+  const badEvent = syntheticCoachingEvent(999),
+    next = {
+      ...state,
+      coachingEvents: [...state.coachingEvents, badEvent],
+      settings: { ...state.settings, timerSound: true },
+    };
+  try {
+    db.exec(
+      `CREATE TRIGGER ${trigger} BEFORE INSERT ON storage_coaching WHEN NEW.id='${badEvent.id}' BEGIN SELECT RAISE(ABORT,'synthetic coaching failure'); END`,
+    );
+    await expect(
+      writeHistoryMutation(api, prepareHistoryMutation(state, next, 1)),
+    ).rejects.toMatchObject({ status: 500 });
+  } finally {
+    db.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+    db.close();
+  }
+  expect(await readHistory(api)).toEqual({ revision: 1, data: state });
+  await writeHistoryMutation(api, prepareHistoryMutation(state, next, 1));
+  expect((await a.api("/storage/coaching?revision=1&after=-1")).status).toBe(
+    409,
+  );
+  expect((await readHistory(api)).data).toEqual(next);
+}, 60000);
 function isolatedDatabase() {
   // qaTarget already proves this run is owned and live. Never fall back to a
   // default Wrangler path or a personal database when locating this fixture.
@@ -58,18 +122,50 @@ async function account() {
     });
   return { api, user, cookie };
 }
-it('atomically bounds concurrent upload starts and cumulative owner staging, with cancellation',async()=>{
- const a=await account();await read(a);
- const requests=Array.from({length:8},()=>({id:crypto.randomUUID(),revision:0,header:headerOf(D.emptyState()),count:0,parts:2,checksum:'0'.repeat(64)}));
- const responses=await Promise.all(requests.map(plan=>a.api('/storage/uploads','POST',plan)));
- expect(responses.filter(r=>r.status===201)).toHaveLength(4);expect(responses.filter(r=>r.status===429)).toHaveLength(4);
- const id=requests[responses.findIndex(r=>r.status===201)].id,db=isolatedDatabase();
- try{db.prepare('INSERT INTO storage_upload_parts(owner,upload,part,hash,bytes,records) VALUES(?,?,?,?,?,?)').run('user:'+a.user.id,id,0,'0'.repeat(64),99999999,0);}finally{db.close();}
- expect((await a.api(`/storage/uploads/${id}/parts/1`,'PUT',{upserts:[],deletes:[]})).status).toBe(413);
- expect((await read(a)).data).toEqual(D.emptyState());
- expect((await a.api(`/storage/uploads/${id}`,'DELETE')).status).toBe(200);
- expect((await a.api('/storage/uploads','POST',{...requests[0],id:crypto.randomUUID()})).status).toBe(201);
-},30000);
+it("atomically bounds concurrent upload starts and cumulative owner staging, with cancellation", async () => {
+  const a = await account();
+  await read(a);
+  const requests = Array.from({ length: 8 }, () => ({
+    id: crypto.randomUUID(),
+    revision: 0,
+    header: headerOf(D.emptyState()),
+    count: 0,
+    parts: 2,
+    checksum: "0".repeat(64),
+  }));
+  const responses = await Promise.all(
+    requests.map((plan) => a.api("/storage/uploads", "POST", plan)),
+  );
+  expect(responses.filter((r) => r.status === 201)).toHaveLength(4);
+  expect(responses.filter((r) => r.status === 429)).toHaveLength(4);
+  const id = requests[responses.findIndex((r) => r.status === 201)].id,
+    db = isolatedDatabase();
+  try {
+    db.prepare(
+      "INSERT INTO storage_upload_parts(owner,upload,part,hash,bytes,records) VALUES(?,?,?,?,?,?)",
+    ).run("user:" + a.user.id, id, 0, "0".repeat(64), 99999999, 0);
+  } finally {
+    db.close();
+  }
+  expect(
+    (
+      await a.api(`/storage/uploads/${id}/parts/1`, "PUT", {
+        upserts: [],
+        deletes: [],
+      })
+    ).status,
+  ).toBe(413);
+  expect((await read(a)).data).toEqual(D.emptyState());
+  expect((await a.api(`/storage/uploads/${id}`, "DELETE")).status).toBe(200);
+  expect(
+    (
+      await a.api("/storage/uploads", "POST", {
+        ...requests[0],
+        id: crypto.randomUUID(),
+      })
+    ).status,
+  ).toBe(201);
+}, 30000);
 async function read(a: Awaited<ReturnType<typeof account>>) {
   const response = await a.api("/storage/head");
   expect(response.status).toBe(200);

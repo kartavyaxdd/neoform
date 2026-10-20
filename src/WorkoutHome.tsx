@@ -20,6 +20,7 @@ export function WorkoutHome({
   history,
   library,
   detail,
+  coach,
 }: {
   state: D.State;
   start: (w?: D.Workout, p?: D.Program) => void;
@@ -28,6 +29,7 @@ export function WorkoutHome({
   history: () => void;
   library: () => void;
   detail: (s: D.Session) => void;
+  coach?: (w: D.Workout, p: D.Program) => void;
 }) {
   const [date, setDate] = useState(D.today()),
     [templates, setTemplates] = useState(false);
@@ -73,6 +75,14 @@ export function WorkoutHome({
             </button>
           ))}
         </div>
+        {open && coach && (
+          <button
+            className="text-button"
+            onClick={() => coach(p.workouts[next], p)}
+          >
+            Review next workout
+          </button>
+        )}
         <details className="program-options">
           <summary>Program options</summary>
           <p className="caption">{p.description}</p>

@@ -21,13 +21,19 @@ export class HistoryFault extends Error {
     super(message);
   }
 }
-type Head = { revision: number; body: string; session_count: number };
+type Head = {
+  revision: number;
+  body: string;
+  session_count: number;
+  coaching_count: number;
+};
 type Upload = {
   revision: number;
   session_count: number;
   part_count: number;
   checksum: string;
   hash: string;
+  coaching_count: number | null;
 };
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -83,14 +89,15 @@ export class HistoryStorage {
       const attempt = crypto.randomUUID();
       await this.db.batch([
         this.query(
-          `INSERT INTO storage_heads(owner,private_user,revision,body,session_count,attempt)
-          SELECT ?,?,?,?,?,? FROM ${source} AND revision=? ON CONFLICT(owner) DO NOTHING`,
+          `INSERT INTO storage_heads(owner,private_user,revision,body,session_count,attempt,coaching_count)
+          SELECT ?,?,?,?,?,?,? FROM ${source} AND revision=? ON CONFLICT(owner) DO NOTHING`,
           this.owner,
           this.user,
           row.revision,
           JSON.stringify(headerOf(state)),
           state.sessions.length,
           attempt,
+          state.coachingEvents?.length ?? 0,
           ...args,
           row.revision,
         ),
@@ -100,6 +107,15 @@ export class HistoryStorage {
           WHERE EXISTS(SELECT 1 FROM storage_heads WHERE owner=? AND attempt=?)`,
           this.owner,
           JSON.stringify(state.sessions),
+          this.owner,
+          attempt,
+        ),
+        this.query(
+          `INSERT INTO storage_coaching(owner,id,position,body)
+          SELECT ?,json_extract(value,'$.id'),CAST(key AS INTEGER),value FROM json_each(?)
+          WHERE EXISTS(SELECT 1 FROM storage_heads WHERE owner=? AND attempt=?)`,
+          this.owner,
+          JSON.stringify(state.coachingEvents ?? []),
           this.owner,
           attempt,
         ),
@@ -113,7 +129,7 @@ export class HistoryStorage {
   }
   private async head() {
     const head = await this.query(
-      "SELECT revision,body,session_count FROM storage_heads WHERE owner=?",
+      "SELECT revision,body,session_count,coaching_count FROM storage_heads WHERE owner=?",
       this.owner,
     ).first<Head>();
     if (!head) throw new HistoryFault(404, "Storage unavailable.");
@@ -155,9 +171,91 @@ export class HistoryStorage {
         CASE root.key WHEN 'upserts' THEN 'upsert' ELSE 'delete' END action,
         CASE root.key WHEN 'upserts' THEN json_extract(r.value,'$.position') ELSE NULL END position,
         CASE root.key WHEN 'upserts' THEN json_extract(r.value,'$.session') ELSE NULL END body
-        FROM json_each(?) root,json_each(root.value) r`,
+        FROM json_each(?) root,json_each(root.value) r WHERE root.key IN ('upserts','deletes')`,
       args: [JSON.stringify(part)],
     };
+  }
+  private coachingSource(part: HistoryPart | string) {
+    if (typeof part === "string")
+      return {
+        sql: "SELECT id,action,position,body FROM storage_upload_coaching WHERE owner=? AND upload=?",
+        args: [this.owner, part] as (string | number | null)[],
+      };
+    return {
+      sql: `SELECT
+      CASE root.key WHEN 'coachingUpserts' THEN json_extract(r.value,'$.event.id') ELSE r.value END id,
+      CASE root.key WHEN 'coachingUpserts' THEN 'upsert' ELSE 'delete' END action,
+      CASE root.key WHEN 'coachingUpserts' THEN json_extract(r.value,'$.position') ELSE NULL END position,
+      CASE root.key WHEN 'coachingUpserts' THEN json_extract(r.value,'$.event') ELSE NULL END body
+      FROM json_each(?) root,json_each(root.value) r WHERE root.key IN ('coachingUpserts','coachingDeletes')`,
+      args: [JSON.stringify(part)],
+    };
+  }
+  private async validateCoaching(
+    head: Head,
+    count: number | undefined,
+    part: HistoryPart | string,
+  ) {
+    const s = this.coachingSource(part),
+      prefix = `WITH changed AS (${s.sql}) `;
+    if (count === undefined) {
+      if (
+        await this.query(`SELECT id FROM (${s.sql}) LIMIT 1`, ...s.args).first()
+      )
+        throw new HistoryFault(
+          400,
+          "A coaching mutation requires its final record count",
+        );
+      return;
+    }
+    const results = await this.db.batch([
+      this.query(
+        prefix +
+          `SELECT COALESCE(SUM(CASE WHEN c.action='upsert' AND h.id IS NULL THEN 1 WHEN c.action='delete' AND h.id IS NOT NULL THEN -1 ELSE 0 END),0) delta,
+        COALESCE(SUM(CASE WHEN c.action='upsert' AND (c.position<0 OR c.position>=?) THEN 1 ELSE 0 END),0) invalid
+        FROM changed c LEFT JOIN storage_coaching h ON h.owner=? AND h.id=c.id`,
+        ...s.args,
+        count,
+        this.owner,
+      ),
+      this.query(
+        prefix +
+          "SELECT position FROM changed WHERE action='upsert' GROUP BY position HAVING COUNT(*)>1 LIMIT 1",
+        ...s.args,
+      ),
+      this.query(
+        prefix +
+          `SELECT h.id FROM changed c JOIN storage_coaching h ON h.owner=? AND h.position=c.position
+        WHERE c.action='upsert' AND NOT EXISTS(SELECT 1 FROM changed x WHERE x.id=h.id) LIMIT 1`,
+        ...s.args,
+        this.owner,
+      ),
+      this.query(
+        prefix +
+          `SELECT h.id FROM storage_coaching h WHERE h.owner=? AND h.position>=?
+        AND NOT EXISTS(SELECT 1 FROM changed c WHERE c.id=h.id) LIMIT 1`,
+        ...s.args,
+        this.owner,
+        count,
+      ),
+      this.query(
+        prefix +
+          `SELECT h.id FROM changed c JOIN storage_coaching h ON h.owner=? AND h.id=c.id
+        WHERE c.action='upsert' AND h.body<>c.body LIMIT 1`,
+        ...s.args,
+        this.owner,
+      ),
+    ]);
+    const totals = results[0].results[0] as { delta: number; invalid: number };
+    if (
+      head.coaching_count + totals.delta !== count ||
+      totals.invalid ||
+      results.slice(1).some((r) => r.results.length)
+    )
+      throw new HistoryFault(
+        400,
+        "Coaching ledger count, ordering or immutable content differs",
+      );
   }
   private async validateFinal(
     head: Head,
@@ -238,6 +336,7 @@ export class HistoryStorage {
     count: number,
     part: HistoryPart | string,
     hash: string,
+    coachingCount?: number,
   ) {
     const prior = await this.receipt(id, hash);
     if (prior) return json({ revision: prior.revision });
@@ -251,16 +350,19 @@ export class HistoryStorage {
       );
     }
     await this.validateFinal(head, header, count, part);
+    await this.validateCoaching(head, coachingCount, part);
     const attempt = crypto.randomUUID(),
-      s = this.source(part);
+      s = this.source(part),
+      events = this.coachingSource(part);
     const guard =
       "EXISTS(SELECT 1 FROM storage_heads WHERE owner=? AND attempt=?)";
     const result = await this.db.batch([
       this.query(
-        "UPDATE storage_heads SET revision=revision+1,body=?,session_count=?,attempt=? WHERE owner=? AND revision=?",
+        "UPDATE storage_heads SET revision=revision+1,body=?,session_count=?,attempt=?,coaching_count=COALESCE(?,coaching_count) WHERE owner=? AND revision=?",
         JSON.stringify(header),
         count,
         attempt,
+        coachingCount ?? null,
         this.owner,
         revision,
       ),
@@ -285,6 +387,21 @@ export class HistoryStorage {
         id,
         revision + 1,
         hash,
+        this.owner,
+        attempt,
+      ),
+      this.query(
+        `WITH changed AS (${events.sql}) DELETE FROM storage_coaching WHERE owner=? AND id IN (SELECT id FROM changed WHERE action='delete') AND ${guard}`,
+        ...events.args,
+        this.owner,
+        this.owner,
+        attempt,
+      ),
+      this.query(
+        `INSERT INTO storage_coaching(owner,id,position,body) SELECT ?,id,position,body FROM (${events.sql}) WHERE action='upsert' AND ${guard}
+        ON CONFLICT(owner,id) DO UPDATE SET position=excluded.position`,
+        this.owner,
+        ...events.args,
         this.owner,
         attempt,
       ),
@@ -328,9 +445,12 @@ export class HistoryStorage {
         revision: h.revision,
         header: JSON.parse(h.body),
         count: h.session_count,
+        ...(h.coaching_count ? { coachingCount: h.coaching_count } : {}),
       });
     }
-    if (path === "/history" && req.method === "GET") {
+    if ((path === "/history" || path === "/coaching") && req.method === "GET") {
+      const table =
+        path === "/coaching" ? "storage_coaching" : "storage_history";
       const revision = Number(url.searchParams.get("revision")),
         after = Number(url.searchParams.get("after") ?? -1);
       if (
@@ -348,7 +468,7 @@ export class HistoryStorage {
           this.owner,
         ),
         this.query(
-          "SELECT id,position,length(CAST(body AS BLOB)) bytes FROM storage_history WHERE owner=? AND position>? ORDER BY position,id LIMIT 32",
+          `SELECT id,position,length(CAST(body AS BLOB)) bytes FROM ${table} WHERE owner=? AND position>? ORDER BY position,id LIMIT 32`,
           this.owner,
           after,
         ),
@@ -380,7 +500,7 @@ export class HistoryStorage {
           this.owner,
         ),
         this.query(
-          "SELECT id,position,body FROM storage_history WHERE owner=? AND id IN (SELECT value FROM json_each(?)) ORDER BY position,id",
+          `SELECT id,position,body FROM ${table} WHERE owner=? AND id IN (SELECT value FROM json_each(?)) ORDER BY position,id`,
           this.owner,
           JSON.stringify(selected.map((r) => r.id)),
         ),
@@ -394,7 +514,10 @@ export class HistoryStorage {
         );
       const records = (
         results[1].results as { position: number; body: string }[]
-      ).map((r) => ({ position: r.position, session: JSON.parse(r.body) }));
+      ).map((r) => ({
+        position: r.position,
+        [path === "/coaching" ? "event" : "session"]: JSON.parse(r.body),
+      }));
       return json({
         records,
         next: selected.length ? selected[selected.length - 1].position : null,
@@ -411,6 +534,7 @@ export class HistoryStorage {
         input.count,
         input.changes,
         await storageHash(input),
+        input.coachingCount,
       );
     }
     if (path === "/uploads" && req.method === "POST") {
@@ -445,7 +569,7 @@ export class HistoryStorage {
         );
       await this.db.batch([
         this.query(
-          "INSERT INTO storage_uploads(owner,id,revision,session_count,part_count,checksum,hash,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM storage_uploads WHERE owner=?)<4 ON CONFLICT(owner,id) DO NOTHING",
+          "INSERT INTO storage_uploads(owner,id,revision,session_count,part_count,checksum,hash,created_at,coaching_count) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM storage_uploads WHERE owner=?)<4 ON CONFLICT(owner,id) DO NOTHING",
           this.owner,
           input.id,
           input.revision,
@@ -454,6 +578,7 @@ export class HistoryStorage {
           input.checksum,
           hash,
           Date.now(),
+          input.coachingCount ?? null,
           this.owner,
         ),
         this.query(
@@ -500,7 +625,7 @@ export class HistoryStorage {
         if (prior) return json({ revision: prior.revision });
       }
       const upload = await this.query(
-        "SELECT revision,session_count,part_count,checksum,hash FROM storage_uploads WHERE owner=? AND id=?",
+        "SELECT revision,session_count,part_count,checksum,hash,coaching_count FROM storage_uploads WHERE owner=? AND id=?",
         this.owner,
         id,
       ).first<Upload>();
@@ -538,7 +663,8 @@ export class HistoryStorage {
             );
           return json({ ok: true });
         }
-        const source = this.source(input);
+        const source = this.source(input),
+          eventSource = this.coachingSource(input);
         try {
           await this.db.batch([
             this.query(
@@ -548,13 +674,22 @@ export class HistoryStorage {
               index,
               hash,
               textBytes(input),
-              input.upserts.length + input.deletes.length,
+              input.upserts.length +
+                input.deletes.length +
+                (input.coachingUpserts?.length ?? 0) +
+                (input.coachingDeletes?.length ?? 0),
             ),
             this.query(
               `INSERT INTO storage_upload_records(owner,upload,id,action,position,body) SELECT ?,?,id,action,position,body FROM (${source.sql})`,
               this.owner,
               id,
               ...source.args,
+            ),
+            this.query(
+              `INSERT INTO storage_upload_coaching(owner,upload,id,action,position,body) SELECT ?,?,id,action,position,body FROM (${eventSource.sql})`,
+              this.owner,
+              id,
+              ...eventSource.args,
             ),
           ]);
         } catch (e) {
@@ -601,6 +736,7 @@ export class HistoryStorage {
           upload.session_count,
           id,
           upload.hash,
+          upload.coaching_count ?? undefined,
         );
       }
     }

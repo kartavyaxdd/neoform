@@ -1,5 +1,9 @@
 import { historyStateSchema as stateSchema, type State } from "./domain";
-export type Remote = { data: State; revision: number; incorporated?: Record<string, number> };
+export type Remote = {
+  data: State;
+  revision: number;
+  incorporated?: Record<string, number>;
+};
 export type Outbox = {
   data: State;
   revision: number;
@@ -73,7 +77,7 @@ export function mergeThreeWay(base: State, remote: State, local: State): State {
     // Older snapshots omit this optional list. Independent additions have a
     // known empty ancestor, while competing links still require a choice.
     if (
-      path === "account.exerciseVideos" &&
+      ["account.exerciseVideos", "account.coachingEvents"].includes(path) &&
       b === undefined &&
       Array.isArray(r) &&
       Array.isArray(l)
