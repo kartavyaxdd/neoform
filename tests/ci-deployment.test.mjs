@@ -106,7 +106,10 @@ describe('production CI configuration', () => {
   });
   it('prepares the pinned official CLI in runner temp for no-auth synthetic transport tests on Ubuntu', () => {
     const text = readFileSync(workflowPath, 'utf8');
-    for (const fragment of ['runs-on: ubuntu-latest', 'npm install --prefix "$RUNNER_TEMP/neoform-codex-test" --no-save --package-lock=false --no-audit --no-fund @openai/codex@0.160.0', 'chmod +x "$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js"', 'CODEX_TEST_BINARY=$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js', 'TMPDIR: ${{ runner.temp }}', 'npm test -- --maxWorkers=2']) expect(text).toContain(fragment);
+    for (const fragment of ['runs-on: ubuntu-latest', 'npm install --prefix "$RUNNER_TEMP/neoform-codex-test" --no-save --package-lock=false --no-audit --no-fund @openai/codex@0.160.0', 'chmod +x "$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js"', 'CODEX_TEST_BINARY=$RUNNER_TEMP/neoform-codex-test/node_modules/@openai/codex/bin/codex.js', 'TMPDIR: ${{ runner.temp }}', 'run: npm test']) expect(text).toContain(fragment);
+    const testScript = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts.test;
+    const coreCommand = text.match(/run: (npm test[^\r\n]*)/)?.[1];
+    expect((testScript + ' ' + coreCommand).match(/--maxWorkers(?:=|\s)/g)).toHaveLength(1);
     expect(text.indexOf('@openai/codex@0.160.0')).toBeLessThan(text.indexOf('npm test'));
     expect(text).not.toMatch(/codex login|OPENAI_API_KEY|CODEX_API_KEY/);
   });
