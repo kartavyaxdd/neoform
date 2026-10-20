@@ -9,6 +9,7 @@ import {
   toggleSet,
   volume,
   records,
+  csvSessions,
   recommend,
   convertWeight,
   starterProgram,
@@ -39,6 +40,14 @@ const session = (weight = 60, pain = false): Session => ({
   ],
 });
 describe("training vertical slice", () => {
+  it("exports unreported effort as blank while retaining measured load and reps", () => {
+    const s = session();
+    s.exercises[0].sets[0].effortReported = false;
+    const rows = csvSessions([s], catalog).split("\r\n");
+    expect(rows[1]).toContain('"60","","10","",');
+    s.exercises[0].sets[0].effortReported = true;
+    expect(csvSessions([s], catalog).split("\r\n")[1]).toContain('"60","","10","2",');
+  });
   it("completes only logged sets and allows undo without losing numbers", () => {
     const s = session();
     const undone = toggleSet(s, "s1");

@@ -2352,7 +2352,7 @@ function HistoryDetail({
                       )}
                     </td>
                     <td>{t.reps}</td>
-                    <td>{t.rir}</td>
+                    <td>{t.effortReported === false ? "Unknown" : t.rir}</td>
                   </tr>
                 ))}
               </tbody>

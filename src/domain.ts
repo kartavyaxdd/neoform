@@ -1770,7 +1770,7 @@ export function csvSessions(
             (e.convention || x?.convention) === "machine-label" ? "" : t.weight,
             (e.convention || x?.convention) === "machine-label" ? t.weight : "",
             t.reps,
-            t.rir,
+            t.effortReported === false ? "" : t.rir,
             s.duration,
           ]);
       }),
