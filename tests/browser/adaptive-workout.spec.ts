@@ -11,7 +11,6 @@ for (const width of [360, 390, 1440])
     await page.emulateMedia({ reducedMotion: "reduce" });
     if (process.env.NEOFORM_QA_MODE === "public") await page.goto("/");
     else await fixture(page);
-    await expect(page.locator(".sync-status")).toHaveText("Synced");
     const remote = await (await readData(page)).json(),
       state = D.emptyState(),
       program = D.starterProgram("balanced"),

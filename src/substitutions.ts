@@ -74,7 +74,11 @@ export function substituteExercise(
     entry.tempo ||
     entry.superset ||
     entry.techniqueGroup ||
-    entry.sets.some((t) => t.kind !== "working" && t.kind !== "warmup")
+    entry.sets.some(
+      (t) =>
+        (t.kind !== "working" && t.kind !== "warmup") ||
+        (t.bout && t.bout !== "straight"),
+    )
   )
     throw Error(
       "Edit advanced or linked sequences together instead of using a quick substitution.",
@@ -128,7 +132,10 @@ export function substituteExercise(
       rest: "unknown" as const,
       recordedAt: now,
       ...entry.coachingContext,
-      skipReason: "equipment" as const,
+      skipReason:
+        input.reason === "preference"
+          ? ("other" as const)
+          : ("equipment" as const),
     },
   };
   const next = {

@@ -155,3 +155,35 @@ it("does not bypass a reported assisting-muscle recovery concern", () => {
     }),
   ).toThrow(/recovery/);
 });
+it("rejects advanced row metadata even without an exercise-level technique label", () => {
+  const state = fixture(),
+    entry = state.draft!.exercises[0];
+  entry.sets[0].bout = "activation";
+  expect(() =>
+    substituteExercise(state, {
+      fingerprint: substitutionFingerprint(state.draft!),
+      entryId: entry.id,
+      exerciseId: "incline-db",
+      available: ["Dumbbell"],
+      reason: "busy",
+    }),
+  ).toThrow(/advanced/);
+});
+it("records a preference as other context rather than an equipment problem", () => {
+  const state = fixture(),
+    entry = state.draft!.exercises[0];
+  entry.sets[0].done = true;
+  const result = substituteExercise(state, {
+    fingerprint: substitutionFingerprint(state.draft!),
+    entryId: entry.id,
+    exerciseId: "incline-db",
+    available: ["Dumbbell"],
+    reason: "preference",
+  });
+  expect(result.state.draft!.exercises[0].coachingContext!.skipReason).toBe(
+    "other",
+  );
+  expect(result.state.draft!.exercises[1].notes).toContain(
+    "Personal preference",
+  );
+});
