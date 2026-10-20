@@ -36,6 +36,7 @@ it("shows differing assigned effort and rep ranges beside actual inputs", () => 
     max: 11,
     reps: 10,
     rir: 3,
+    rest: 75,
   };
   entry.sets[0].rir = 1;
   entry.sets[0].effortReported = true;
@@ -50,6 +51,7 @@ it("shows differing assigned effort and rep ranges beside actual inputs", () => 
   );
   expect(html).toContain('title="Assigned rep range"');
   expect(html).toContain('title="Assigned effort target"');
+  expect(html).toContain('title="Assigned rest"');
   expect(entry.sets[0].prescription.rir).toBe(3);
 });
 

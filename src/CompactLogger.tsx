@@ -108,7 +108,14 @@ export function SessionLogger({
               <Dumbbell size={22} />
               <small>{i + 1}</small>
               <span>{x.name}</span>
-              <i className={e.sets.every((t) => t.done) ? "finished" : ""} />
+              <i
+                className={
+                  e.sets.some((t) => t.kind !== "warmup") &&
+                  e.sets.filter((t) => t.kind !== "warmup").every((t) => t.done)
+                    ? "finished"
+                    : ""
+                }
+              />
             </button>
           );
         })}
@@ -214,6 +221,21 @@ export function SessionLogger({
                   <div
                     className={"set-row " + (set.done ? "completed" : "")}
                     key={set.id}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key !== "Enter" ||
+                        !(event.target instanceof HTMLInputElement)
+                      )
+                        return;
+                      event.preventDefault();
+                      const controls = Array.from(
+                        event.currentTarget.querySelectorAll<HTMLElement>(
+                          "input,button.complete-set",
+                        ),
+                      );
+                      const next = controls[controls.indexOf(event.target) + 1];
+                      next?.focus();
+                    }}
                   >
                     <span className="set-number">
                       {set.kind === "warmup"
@@ -304,6 +326,12 @@ export function SessionLogger({
                             &times; {set.prescription.reps}
                           </small>
                         )}
+                      {set.prescription &&
+                        set.prescription.rest !== e.target?.rest && (
+                          <small className="assigned-row" title="Assigned rest">
+                            {set.prescription.rest}s rest
+                          </small>
+                        )}
                     </div>
                     <div className="row-reps">
                       <Num
@@ -329,6 +357,8 @@ export function SessionLogger({
                         className="row-effort"
                         type="number"
                         inputMode="decimal"
+                        enterKeyHint="done"
+                        onFocus={(event) => event.currentTarget.select()}
                         step="0.5"
                         min="0"
                         max="10"

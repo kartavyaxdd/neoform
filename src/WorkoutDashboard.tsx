@@ -8,12 +8,14 @@ export function WorkoutDashboard({
   history,
   detail,
   progress,
+  review,
 }: {
   state: D.State;
   exercises: D.Exercise[];
   history: () => void;
   detail: (s: D.Session) => void;
   progress: () => void;
+  review: () => void;
 }) {
   const monday = weekMonday(),
     week = useMemo(
@@ -88,6 +90,14 @@ export function WorkoutDashboard({
           </span>
         </div>
       </section>
+      <button className="group-row weekly-review-link grouped" onClick={review}>
+        <CalendarDays size={19} />
+        <span>
+          <b>Weekly review</b>
+          <small>Lift changes, assigned targets and coaching outcomes</small>
+        </span>
+        <ChevronRight size={18} />
+      </button>
       <section>
         <div className="group-heading">
           <h2>Recent workouts</h2>

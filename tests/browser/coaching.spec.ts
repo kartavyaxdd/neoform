@@ -146,6 +146,19 @@ for (const width of [360, 390])
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await context.setOffline(true);
     await page.reload();
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Weekly review", exact: false })
+      .click();
+    await expect(page.locator(".weekly-review")).toContainText(/\+1 rep/);
+    await expect(page.locator(".weekly-review")).toContainText("Targets met");
+    await page.screenshot({
+      path: `${process.env.NEOFORM_QA_OUTPUT}/weekly-coaching-${width}.png`,
+      animations: "disabled",
+    });
+    await page
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.getByText("Your data, portable.", { exact: true }).click();
     const download = page.waitForEvent("download");

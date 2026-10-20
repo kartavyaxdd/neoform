@@ -61,6 +61,42 @@ for (const width of [360, 390, 1440])
       page.getByLabel("Barbell back squat set 1 RIR", { exact: true }),
     ).toHaveValue("");
     await expect(page.getByText("Previous", { exact: true })).toBeVisible();
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
+    const draftSnapshot = await (await readData(page)).json();
+    draftSnapshot.data.draft.exercises[0].sets[0].prescription.rest = 75;
+    expect((await writeData(page, { data: draftSnapshot })).status()).toBe(200);
+    await page.reload();
+    const firstLoad = page.getByLabel("Barbell back squat set 1 weight", {
+      exact: true,
+    });
+    await firstLoad.click();
+    await page.keyboard.type("60");
+    await expect(firstLoad).toHaveValue("60");
+    await expect(firstLoad).toHaveCSS("font-size", "16px");
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByLabel("Barbell back squat set 1 reps", { exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByLabel("Barbell back squat set 1 RIR", { exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("button", {
+        name: "Complete Barbell back squat set 1",
+        exact: true,
+      }),
+    ).toBeFocused();
+    await expect(
+      page.getByRole("button", {
+        name: "Complete Barbell back squat set 1",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTitle("Assigned rest", { exact: true })).toHaveText(
+      "75s rest",
+    );
     for (let i = 1; i <= 3; i++) {
       await page
         .getByLabel(`Barbell back squat set ${i} weight`, { exact: true })
@@ -77,6 +113,12 @@ for (const width of [360, 390, 1440])
           exact: true,
         })
         .click();
+      if (i === 1) {
+        await expect(page.locator(".sync-status")).toHaveText("Synced");
+        expect((await (await readData(page)).json()).data.timer.remaining).toBe(
+          75,
+        );
+      }
     }
     await expect(
       page.getByRole("tab", { name: "Barbell bench press", exact: true }),
@@ -124,6 +166,30 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
+    await expect(
+      page.getByRole("button", { name: "Rest timer controls", exact: true }),
+    ).toHaveAttribute("data-paused", "true");
+    await capture("timer-paused");
+    await page
+      .getByRole("button", { name: "Rest timer controls", exact: true })
+      .click();
+    for (let i = 0; i < Math.ceil((restBefore + 30) / 30); i++)
+      await page
+        .getByRole("button", { name: "−30 seconds", exact: true })
+        .click();
+    await page
+      .getByRole("button", { name: "Resume timer", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Rest timer controls", exact: true }),
+    ).toHaveAttribute(
+      "aria-description",
+      "Rest timer finished. Start when ready.",
+    );
+    await capture("timer-finished");
 
     await page
       .getByRole("button", {
@@ -222,6 +288,27 @@ for (const width of [360, 390, 1440])
       page.getByRole("heading", { name: "Recent workouts", exact: true }),
     ).toBeVisible();
     await capture("dashboard");
+    await page
+      .getByRole("button", { name: "Weekly review", exact: false })
+      .click();
+    await expect(page.getByRole("dialog")).toContainText(/1 completed workout/);
+    await expect(page.locator(".weekly-review")).toContainText(
+      "No matching confirmed exposures",
+    );
+    await capture("weekly-review");
+    await page
+      .getByRole("button", { name: "Review next week", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "0 completed workouts",
+    );
+    await page
+      .getByRole("button", { name: "Review previous week", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toContainText(/1 completed workout/);
+    await page
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await capture("more");
     await page.getByText("Training preferences", { exact: true }).click();
@@ -252,6 +339,13 @@ for (const width of [360, 390, 1440])
       .getByRole("button", { name: "Start workout", exact: true })
       .click();
     await expect(page.locator(".previous-set").first()).toContainText("60");
+    const repeatLoad = page.getByLabel("Barbell back squat set 1 weight", {
+      exact: true,
+    });
+    await repeatLoad.click();
+    await page.keyboard.type("65");
+    await expect(repeatLoad).toHaveValue("65");
+    await repeatLoad.fill("60");
     await capture("logger-dark");
     for (let i = 1; i <= 3; i++)
       await page

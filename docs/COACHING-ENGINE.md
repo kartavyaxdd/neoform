@@ -4,7 +4,7 @@
 
 ## Using it
 
-Open **Review next workout** on Workout home or **Next workout coach** in Exercise options. Readiness and finish feedback are optional. Review the evidence and individual rows, then accept, edit, decline or defer. Session scope is the default; set-count, rep-range, substitution and deload changes require explicit future-program scope. Bundles allow one alternative per exercise and cannot establish which component caused a response.
+Open the **Progression** icon in the workout logger. Readiness and finish feedback are optional. Review the proposed rows, then Apply or expand options to edit, decline or defer. Session scope is the default; set-count, rep-range, substitution and deload changes require explicit future-program scope. Bundles allow one alternative per exercise and cannot establish which component caused a response. Dashboard → Weekly review summarizes observed follow-through; see `WEEKLY-REVIEW.md` for comparison limits.
 
 For manual baseline work, set comfortable loads before starting, then use **Targets / Use current unlogged rows as manual plan**. Changing actual performance does not rewrite assigned targets. At finish, explicitly confirm accurate actual RIR, execution and rest when known. Imported effort, missing prescriptions and unanswered observations stay unknown.
 

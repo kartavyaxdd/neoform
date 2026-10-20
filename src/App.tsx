@@ -1,4 +1,5 @@
 import { TimerSheet } from "./TimerSheet";
+import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
 import { Levels } from "./Levels";
@@ -1109,6 +1110,9 @@ export default function App() {
               history={() => go("history")}
               detail={sessionDetail}
               progress={() => go("insights")}
+              review={() =>
+                setModal({ title: "Weekly review", content: <WeeklyReview /> })
+              }
             />
           )}
           {page === "train" && (
@@ -1196,12 +1200,23 @@ export default function App() {
                   <button
                     className="slim-rest"
                     aria-label="Rest timer controls"
+                    aria-description={
+                      s.timer?.paused
+                        ? "Rest timer paused"
+                        : s.timer && seconds === 0
+                          ? "Rest timer finished. Start when ready."
+                          : "Rest time remaining"
+                    }
+                    data-paused={s.timer?.paused || undefined}
                     onClick={() =>
                       setModal({ title: "Rest timer", content: <TimerSheet /> })
                     }
                   >
                     <Clock size={16} />
-                    {duration(seconds)}
+                    {s.timer && !s.timer.paused && seconds === 0
+                      ? "Rest done"
+                      : duration(seconds)}
+                    {s.timer?.paused && <span aria-hidden="true">Ⅱ</span>}
                   </button>
                   <Button variant="primary" onClick={finish}>
                     Finish session
@@ -1242,7 +1257,8 @@ export default function App() {
                     const set = draft.exercises
                       .flatMap((e) => e.sets)
                       .find((t) => t.id === setId)!;
-                    const rest = entry.target?.rest ?? 120;
+                    const rest =
+                      set.prescription?.rest ?? entry.target?.rest ?? 120;
                     change((s) => ({
                       ...s,
                       draft,

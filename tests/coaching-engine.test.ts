@@ -64,6 +64,95 @@ function scenario(reps = [10, 9, 8], count = 1) {
   return { state, draft, entry: draft.exercises[0] };
 }
 describe("confirmed coaching policy", () => {
+  it.each([
+    "missing effort",
+    "unfinished dose",
+    "new equipment",
+    "changed readiness",
+    "unknown readiness",
+    "changed rest",
+    "manual load",
+    "future context",
+  ])("longitudinal replay cannot escalate through %s", (issue) => {
+    const { state, draft } = scenario([12, 12, 12], 6),
+      latest = state.sessions.at(-1)!,
+      entry = latest.exercises[0];
+    state.sessions.forEach((s) =>
+      s.exercises[0].sets.forEach((t) => (t.rir = 3)),
+    );
+    if (issue === "missing effort") entry.sets[1].effortReported = false;
+    if (issue === "unfinished dose") entry.sets[1].done = false;
+    if (issue === "new equipment") entry.setup!.execution = "Changed ROM";
+    if (issue === "changed readiness") draft.readiness!.context = "changed";
+    if (issue === "unknown readiness") draft.readiness = undefined;
+    if (issue === "changed rest") entry.coachingContext!.rest = "shorter";
+    if (issue === "manual load") entry.sets[1].weight = 55;
+    if (issue === "future context")
+      entry.coachingContext!.recordedAt = now + 1000;
+    const before = structuredClone(state),
+      proposals = evaluateCoaching(state, draft, now);
+    expect(proposals[0].action).toBe("hold");
+    expect(
+      proposals.some((p) =>
+        ["load", "trial", "reps", "add-volume"].includes(p.action),
+      ),
+    ).toBe(false);
+    expect(state).toEqual(before);
+  });
+  it("an extended cut plateau does not justify extra volume or invented loads", () => {
+    const { state, draft } = scenario([10, 9, 8], 8);
+    draft.exercises[0].setup!.availableLoads = [50, 60];
+    const before = structuredClone(state),
+      proposals = evaluateCoaching(state, draft, now);
+    expect(
+      proposals.some(
+        (p) =>
+          p.action === "add-volume" ||
+          p.action === "load" ||
+          p.action === "trial",
+      ),
+    ).toBe(false);
+    expect(proposals[0].rows.every((r) => r.weight === 50)).toBe(true);
+    expect(state).toEqual(before);
+  });
+  it("replaying repeated confirmed misses proposes only a supported lower load", () => {
+    const { state, draft } = scenario([6, 6, 6], 3);
+    draft.exercises[0].setup!.availableLoads = [45, 50, 51];
+    const before = structuredClone(state),
+      proposals = evaluateCoaching(state, draft, now);
+    expect(proposals[0].action).toBe("reduce-load");
+    expect(proposals[0].rows.every((r) => r.weight === 45)).toBe(true);
+    expect(state).toEqual(before);
+  });
+  it("warmup outliers do not change working-set progression", () => {
+    const { state, draft } = scenario([10, 9, 8], 2);
+    state.sessions[1].exercises[0].sets.unshift({
+      ...state.sessions[1].exercises[0].sets[0],
+      id: D.uid(),
+      kind: "warmup",
+      weight: 900,
+      reps: 50,
+    });
+    const p = evaluateCoaching(state, draft, now)[0];
+    expect(p.action, p.reason).toBe("reps");
+    expect(p.rows.map((r) => r.weight)).toEqual([50, 50, 50]);
+  });
+  it("future workouts cannot manufacture eligible performance", () => {
+    const { state, draft } = scenario([10, 9, 8], 1),
+      future = structuredClone(state.sessions[0]);
+    future.id = "future-replay";
+    future.startedAt = now + 86400000;
+    future.date = "2026-10-21";
+    future.exercises[0].sets.forEach((t) => {
+      t.weight = 500;
+      t.reps = 30;
+    });
+    state.sessions = [future];
+    const p = evaluateCoaching(state, draft, now)[0];
+    expect(p.action).toBe("hold");
+    expect(p.sourceIds).toEqual([]);
+    expect(p.rows.every((r) => r.weight <= 50)).toBe(true);
+  });
   it("offers one total rep after one confirmed exposure without equalizing mixed rows", () => {
     const { state, draft } = scenario();
     const p = evaluateCoaching(state, draft, now)[0];

@@ -74,6 +74,8 @@ export function Num({
       aria-label={label}
       type="number"
       inputMode={step < 1 ? "decimal" : "numeric"}
+      enterKeyHint="next"
+      onFocus={(event) => event.currentTarget.select()}
       min={min}
       max={max}
       step={step}
