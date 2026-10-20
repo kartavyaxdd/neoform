@@ -57,7 +57,7 @@ export function WorkoutHome({
           <ChevronDown size={18} />
         </summary>
         <div className="program-days">
-          {(open ? [p.workouts[next]] : p.workouts).map((w) => (
+          {p.workouts.map((w, i) => (
             <button
               className="workout-row"
               key={w.id}
@@ -71,38 +71,14 @@ export function WorkoutHome({
                   {w.exercises.length} exercises · {w.day}
                 </small>
               </span>
+              {open && i === next && <span className="next-tag">Next</span>}
               <ArrowRight size={18} />
             </button>
           ))}
         </div>
-        {open && coach && (
-          <button
-            className="text-button"
-            onClick={() => coach(p.workouts[next], p)}
-          >
-            Review next workout
-          </button>
-        )}
         <details className="program-options">
           <summary>Program options</summary>
           <p className="caption">{p.description}</p>
-          {open &&
-            p.workouts
-              .filter((_, i) => i !== next)
-              .map((w) => (
-                <button
-                  className="workout-row"
-                  key={w.id}
-                  aria-label={`Start ${w.name}`}
-                  onClick={() => start(w, p)}
-                >
-                  <span>
-                    {w.name}
-                    <small>{w.day}</small>
-                  </span>
-                  <ArrowRight size={18} />
-                </button>
-              ))}
           <div className="actions wrap">
             <button className="btn" onClick={() => edit(p)}>
               Edit

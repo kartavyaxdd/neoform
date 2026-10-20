@@ -27,6 +27,9 @@ test("exercise tabs use roving keyboard focus and retain set edits across naviga
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
   const squat = page.getByRole("tab", {
     name: "Barbell back squat",
     exact: true,

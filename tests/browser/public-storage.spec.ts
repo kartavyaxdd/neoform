@@ -24,6 +24,9 @@ test("actual public mode logs and reloads without exposing private account or AI
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
   await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await page
     .getByLabel("Barbell back squat set 1 weight", { exact: true })
     .fill("60");
   await page
@@ -88,6 +91,9 @@ test("custom muscle categories and first-session references survive actual publi
   await page.reload();
   await page
     .getByRole("button", { name: "Start Reference day", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
     .click();
   for (const width of [360, 390]) {
     await page.setViewportSize({ width, height: 844 });

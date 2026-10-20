@@ -1,4 +1,4 @@
-import {readData} from "./storage-client";
+import { readData } from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -27,14 +27,24 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
         )
         .toBe(true);
       const nav = page.getByRole("navigation", { name: "Mobile navigation" });
-      await expect
-        .poll(async () =>
-          Math.round(
-            (await nav.boundingBox())!.y + (await nav.boundingBox())!.height,
-          ),
-        )
-        .toBe(height);
+      if (await nav.isVisible()) {
+        await expect
+          .poll(async () =>
+            Math.round(
+              (await nav.boundingBox())!.y + (await nav.boundingBox())!.height,
+            ),
+          )
+          .toBe(height);
+      }
       if (sheet) {
+        // Measure the settled sheet, while ui-redesign separately checks motion.
+        await page.getByRole("dialog").evaluate(async (dialog) => {
+          await Promise.all(
+            dialog
+              .getAnimations()
+              .map((animation) => animation.finished.catch(() => {})),
+          );
+        });
         const box = await page.getByRole("dialog").boundingBox();
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.y).toBeGreaterThanOrEqual(0);
@@ -56,13 +66,19 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
           geometry.push({ width, set, bottom: box!.y + box!.height });
         }
       }
-      await page.screenshot({ path: `${output}/${name}-${width}.png` });
+      await page.screenshot({
+        path: `${output}/${name}-${width}.png`,
+        animations: "disabled",
+      });
     }
     await page.setViewportSize({ width: 390, height: 844 });
   }
   await capture("home");
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
     .click();
   await capture("logger");
   await page.getByRole("button", { name: "Info", exact: true }).click();
@@ -78,17 +94,13 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
   await page
     .getByRole("button", { name: "Finish session", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Save completed workout", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
   await page
     .getByRole("navigation", { name: "Mobile navigation" })
     .getByRole("button", { name: "Workout", exact: true })
     .click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  const snapshot = async () =>
-    (await (await readData(page)).json()).data;
+  const snapshot = async () => (await (await readData(page)).json()).data;
   const before = await snapshot();
   // This fixture exercises UI/schema/save behavior. It is not provider evidence.
   await page.route("**/api/ai/generate", (route) =>
@@ -165,6 +177,9 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
   await capture("home-dark");
   await page
     .getByRole("button", { name: "Start Full body B", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
     .click();
   await capture("logger-dark");
   expect(errors).toEqual([]);

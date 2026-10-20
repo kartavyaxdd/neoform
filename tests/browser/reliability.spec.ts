@@ -29,6 +29,9 @@ for (const [width, unit] of [
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
+    await page
+      .getByRole("button", { name: "Start workout", exact: true })
+      .click();
     const open = async () => {
       await page
         .getByRole("button", { name: "Exercise options", exact: true })
@@ -147,6 +150,9 @@ test("changed dose and reported effort require explicit confirmation and survive
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
   await page.getByRole("button", { name: "Targets", exact: true }).click();
   await page
     .getByRole("button", {
@@ -167,24 +173,21 @@ test("changed dose and reported effort require explicit confirmation and survive
     })
     .click();
   await page.keyboard.press("Escape");
-  for (const n of [1, 2])
+  for (const n of [1, 2]) {
+    await page
+      .getByLabel(`Barbell back squat set ${n} RIR`, { exact: true })
+      .fill("2");
     await page
       .getByRole("button", {
         name: `Complete Barbell back squat set ${n}`,
         exact: true,
       })
       .click();
+  }
   await page
     .getByRole("button", { name: "Finish session", exact: true })
     .click();
-  await page
-    .getByRole("checkbox", {
-      name: "I confirm the recorded RIR values describe my actual completed sets.",
-    })
-    .check();
-  await page
-    .getByRole("button", { name: "Save completed workout", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
@@ -315,12 +318,12 @@ test("reported history produces per-row targets and completion alone leaves effo
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
-  await currentReadiness(page, "Quads");
   await page
-    .getByRole("button", { name: "Exercise options", exact: true })
+    .getByRole("button", { name: "Start workout", exact: true })
     .click();
-  await page.getByText("Progression note", { exact: true }).click();
-  await page.getByRole("button", { name: "Accept for unlogged sets" }).click();
+  await currentReadiness(page, "Quads");
+  await page.getByRole("button", { name: "Progression", exact: true }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.keyboard.press("Escape");
   for (let i = 0; i < 3; i++)
     expect(
@@ -337,9 +340,7 @@ test("reported history produces per-row targets and completion alone leaves effo
   await page
     .getByRole("button", { name: "Finish session", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Save completed workout", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Save workout", exact: true }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   const saved = (await (await readData(page)).json()).data.sessions.at(-1);
   expect(saved.exercises[0].sets[0].effortReported).toBe(false);
@@ -383,7 +384,7 @@ test("finishing workout B recommends workout C", async ({ page }) => {
     page
       .locator(".program-card")
       .first()
-      .locator(".program-days > .workout-row b"),
+      .locator(".program-days > .workout-row:has(.next-tag) b"),
   ).toHaveText("Full body C");
 });
 test("acknowledged offline work never replays over a newer edit", async ({

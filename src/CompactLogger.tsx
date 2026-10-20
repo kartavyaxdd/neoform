@@ -1,27 +1,27 @@
-import { useMemo, useRef, useState } from "react";
+import {
+  previousWorkingRows,
+  resumeExerciseId,
+  nextExerciseId,
+} from "./workoutPresentation";
+import { useRef, useState } from "react";
 import {
   Plus,
   Check,
   X,
   TrendingUp,
+  Sparkles,
   ChevronRight,
   Dumbbell,
 } from "lucide-react";
 import * as D from "./domain";
-import { useStore, change, saveChange } from "./store";
+import { useStore, change } from "./store";
 import { Button, Field, Num, Modal } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
 import { ReadinessSheet } from "./ReadinessSheet";
 import { CoachSheet } from "./CoachSheet";
-import { evaluateCoaching, applyCoaching, asRecommendation } from "./coaching";
-import type { CoachingProposal } from "./coachingTypes";
-import {
-  canApplyStraightProgression,
-  giantProgress,
-  reviewRecommendation,
-} from "./techniques";
+import { giantProgress } from "./techniques";
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 export function SessionLogger({
   session: s,
@@ -44,35 +44,10 @@ export function SessionLogger({
   onDone?: (id: string, e: D.Entry) => void;
   history?: boolean;
 }) {
-  const [selected, setSelected] = useState(s.exercises[0]?.id),
+  const [selected, setSelected] = useState(() => resumeExerciseId(s)),
     [sheet, setSheet] = useState<string | null>(null),
     [effort, setEffort] = useState<"RIR" | "RPE">("RIR");
   const data = useStore().box.data;
-  const decisions = data.decisions;
-  const [coachError, setCoachError] = useState("");
-  const proposals = useMemo(
-    () =>
-      history || sheet !== "Exercise options" ? [] : evaluateCoaching(data, s),
-    [data, s, history, sheet],
-  );
-  async function recordCoaching(
-    proposal: CoachingProposal,
-    choice: "accept" | "decline" | "defer",
-  ) {
-    try {
-      setCoachError("");
-      if (
-        !(await saveChange((d) =>
-          applyCoaching(d, s, [{ proposal, choice, scope: "session" }]),
-        ))
-      )
-        setCoachError(
-          "Coaching choice is not yet durable; check device and sync status.",
-        );
-    } catch (e) {
-      setCoachError((e as Error).message);
-    }
-  }
   const program = data.programs.find((p) => p.id === s.programId);
   const tabs = useRef<HTMLDivElement>(null);
   const current = s.exercises.find((x) => x.id === selected) || s.exercises[0];
@@ -163,9 +138,14 @@ export function SessionLogger({
                 D.comparableKey(x, ex) === D.comparableKey(e, ex) &&
                 x.exerciseId === e.exerciseId,
             );
-          const proposal = proposals.find((p) => p.entryId === e.id);
-          const rec = reviewRecommendation(e, asRecommendation(proposal)),
-            recKey = proposal?.id ?? `${e.id}:no-evidence`;
+          const priorRows = previousWorkingRows(
+            previous.filter(
+              (p) =>
+                p.id !== s.id && p.date <= s.date && p.startedAt <= s.startedAt,
+            ),
+            e,
+            ex,
+          );
           return (
             <section
               className="log-exercise"
@@ -185,7 +165,28 @@ export function SessionLogger({
                   of {e.sets.length}
                 </small>
               </div>
+              <p className="exercise-prescription">
+                {e.plannedWorkingSets ??
+                  e.sets.filter((t) => t.kind === "working").length}{" "}
+                sets &middot;{" "}
+                {e.target ? (
+                  <>
+                    {e.target.min}&ndash;{e.target.max} reps &middot;{" "}
+                    {e.target.rir} RIR target
+                  </>
+                ) : (
+                  "No saved prescription"
+                )}
+              </p>
               <div className="logger-actions">
+                {!history && (
+                  <Button
+                    title="Progression"
+                    onClick={() => setSheet("Next workout coach")}
+                  >
+                    <Sparkles size={17} />
+                  </Button>
+                )}
                 <Button onClick={() => setSheet("Info")}>Info</Button>
                 <Button onClick={() => setSheet("Warm Up")}>Warm Up</Button>
                 <Button onClick={() => setSheet("Targets")}>Targets</Button>
@@ -199,13 +200,14 @@ export function SessionLogger({
               <div className="set-table">
                 <div className="set-header">
                   <span>Set</span>
-                  <span>Target</span>
+                  <span>Previous</span>
                   <span>
                     {(e.convention || ex.convention) === "machine-label"
                       ? "LABEL"
                       : unit}
                   </span>
                   <span>Reps</span>
+                  <span>{effort}</span>
                   <span>✓</span>
                 </div>
                 {e.sets.map((set, i) => (
@@ -228,82 +230,177 @@ export function SessionLogger({
                                   ? "D"
                                   : i + 1}
                     </span>
-                    <div className="set-target">
-                      <span>
-                        {set.bout === "mini" || set.bout === "drop"
-                          ? "5–10"
-                          : set.bout === "giant"
-                            ? "Goal"
-                            : set.prescription?.proposalId
-                              ? `${set.prescription.reps} planned (${set.prescription.min}–${set.prescription.max})`
-                              : e.target
-                                ? `${e.target.min}–${e.target.max}`
-                                : "8–12"}{" "}
-                        reps
-                      </span>
-                      <label>
-                        <Num
-                          label={`${ex.name} set ${i + 1} ${effort}`}
-                          value={effort === "RIR" ? set.rir : 10 - set.rir}
-                          max={10}
-                          step={0.5}
-                          onChange={(n) =>
+                    <div className="previous-set">
+                      {set.kind === "working" &&
+                      priorRows[
+                        e.sets.slice(0, i).filter((t) => t.kind === "working")
+                          .length
+                      ] ? (
+                        <span>
+                          {fmt(
+                            D.displayLoad(
+                              priorRows[
+                                e.sets
+                                  .slice(0, i)
+                                  .filter((t) => t.kind === "working").length
+                              ].weight,
+                              e.convention || ex.convention,
+                              unit,
+                            ),
+                          )}
+                          <small>
+                            &times;{" "}
+                            {
+                              priorRows[
+                                e.sets
+                                  .slice(0, i)
+                                  .filter((t) => t.kind === "working").length
+                              ].reps
+                            }
+                          </small>
+                        </span>
+                      ) : (
+                        <span className="muted">&mdash;</span>
+                      )}
+                    </div>
+                    <div className="row-load">
+                      {" "}
+                      <Num
+                        label={`${ex.name} set ${i + 1} weight`}
+                        value={D.displayLoad(
+                          set.weight,
+                          e.convention || ex.convention,
+                          unit,
+                        )}
+                        step={0.01}
+                        max={unit === "kg" ? 2000 : 4409}
+                        onChange={(n) =>
+                          updateSet(e, {
+                            ...set,
+                            weight: D.canonicalLoad(
+                              n,
+                              e.convention || ex.convention,
+                              unit,
+                            ),
+                          })
+                        }
+                      />
+                      {set.kind === "working" &&
+                        set.prescription &&
+                        (set.prescription.proposalId ||
+                          set.prescription.weight !== set.weight ||
+                          set.prescription.reps !== set.reps) && (
+                          <small
+                            className="assigned-row"
+                            title="Assigned load and reps"
+                          >
+                            {fmt(
+                              D.displayLoad(
+                                set.prescription.weight,
+                                e.convention || ex.convention,
+                                unit,
+                              ),
+                            )}{" "}
+                            &times; {set.prescription.reps}
+                          </small>
+                        )}
+                    </div>
+                    <div className="row-reps">
+                      <Num
+                        label={`${ex.name} set ${i + 1} reps`}
+                        value={set.reps}
+                        min={1}
+                        max={100}
+                        onChange={(n) => updateSet(e, { ...set, reps: n })}
+                      />
+                      {set.prescription &&
+                        (set.prescription.min !== e.target?.min ||
+                          set.prescription.max !== e.target?.max) && (
+                          <small
+                            className="assigned-row"
+                            title="Assigned rep range"
+                          >
+                            {set.prescription.min}–{set.prescription.max}
+                          </small>
+                        )}
+                    </div>
+                    <div className="row-effort-cell">
+                      <input
+                        className="row-effort"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.5"
+                        min="0"
+                        max="10"
+                        placeholder="—"
+                        aria-label={`${ex.name} set ${i + 1} ${effort}`}
+                        value={
+                          set.effortReported
+                            ? effort === "RIR"
+                              ? set.rir
+                              : 10 - set.rir
+                            : ""
+                        }
+                        onChange={(ev) => {
+                          const raw = ev.target.value,
+                            value = ev.target.valueAsNumber;
+                          if (raw === "") {
+                            updateSet(e, { ...set, effortReported: false });
+                            return;
+                          }
+                          if (
+                            Number.isFinite(value) &&
+                            value >= 0 &&
+                            value <= 10
+                          )
                             updateSet(e, {
                               ...set,
-                              rir: effort === "RIR" ? n : 10 - n,
+                              rir: effort === "RIR" ? value : 10 - value,
                               effortReported: true,
-                            })
-                          }
-                        />
-                        <small
-                          title={
-                            set.effortReported
-                              ? "Reported effort"
-                              : "Unconfirmed effort; report it or confirm at finish"
-                          }
-                        >
-                          {effort}
-                          {set.effortReported ? "" : " ?"}
-                        </small>
-                      </label>
+                            });
+                        }}
+                      />
+                      {set.prescription &&
+                        set.prescription.rir !== e.target?.rir && (
+                          <small
+                            className="assigned-row"
+                            title="Assigned effort target"
+                          >
+                            {effort === "RIR"
+                              ? set.prescription.rir
+                              : 10 - set.prescription.rir}{" "}
+                            {effort}
+                          </small>
+                        )}
                     </div>
-                    <Num
-                      label={`${ex.name} set ${i + 1} weight`}
-                      value={D.displayLoad(
-                        set.weight,
-                        e.convention || ex.convention,
-                        unit,
-                      )}
-                      step={0.01}
-                      max={unit === "kg" ? 2000 : 4409}
-                      onChange={(n) =>
-                        updateSet(e, {
-                          ...set,
-                          weight: D.canonicalLoad(
-                            n,
-                            e.convention || ex.convention,
-                            unit,
-                          ),
-                        })
-                      }
-                    />
-                    <Num
-                      label={`${ex.name} set ${i + 1} reps`}
-                      value={set.reps}
-                      min={1}
-                      max={100}
-                      onChange={(n) => updateSet(e, { ...set, reps: n })}
-                    />
                     <button
                       className={"complete-set " + (set.done ? "checked" : "")}
                       disabled={setupRequired && set.kind !== "warmup"}
                       aria-label={`${set.done ? "Undo" : "Complete"} ${ex.name} set ${i + 1}`}
                       aria-pressed={set.done}
-                      onClick={() =>
-                        onDone
-                          ? onDone(set.id, e)
-                          : updateSet(e, { ...set, done: !set.done })
-                      }
+                      onClick={() => {
+                        const toggled = D.toggleSet(s, set.id);
+                        if (onDone) onDone(set.id, e);
+                        else updateSet(e, { ...set, done: !set.done });
+                        if (
+                          !history &&
+                          !set.done &&
+                          data.settings.autoAdvance !== false
+                        ) {
+                          const next = nextExerciseId(toggled, e.id);
+                          setSelected(next);
+                          if (next !== e.id)
+                            tabs.current
+                              ?.querySelector<HTMLElement>(`[id="tab-${next}"]`)
+                              ?.focus({ preventScroll: true });
+                          tabs.current
+                            ?.querySelector<HTMLElement>(`[id="tab-${next}"]`)
+                            ?.scrollIntoView({
+                              block: "nearest",
+                              inline: "nearest",
+                            });
+                        }
+                      }}
                     >
                       <Check size={19} />
                     </button>
@@ -382,7 +479,13 @@ export function SessionLogger({
               </Button>
               {sheet && (
                 <Modal
-                  title={sheet === "Info" ? ex.name : sheet}
+                  title={
+                    sheet === "Info"
+                      ? ex.name
+                      : sheet === "Next workout coach"
+                        ? "Progression"
+                        : sheet
+                  }
                   close={() => setSheet(null)}
                 >
                   {sheet === "Info" ? (
@@ -390,6 +493,7 @@ export function SessionLogger({
                   ) : sheet === "Next workout coach" ? (
                     <CoachSheet
                       session={s}
+                      entryId={e.id}
                       onOpenWorkout={() => setSheet(null)}
                     />
                   ) : sheet === "Exercise options" ? (
@@ -407,13 +511,6 @@ export function SessionLogger({
                         <Button onClick={() => setSheet("Readiness")}>
                           Readiness
                         </Button>
-                        {!history && (
-                          <Button
-                            onClick={() => setSheet("Next workout coach")}
-                          >
-                            Next workout coach
-                          </Button>
-                        )}
                         {!history && (
                           <Button onClick={() => setSheet("Equipment setup")}>
                             Equipment setup
@@ -478,129 +575,6 @@ export function SessionLogger({
                           <p>No previous sets.</p>
                         )}
                       </details>
-                      {!history && (
-                        <details className="coach">
-                          <summary>
-                            <TrendingUp size={16} />
-                            Progression note <ChevronRight size={14} />
-                          </summary>
-                          <p>{rec.reason}</p>
-                          {!canApplyStraightProgression(e) && (
-                            <p className="caption">
-                              Technique context differs from straight sets.
-                              Review the whole sequence manually; automatic
-                              straight-set progression is unavailable.
-                            </p>
-                          )}
-                          {rec.evidence?.map((text, i) => (
-                            <p className="caption" key={"evidence" + i}>
-                              Evidence: {text}
-                            </p>
-                          ))}
-                          {rec.assumptions?.map((text, i) => (
-                            <p className="caption" key={"assumption" + i}>
-                              Assumption: {text}
-                            </p>
-                          ))}
-                          {!!rec.sourcePages?.length && (
-                            <p className="caption">
-                              Source: physical PDF pp.{" "}
-                              {rec.sourcePages.join(", ")} · {rec.policyVersion}
-                            </p>
-                          )}
-                          {rec.weight !== undefined && !rec.setTargets && (
-                            <p>
-                              <b>
-                                {fmt(
-                                  D.displayLoad(
-                                    rec.weight,
-                                    e.convention || ex.convention,
-                                    unit,
-                                  ),
-                                )}{" "}
-                                {(e.convention || ex.convention) ===
-                                "machine-label"
-                                  ? "label"
-                                  : unit}{" "}
-                                × {rec.reps} reps
-                              </b>{" "}
-                              · optional next target
-                            </p>
-                          )}
-                          {rec.setTargets && (
-                            <p className="caption">
-                              Working-set targets:{" "}
-                              {rec.setTargets
-                                .map(
-                                  (t) =>
-                                    `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`,
-                                )
-                                .join(" / ")}{" "}
-                              {(e.convention || ex.convention) ===
-                              "machine-label"
-                                ? "label"
-                                : unit}
-                              . Preserve the prescribed effort; stop short if
-                              technique or reserve would be lost.
-                            </p>
-                          )}
-                          <div className="actions wrap">
-                            <Button
-                              disabled={
-                                !proposal ||
-                                !canApplyStraightProgression(e) ||
-                                !["load", "reps"].includes(rec.action)
-                              }
-                              onClick={() =>
-                                proposal &&
-                                void recordCoaching(proposal, "accept")
-                              }
-                            >
-                              Accept for unlogged sets
-                            </Button>
-                            <Button
-                              disabled={!proposal}
-                              onClick={() =>
-                                proposal &&
-                                void recordCoaching(proposal, "defer")
-                              }
-                            >
-                              Defer
-                            </Button>
-                            <Button
-                              disabled={!proposal}
-                              onClick={() =>
-                                proposal &&
-                                void recordCoaching(proposal, "decline")
-                              }
-                            >
-                              Decline
-                            </Button>
-                            <Button
-                              onClick={() => setSheet("Next workout coach")}
-                            >
-                              Review all coaching proposals
-                            </Button>
-                          </div>
-                          {coachError && <p role="alert">{coachError}</p>}
-                          {decisions.some((d) => d.key === recKey) && (
-                            <p className="caption" role="status">
-                              Choice recorded:{" "}
-                              {
-                                decisions
-                                  .filter((d) => d.key === recKey)
-                                  .at(-1)!.choice
-                              }
-                              .
-                            </p>
-                          )}
-                          <p className="caption">
-                            Deterministic guidance, not a diagnosis. Review
-                            targets against your program. Decline/defer records
-                            your choice without changing sets.
-                          </p>
-                        </details>
-                      )}
                     </>
                   ) : sheet === "Add bout" ? (
                     <TechniqueSheet

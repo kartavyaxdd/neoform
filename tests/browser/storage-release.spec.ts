@@ -7,16 +7,40 @@ import {
   importHistoryBackup,
 } from "../../src/historyBackup";
 import { readFile } from "node:fs/promises";
-test('sign out purges the signed-out account from both device databases',async({page})=>{
- await fixture(page);const user=await(await page.request.get('/api/me')).json();
- await page.getByRole('button',{name:'Settings',exact:true}).click();
- await page.getByRole('button',{name:'Sign out',exact:true}).click();
- await expect(page.getByLabel('Email',{exact:true})).toBeVisible();
- const counts=await page.evaluate(async owner=>{
-  const count=(name:string,store:string)=>new Promise<number>((resolve,reject)=>{
-   const r=indexedDB.open(name);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,t=db.transaction(store),q=t.objectStore(store).count(IDBKeyRange.bound([owner,''],[owner,'\uffff']));q.onsuccess=()=>{resolve(q.result);db.close();};q.onerror=()=>reject(q.error);};
-  });return Promise.all([count('neoform-state-v2','boxes'),count('neoform-history-v1','plans'),count('neoform-history-v1','receipts')]);
- },user.id);expect(counts).toEqual([0,0,0]);
+test("sign out purges the signed-out account from both device databases", async ({
+  page,
+}) => {
+  await fixture(page);
+  const user = await (await page.request.get("/api/me")).json();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByText("Account & access", { exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+  const counts = await page.evaluate(async (owner) => {
+    const count = (name: string, store: string) =>
+      new Promise<number>((resolve, reject) => {
+        const r = indexedDB.open(name);
+        r.onerror = () => reject(r.error);
+        r.onsuccess = () => {
+          const db = r.result,
+            t = db.transaction(store),
+            q = t
+              .objectStore(store)
+              .count(IDBKeyRange.bound([owner, ""], [owner, "\uffff"]));
+          q.onsuccess = () => {
+            resolve(q.result);
+            db.close();
+          };
+          q.onerror = () => reject(q.error);
+        };
+      });
+    return Promise.all([
+      count("neoform-state-v2", "boxes"),
+      count("neoform-history-v1", "plans"),
+      count("neoform-history-v1", "receipts"),
+    ]);
+  }, user.id);
+  expect(counts).toEqual([0, 0, 0]);
 });
 test("large backup restores through the logger, survives offline reload and exports exactly", async ({
   page,
@@ -37,13 +61,12 @@ test("large backup restores through the logger, survives offline reload and expo
   const blob = await exportHistoryBackup(state);
   expect(blob.size).toBeGreaterThan(D.MAX_BACKUP);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page
-    .getByLabel("Import JSON backup", { exact: true })
-    .setInputFiles({
-      name: "synthetic-history.jsonl",
-      mimeType: "application/x-ndjson",
-      buffer: Buffer.from(await blob.arrayBuffer()),
-    });
+  await page.getByText("Your data, portable.", { exact: true }).click();
+  await page.getByLabel("Import JSON backup", { exact: true }).setInputFiles({
+    name: "synthetic-history.jsonl",
+    mimeType: "application/x-ndjson",
+    buffer: Buffer.from(await blob.arrayBuffer()),
+  });
   await expect(page.getByRole("dialog")).toContainText("600 sessions");
   await page
     .getByRole("button", { name: "Confirm replace", exact: true })

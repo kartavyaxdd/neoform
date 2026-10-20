@@ -8,8 +8,9 @@ export default defineConfig({
   // access-mode rehearsals require their separate isolated configurations.
   testMatch:
     process.env.NEOFORM_QA_MODE === "public"
-      ? ["public-storage.spec.ts", "coaching.spec.ts"]
+      ? ["public-storage.spec.ts", "coaching.spec.ts", "ui-redesign.spec.ts"]
       : [
+          "ui-redesign.spec.ts",
           "coaching.spec.ts",
           "readiness.spec.ts",
           "reliability.spec.ts",

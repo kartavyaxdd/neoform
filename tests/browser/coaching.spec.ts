@@ -85,13 +85,12 @@ for (const width of [360, 390])
       .getByRole("button", { name: "Resume session", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "Exercise options", exact: true })
-      .click();
-    await page
-      .getByRole("button", { name: "Next workout coach", exact: true })
+      .getByRole("button", { name: "Progression", exact: true })
       .click();
     await expect(
-      page.getByText("1 eligible exposures", { exact: false }),
+      page.getByRole("table", {
+        name: "Barbell bench press proposed working sets",
+      }),
     ).toBeVisible();
     expect(
       await page.evaluate(
@@ -101,9 +100,7 @@ for (const width of [360, 390])
     await page.screenshot({
       path: `${process.env.NEOFORM_QA_OUTPUT}/coaching-${width}.png`,
     });
-    await page
-      .getByRole("button", { name: "Accept proposed targets", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     let saved = (await (await readData(page)).json()).data;
     expect(saved.coachingEvents).toHaveLength(1);
@@ -111,22 +108,21 @@ for (const width of [360, 390])
       10, 9, 9,
     ]);
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    for (let i = 1; i <= 3; i++)
+    for (let i = 1; i <= 3; i++) {
+      await page
+        .getByLabel(`Barbell bench press set ${i} RIR`, { exact: true })
+        .fill("2");
       await page
         .getByRole("button", {
           name: `Complete Barbell bench press set ${i}`,
           exact: true,
         })
         .click();
+    }
     await page
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
-    await page
-      .getByRole("checkbox", {
-        name: "I confirm the recorded RIR values describe my actual completed sets.",
-        exact: true,
-      })
-      .check();
+    await page.getByText("Optional feedback", { exact: true }).click();
     await page
       .getByText("Execution, rest and changed sets", { exact: true })
       .click();
@@ -137,7 +133,7 @@ for (const width of [360, 390])
       .getByLabel("Barbell bench press rest this session", { exact: true })
       .selectOption("usual");
     await page
-      .getByRole("button", { name: "Save completed workout", exact: true })
+      .getByRole("button", { name: "Save workout", exact: true })
       .click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     saved = (await (await readData(page)).json()).data;
@@ -147,12 +143,11 @@ for (const width of [360, 390])
     ]);
     expect(saved.coachingEvents[1].outcome).toBe("met");
     expect(saved.sessions).toHaveLength(2);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await context.setOffline(true);
     await page.reload();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByText("Your data, portable.", { exact: true }).click();
     const download = page.waitForEvent("download");
     await page
       .getByRole("button", { name: "Export JSON backup", exact: true })

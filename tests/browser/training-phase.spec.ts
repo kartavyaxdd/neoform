@@ -1,8 +1,8 @@
-import {readData} from "./storage-client";
+import { readData } from "./storage-client";
 import { test, expect, type Page } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import type { State } from "../../src/domain";
-const output=process.env.NEOFORM_QA_OUTPUT!;
+const output = process.env.NEOFORM_QA_OUTPUT!;
 const synced = (page: Page) =>
   expect(page.locator(".sync-status")).toHaveText("Synced");
 async function data(page: Page): Promise<State> {
@@ -40,6 +40,9 @@ for (const width of [360, 390])
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
+    await page
+      .getByRole("button", { name: "Start workout", exact: true })
+      .click();
     await synced(page);
     let state = await data(page);
     expect(state.draft).not.toBeNull();
@@ -65,6 +68,7 @@ for (const width of [360, 390])
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     dialog = page.getByRole("dialog");
+    await dialog.getByText("Optional feedback", { exact: true }).click();
     await expect(
       dialog.getByLabel("Systemic fatigue", { exact: true }),
     ).toHaveValue("unknown");
@@ -86,9 +90,7 @@ for (const width of [360, 390])
       path: `${output}/training-engine-ui/finish-sheet-${width}.png`,
       fullPage: true,
     });
-    await dialog
-      .getByRole("button", { name: "Save completed workout" })
-      .click();
+    await dialog.getByRole("button", { name: "Save workout" }).click();
     await synced(page);
     state = await data(page);
     expect(state.sessions).toHaveLength(1);
@@ -115,8 +117,9 @@ for (const width of [360, 390])
     expect((await data(page)).sessions).toEqual(saved);
     await page
       .getByRole("navigation", { name: "Mobile navigation" })
-      .getByRole("button", { name: "Progress", exact: true })
+      .getByRole("button", { name: "Levels", exact: true })
       .click();
+    await page.getByText("Detailed training insights", { exact: true }).click();
     await page
       .getByLabel("Review muscle", { exact: true })
       .selectOption("Quads");
@@ -130,9 +133,17 @@ for (const width of [360, 390])
       .click();
     await expect(page.locator(".muscle-review")).toContainText("Policy");
     await expect(page.locator(".muscle-review")).toContainText("PDF pp.");
-    await page.getByLabel("Review muscle", { exact: true }).selectOption("Chest");
-    await expect(page.locator(".muscle-review").getByRole("heading", {name:"Hold and observe",exact:true})).toBeVisible();
-    await page.getByLabel("Review muscle", { exact: true }).selectOption("Quads");
+    await page
+      .getByLabel("Review muscle", { exact: true })
+      .selectOption("Chest");
+    await expect(
+      page
+        .locator(".muscle-review")
+        .getByRole("heading", { name: "Hold and observe", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Review muscle", { exact: true })
+      .selectOption("Quads");
     await page.screenshot({
       path: `${output}/training-engine-ui/review-${width}.png`,
       fullPage: true,
@@ -159,7 +170,9 @@ for (const width of [360, 390])
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
-    await expect(page.getByRole("dialog")).toContainText("Active rest");
+    await expect(page.getByRole("dialog")).toContainText(
+      "No lifting is scheduled in active rest",
+    );
     expect((await data(page)).draft).toBeNull();
     expect((await data(page)).sessions).toEqual(saved);
     expect(

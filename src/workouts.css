@@ -1,0 +1,1051 @@
+/* Shared workout-first presentation. All colors follow the existing theme. */
+:root,
+:root[data-theme="light"] {
+  --accent: #356cf0;
+  --accent-soft: #eaf0ff;
+  --bg: #f6f6f8;
+  --surface2: #f0f1f4;
+  --mint: #356cf0;
+  --mint-ink: #fff;
+}
+:root[data-theme="dark"] {
+  --accent: #8baeff;
+  --accent-soft: #273756;
+  --mint: #8baeff;
+  --mint-ink: #14213b;
+}
+.app-shell {
+  max-width: 760px;
+}
+.screen-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.screen-heading h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.screen-heading h1,
+.workout-title h1 {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.page-heading .eyebrow {
+  display: none;
+}
+.page-heading h1 {
+  font-size: 24px;
+  letter-spacing: -0.5px;
+}
+.page-heading {
+  margin-bottom: 20px;
+}
+.page-heading p {
+  font-size: 14px;
+}
+.bottom-nav {
+  max-width: 760px;
+}
+.bottom-nav .create-tab svg {
+  background: var(--ink);
+  color: var(--surface);
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  padding: 9px;
+}
+.bottom-nav button.active {
+  color: var(--accent);
+}
+.topbar {
+  border-bottom: 1px solid var(--line);
+}
+.topbar .breadcrumb::before {
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.workspace-footer {
+  display: none;
+}
+.simple-dashboard,
+.levels-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.simple-dashboard .screen-heading,
+.levels-screen .screen-heading {
+  margin: 0;
+}
+.activity-card,
+.body-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 18px;
+}
+.activity-card h2 {
+  font-size: 17px;
+}
+.activity-card .section-heading {
+  align-items: center;
+}
+.activity-card .section-heading > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.activity-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin: 18px 0;
+}
+.activity-week > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.activity-week span {
+  height: 32px;
+  width: 32px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.activity-week .trained span {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.activity-totals {
+  display: flex;
+  justify-content: space-around;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.activity-totals b {
+  color: var(--ink);
+  font-size: 18px;
+  margin-right: 3px;
+}
+.simple-dashboard section > .grouped {
+  background: var(--surface);
+}
+.group-heading h2,
+.home-groups section > h2 {
+  font-size: 16px;
+}
+.group-heading {
+  margin-bottom: 10px;
+}
+.group-row {
+  min-height: 64px;
+  padding: 14px;
+  gap: 12px;
+}
+.group-row span {
+  min-width: 0;
+  flex: 1;
+}
+.group-row b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.group-row small {
+  display: block;
+  font-size: 12px;
+}
+.group-row > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.program-card > summary {
+  min-height: 74px;
+  padding: 15px;
+}
+.program-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 11px;
+}
+.program-days .workout-row {
+  padding: 14px 16px;
+  min-height: 62px;
+}
+.program-days {
+  background: var(--surface);
+}
+.program-card h3 {
+  font-size: 15px;
+}
+.program-options > summary {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.home-groups {
+  gap: 26px;
+}
+.grouped,
+.program-card {
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.workout-title {
+  padding-top: 18px;
+}
+.date-strip > button {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  min-width: 32px;
+  gap: 3px;
+  background: var(--surface);
+}
+.date-strip > button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+}
+.date-strip {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.preview-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0 18px;
+}
+.preview-stats span,
+.muscle-chips span {
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--muted);
+}
+.muscle-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 12px 0 20px;
+}
+.workout-preview > .btn {
+  width: 100%;
+  margin-top: 18px;
+  position: sticky;
+  bottom: 0;
+}
+.workout-preview .grouped .group-row {
+  padding: 13px 14px;
+}
+.workout-preview h3 {
+  font-size: 22px;
+}
+.page-session .session-bar {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  gap: 8px;
+}
+.session-bar .btn {
+  font-size: 12px;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+.session-bar > span {
+  font-size: 12px;
+}
+.exercise-nav {
+  gap: 6px;
+  padding-block: 14px;
+  margin-bottom: 10px;
+}
+.exercise-nav button {
+  min-height: 62px;
+  height: 62px;
+  width: 66px;
+  max-width: 66px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.exercise-nav button[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.exercise-nav button > svg {
+  width: 18px;
+  height: 18px;
+}
+.exercise-nav button > span {
+  font-size: 9px;
+}
+.compact-exercise-title {
+  margin-top: 8px;
+}
+.compact-exercise-title h2 {
+  font-size: 19px;
+  line-height: 1.25;
+}
+.compact-exercise-title small {
+  font-size: 11px;
+}
+.exercise-prescription {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 14px;
+}
+.logger-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+.logger-actions .btn {
+  border-radius: 18px;
+  background: var(--surface2);
+  font-size: 12px;
+  padding: 7px 10px;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+.logger-actions .btn:first-child {
+  width: 36px;
+  min-width: 36px;
+  padding: 7px;
+  color: var(--accent);
+}
+.compact-logger .set-header,
+.compact-logger .set-row,
+.modal .compact-logger .set-header,
+.modal .compact-logger .set-row {
+  grid-template-columns:
+    22px minmax(42px, 0.85fr) minmax(52px, 1.2fr)
+    44px 44px 44px;
+  gap: 5px;
+  align-items: start;
+}
+.compact-logger .set-header {
+  font-size: 10px;
+  line-height: 1.1;
+  color: var(--muted);
+  align-items: center;
+  margin-bottom: 12px;
+}
+.compact-logger .set-header > span {
+  text-align: center;
+}
+.compact-logger .set-row {
+  min-height: 50px;
+  margin-bottom: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.compact-logger .set-row input {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 2px;
+  text-align: center;
+  font-size: 15px !important;
+  min-height: 44px;
+  border-radius: 7px;
+  background: var(--surface2);
+  border-color: transparent;
+}
+.compact-logger .set-row input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.compact-logger .row-load,
+.compact-logger .row-reps {
+  min-width: 0;
+}
+.compact-logger .set-number {
+  font-size: 11px;
+  width: 22px;
+  height: 24px;
+  background: var(--surface2);
+  border-radius: 50%;
+  margin-top: 10px;
+}
+.previous-set {
+  font-size: 12px;
+  text-align: center;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.previous-set small {
+  font-size: 10px;
+  display: block;
+}
+.assigned-row {
+  display: block;
+  text-align: center;
+  font-size: 9px;
+  color: var(--accent);
+  line-height: 1.3;
+  margin-top: 3px;
+}
+.compact-logger .complete-set {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 8px;
+  width: 44px;
+  height: 44px;
+}
+.compact-logger .complete-set.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.set-row.completed input {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.compact-logger .add-set {
+  border-radius: 50%;
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 0;
+  margin-top: 5px;
+  background: var(--surface2);
+}
+.compact-logger .add-set svg {
+  width: 17px;
+  height: 17px;
+}
+.page-session .rest-timer {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  bottom: 88px;
+  background: var(--surface);
+  box-shadow: 0 3px 14px #0000000a;
+}
+.week-selector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.body-maps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.body-maps figure {
+  margin: 0;
+  text-align: center;
+}
+.body-maps svg {
+  width: 100%;
+  max-height: 300px;
+}
+.body-base {
+  fill: var(--surface3);
+}
+.muscle path {
+  fill: var(--surface3);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.muscle {
+  cursor: pointer;
+  outline: none;
+}
+.muscle path {
+  fill: color-mix(
+    in srgb,
+    var(--accent) calc(var(--dose) * 100%),
+    var(--surface3)
+  );
+}
+.muscle.selected path,
+.muscle:focus-visible path {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.body-maps figcaption {
+  font-size: 12px;
+  color: var(--muted);
+}
+.body-card > .caption {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12px;
+}
+.muscle-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.muscle-list button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  padding: 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  min-height: 44px;
+}
+.muscle-list .selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.muscle-detail h2 {
+  font-size: 19px;
+}
+.detailed-insights > summary {
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 44px;
+}
+.detailed-insights .page-heading {
+  margin-top: 16px;
+}
+.detailed-insights .insights-grid {
+  display: block;
+}
+.muscle-detail details > summary {
+  padding: 14px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.preferences-grid {
+  display: block;
+}
+.preferences-grid > .stack {
+  gap: 10px;
+}
+.preferences-grid .panel {
+  margin-bottom: 10px;
+}
+.preference-group {
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.preference-group > summary {
+  padding: 17px 15px;
+  min-height: 56px;
+  font-weight: 550;
+  font-size: 14px;
+  cursor: pointer;
+}
+.preference-content {
+  padding: 0 15px 18px;
+}
+.more-links {
+  margin-bottom: 20px;
+}
+.preference-content .caption {
+  font-size: 12px;
+}
+.page-settings .quiet-card {
+  display: none;
+}
+.page-history .page-heading,
+.page-exercises .page-heading {
+  margin-bottom: 18px;
+}
+.coach-sheet > h3 {
+  font-size: 18px;
+}
+.coach-sheet > p:first-of-type {
+  display: none;
+}
+.coach-sheet .panel {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: none;
+  margin: 0 0 16px;
+}
+.coach-sheet .panel > h3 {
+  font-size: 17px;
+}
+.coach-sheet .panel > p {
+  font-size: 13px;
+}
+.coach-sheet .panel > .caption {
+  font-size: 12px;
+}
+.coach-sheet table {
+  font-size: 13px;
+}
+.coach-sheet table th {
+  font-size: 11px;
+}
+.coach-sheet details {
+  border-bottom: 1px solid var(--line);
+}
+.coach-sheet summary {
+  font-size: 13px;
+  padding: 12px 0;
+  min-height: 44px;
+}
+.coach-sheet > .btn {
+  margin-block: 10px;
+}
+.coach-sheet .actions.wrap > .btn {
+  background: var(--accent);
+  color: var(--mint-ink);
+  min-width: 110px;
+}
+.coach-sheet .coach-other {
+  border: 0;
+}
+.coach-other .btn {
+  margin: 5px;
+}
+.coach-alternative {
+  margin-top: 14px;
+}
+.coach-sheet fieldset {
+  padding: 10px;
+}
+.coach-sheet table td {
+  padding: 9px 6px;
+}
+.workout-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 15px 0;
+}
+.review-exercise {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+.review-exercise summary {
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.review-exercise summary small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+  margin-top: 5px;
+}
+.review-set {
+  display: grid;
+  grid-template-columns: 18px repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  align-items: center;
+  margin-top: 12px;
+}
+.review-set .field > span {
+  font-size: 9px;
+}
+.review-set input {
+  padding: 6px;
+  text-align: center;
+  width: 100%;
+  min-width: 0;
+}
+.review-set > span {
+  font-size: 11px;
+}
+.optional-feedback > summary {
+  font-size: 14px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.finish-feedback > .btn {
+  width: 100%;
+  position: sticky;
+  bottom: 0;
+  margin-top: 15px;
+}
+.finish-feedback > h3 {
+  font-size: 21px;
+}
+.modal-body:has(.finish-feedback) {
+  padding-bottom: 18px;
+}
+@media (max-width: 767px) {
+  .modal {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 760px;
+    max-height: 94dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+  }
+  .modal-head {
+    padding: 10px 16px;
+  }
+  .modal-head h2 {
+    font-size: 16px;
+  }
+  .modal-body {
+    padding: 16px;
+    overflow-x: hidden;
+  }
+  .page-session main#main-content {
+    padding-inline: 12px;
+  }
+  .page-session .bottom-nav {
+    display: none;
+  }
+  .page-session .rest-timer {
+    bottom: 12px;
+  }
+  .page-session .session-bar {
+    padding-inline: 0;
+  }
+  .page-session .content {
+    padding-bottom: 90px;
+  }
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .page-settings .page-heading p {
+    display: none;
+  }
+  .body-maps {
+    gap: 4px;
+  }
+  .body-card {
+    padding: 15px 8px;
+  }
+}
+@media (min-width: 768px) {
+  .app-shell {
+    box-shadow: none;
+  }
+  .compact-logger .set-header,
+  .compact-logger .set-row,
+  .modal .compact-logger .set-header,
+  .modal .compact-logger .set-row {
+    grid-template-columns:
+      30px minmax(70px, 1fr) minmax(70px, 1.2fr) minmax(55px, 0.8fr)
+      minmax(55px, 0.8fr) 44px;
+    gap: 10px;
+  }
+  .simple-dashboard,
+  .levels-screen {
+    padding: 6px;
+  }
+  .body-maps svg {
+    max-height: 360px;
+  }
+  .muscle-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.next-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+.coach-options > details,
+.coach-settings > details {
+  padding-inline: 10px;
+}
+.coach-other {
+  font-size: 12px;
+}
+
+.review-exercise > summary {
+  display: block;
+  position: relative;
+  padding-right: 18px;
+}
+.review-exercise > summary > small {
+  display: block;
+  margin-top: 5px;
+}
+.review-exercise > summary::after {
+  content: "+";
+  position: absolute;
+  right: 0;
+  top: 0;
+  color: var(--muted);
+}
+.review-exercise[open] > summary::after {
+  content: "−";
+}
+
+.page-session .rest-timer {
+  display: none;
+}
+.session-bar .slim-rest {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font-size: 12px;
+}
+.timer-sheet {
+  text-align: center;
+}
+.timer-sheet .actions {
+  justify-content: center;
+  margin-top: 15px;
+}
+.timer-value {
+  font-size: 40px;
+  font-variant-numeric: tabular-nums;
+  margin: 15px 0;
+}
+.session-bar > span {
+  font-variant-numeric: tabular-nums;
+}
+
+.preference-group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.preference-group > summary::after {
+  content: "›";
+  font-size: 21px;
+  color: var(--muted);
+}
+.preference-group[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+/* Motion stays presentation-only: numbers, targets and saves update immediately. */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --motion-spring: cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  }
+  button,
+  summary,
+  input,
+  select,
+  .muscle path {
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 160ms var(--motion-ease);
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .bottom-nav button svg,
+  .exercise-nav button svg,
+  .group-row > svg,
+  .workout-row > svg,
+  summary::after,
+  summary > svg {
+    transition:
+      transform 240ms var(--motion-spring),
+      color 180ms ease;
+  }
+  .bottom-nav button.active svg,
+  .exercise-nav button[aria-selected="true"] svg {
+    animation: neo-tab-pop 320ms var(--motion-spring);
+  }
+  .complete-set.checked svg {
+    animation: neo-check 260ms var(--motion-spring);
+  }
+  .modal[open] {
+    animation: neo-sheet-in 280ms var(--motion-ease);
+  }
+  .modal[open]::backdrop {
+    animation: neo-fade-in 220ms ease;
+  }
+  .modal-body > *,
+  details[open] > :not(summary) {
+    animation: neo-content-in 240ms var(--motion-ease);
+  }
+  .simple-dashboard > section,
+  .program-card,
+  .preferences-grid > *,
+  .body-card,
+  .muscle-list,
+  .workout-preview .grouped,
+  .activity-week > div {
+    animation: neo-content-in 340ms var(--motion-ease) backwards;
+  }
+  .simple-dashboard > section:nth-of-type(2),
+  .preferences-grid > :nth-child(2),
+  .activity-week > :nth-child(2) {
+    animation-delay: 35ms;
+  }
+  .simple-dashboard > section:nth-of-type(3),
+  .preferences-grid > :nth-child(3),
+  .activity-week > :nth-child(3) {
+    animation-delay: 70ms;
+  }
+  .preferences-grid > :nth-child(4),
+  .activity-week > :nth-child(4) {
+    animation-delay: 105ms;
+  }
+  .preferences-grid > :nth-child(5),
+  .activity-week > :nth-child(5) {
+    animation-delay: 140ms;
+  }
+  .activity-week > :nth-child(6) {
+    animation-delay: 175ms;
+  }
+  .activity-week > :nth-child(7) {
+    animation-delay: 210ms;
+  }
+  .log-exercise {
+    animation: neo-content-in 220ms var(--motion-ease);
+  }
+  .muscle-detail {
+    animation: neo-content-in 240ms var(--motion-ease);
+  }
+  .muscle path {
+    transition:
+      fill 320ms ease,
+      fill-opacity 320ms ease,
+      stroke 180ms ease;
+  }
+  .chart .trendline {
+    stroke-dasharray: 1;
+    animation: neo-chart-draw 850ms var(--motion-ease) both;
+  }
+  .chart .area {
+    animation: neo-chart-area 750ms ease both;
+  }
+  .chart-point {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: neo-point-in 420ms var(--motion-spring) 220ms backwards;
+  }
+  .bar-track > span {
+    transform-origin: left;
+    animation: neo-bar-in 650ms var(--motion-ease);
+    transition: width 450ms var(--motion-ease);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .group-row:hover,
+    .workout-row:hover {
+      background: var(--accent-soft);
+    }
+    .group-row:hover > svg:last-child,
+    .workout-row:hover > svg:last-child {
+      transform: translateX(3px);
+    }
+    .bottom-nav button:hover svg {
+      transform: translateY(-2px);
+    }
+    .muscle-list button:hover {
+      transform: translateY(-2px);
+    }
+  }
+}
+@keyframes neo-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes neo-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes neo-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes neo-tab-pop {
+  0% {
+    transform: scale(0.88);
+  }
+  65% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes neo-check {
+  0% {
+    transform: scale(0.45) rotate(-12deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+@keyframes neo-chart-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes neo-chart-area {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.06;
+  }
+}
+@keyframes neo-point-in {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes neo-bar-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

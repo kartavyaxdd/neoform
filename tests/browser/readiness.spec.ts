@@ -61,19 +61,21 @@ for (const width of [360, 390])
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
+    await page
+      .getByRole("button", { name: "Start workout", exact: true })
+      .click();
     const advice = async () => {
       await page
-        .getByRole("button", { name: "Exercise options", exact: true })
+        .getByRole("button", { name: "Progression", exact: true })
         .click();
-      await page.getByText("Progression note", { exact: true }).click();
     };
     await advice();
     await expect(
       page.getByRole("button", {
-        name: "Accept for unlogged sets",
+        name: "Apply",
         exact: true,
       }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
     await currentReadiness(page, "Quads");
     await expect(page.locator(".sync-status")).toHaveText("Synced");
@@ -85,7 +87,7 @@ for (const width of [360, 390])
     await advice();
     await expect(
       page.getByRole("button", {
-        name: "Accept for unlogged sets",
+        name: "Apply",
         exact: true,
       }),
     ).toBeEnabled();
@@ -131,10 +133,12 @@ for (const width of [360, 390])
     await advice();
     await expect(
       page.getByRole("button", {
-        name: "Accept for unlogged sets",
+        name: "Apply",
         exact: true,
       }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
+    await page.getByText("Options and evidence", { exact: true }).click();
+    await page.getByText("Evidence and exclusions", { exact: true }).click();
     await expect(
       page.getByText("Current context changed:", { exact: false }),
     ).toBeVisible();
@@ -167,7 +171,7 @@ for (const width of [360, 390])
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "Save completed workout", exact: true })
+      .getByRole("button", { name: "Save workout", exact: true })
       .click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     state = (await (await readData(page)).json()).data;

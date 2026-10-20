@@ -259,19 +259,25 @@ export function MuscleFeedbackFields({
 }
 
 export function FinishSessionFeedback({
-  draft,
+  draft: initial,
+  unit = "kg",
   exercises,
   finish,
 }: {
   draft: D.Session;
+  unit?: "kg" | "lb";
   exercises: D.Exercise[];
   finish: (
     f: Feedback,
     m: MuscleFeedback[],
     confirmEffort: boolean,
     contexts: Record<string, NonNullable<D.Entry["coachingContext"]>>,
-  ) => void;
+    reviewed?: D.Session,
+  ) => void | Promise<void>;
 }) {
+  const [draft, setDraft] = useState(() => structuredClone(initial)),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(() =>
     draft.feedback.reported === true
       ? draft.feedback
@@ -283,7 +289,7 @@ export function FinishSessionFeedback({
   const [muscleFeedback, setMuscleFeedback] = useState<MuscleFeedback[]>(
     draft.muscleFeedback ?? [],
   );
-  const [confirmEffort, setConfirmEffort] = useState(false);
+  const confirmEffort = false;
   const [contexts, setContexts] = useState<
     Record<string, NonNullable<D.Entry["coachingContext"]>>
   >(() =>
@@ -320,138 +326,243 @@ export function FinishSessionFeedback({
   ];
   return (
     <div className="training-coaching finish-feedback">
-      <p>
-        Save completed sets only. Feedback is optional; skipped observations
-        stay unknown.
-      </p>
+      <h3>{draft.name}</h3>
+      <div className="preview-stats">
+        <span>
+          {draft.exercises.filter((e) => e.sets.some((t) => t.done)).length}{" "}
+          exercises
+        </span>
+        <span>
+          {
+            draft.exercises
+              .flatMap((e) => e.sets)
+              .filter((t) => t.done && t.kind !== "warmup").length
+          }{" "}
+          working / drop sets
+        </span>
+      </div>
+      <div className="workout-review-list">
+        {draft.exercises
+          .filter((e) => e.sets.some((t) => t.done))
+          .map((e) => {
+            const x = exercises.find((x) => x.id === e.exerciseId)!;
+            return (
+              <details key={e.id} className="review-exercise">
+                <summary>
+                  {x.name}
+                  <small>
+                    {e.sets
+                      .filter((t) => t.done)
+                      .map(
+                        (t) =>
+                          `${D.displayLoad(t.weight, e.convention || x.convention, unit)} × ${t.reps}`,
+                      )
+                      .join(" / ")}
+                  </small>
+                </summary>
+                {e.sets
+                  .filter((t) => t.done)
+                  .map((t, i) => {
+                    const patch = (value: Partial<D.SetLog>) =>
+                      setDraft((old) => ({
+                        ...old,
+                        exercises: old.exercises.map((row) =>
+                          row.id === e.id
+                            ? {
+                                ...row,
+                                sets: row.sets.map((set) =>
+                                  set.id === t.id ? { ...set, ...value } : set,
+                                ),
+                              }
+                            : row,
+                        ),
+                      }));
+                    return (
+                      <div className="review-set" key={t.id}>
+                        <span>{i + 1}</span>
+                        <label className="field">
+                          <span>Weight</span>
+                          <Num
+                            label={`${x.name} review set ${i + 1} weight`}
+                            value={D.displayLoad(
+                              t.weight,
+                              e.convention || x.convention,
+                              unit,
+                            )}
+                            step={0.01}
+                            onChange={(weight) =>
+                              patch({
+                                weight: D.canonicalLoad(
+                                  weight,
+                                  e.convention || x.convention,
+                                  unit,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Reps</span>
+                          <Num
+                            label={`${x.name} review set ${i + 1} reps`}
+                            value={t.reps}
+                            min={1}
+                            max={100}
+                            onChange={(reps) => patch({ reps })}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>RIR</span>
+                          <input
+                            aria-label={`${x.name} review set ${i + 1} RIR`}
+                            type="number"
+                            min="0"
+                            max="10"
+                            step="0.5"
+                            placeholder="—"
+                            value={t.effortReported ? t.rir : ""}
+                            onChange={(ev) => {
+                              const n = ev.target.valueAsNumber;
+                              if (ev.target.value === "")
+                                patch({ effortReported: false });
+                              else if (Number.isFinite(n) && n >= 0 && n <= 10)
+                                patch({ rir: n, effortReported: true });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+              </details>
+            );
+          })}
+      </div>
       <p className="caption">
-        {
-          draft.exercises
-            .flatMap((e) => e.sets)
-            .filter((t) => t.done && t.kind !== "warmup").length
-        }{" "}
-        completed working / drop sets.
+        Only completed sets are saved. Unreported effort stays unknown.
       </p>
-      <SessionFeedbackFields value={feedback} onChange={setFeedback} />
-      <label className="check-line">
-        <input
-          type="checkbox"
-          checked={confirmEffort}
-          onChange={(e) => setConfirmEffort(e.target.checked)}
-        />
-        I confirm the recorded RIR values describe my actual completed sets.
-      </label>
-      <p className="caption">
-        Leave unchecked if unsure. Unconfirmed effort is saved but cannot
-        justify progression. Edit inaccurate values before confirming.
-      </p>
-      <details>
-        <summary>Execution, rest and changed sets</summary>
-        <p className="caption">
-          Confirm what happened for each movement. Unanswered fields stay
-          unknown and do not justify escalation.
-        </p>
-        {draft.exercises.map((e) => {
-          const name =
-            exercises.find((x) => x.id === e.exerciseId)?.name ?? "Exercise";
-          return (
-            <fieldset key={e.id}>
-              <legend>{name}</legend>
-              <div className="form-grid">
-                <Field label={`${name} execution this session`}>
-                  <select
-                    value={contexts[e.id]?.execution ?? "unknown"}
-                    onChange={(ev) =>
-                      updateContext(e.id, {
-                        execution: ev.target.value as
-                          "consistent" | "changed" | "unknown",
-                      })
-                    }
-                  >
-                    <option value="unknown">Unknown / not reported</option>
-                    <option value="consistent">
-                      Consistent setup and execution
-                    </option>
-                    <option value="changed">Execution changed</option>
-                  </select>
-                </Field>
-                <Field label={`${name} rest this session`}>
-                  <select
-                    value={contexts[e.id]?.rest ?? "unknown"}
-                    onChange={(ev) =>
-                      updateContext(e.id, {
-                        rest: ev.target.value as
-                          "usual" | "shorter" | "longer" | "unknown",
-                      })
-                    }
-                  >
-                    <option value="unknown">Unknown / not reported</option>
-                    <option value="usual">Usual / as planned</option>
-                    <option value="shorter">Shorter than planned</option>
-                    <option value="longer">Longer than planned</option>
-                  </select>
-                </Field>
-                {(e.plannedWorkingSets !==
-                  e.sets.filter((t) => t.done && t.kind === "working").length ||
-                  e.sets.some(
-                    (t) =>
-                      t.kind === "working" &&
-                      t.prescription &&
-                      t.weight !== t.prescription.weight,
-                  )) && (
-                  <Field label={`${name} changed dose reason`}>
+      <details className="optional-feedback">
+        <summary>Optional feedback</summary>
+        <SessionFeedbackFields value={feedback} onChange={setFeedback} />
+        <details>
+          <summary>Execution, rest and changed sets</summary>
+          <p className="caption">
+            Confirm what happened for each movement. Unanswered fields stay
+            unknown and do not justify escalation.
+          </p>
+          {draft.exercises.map((e) => {
+            const name =
+              exercises.find((x) => x.id === e.exerciseId)?.name ?? "Exercise";
+            return (
+              <fieldset key={e.id}>
+                <legend>{name}</legend>
+                <div className="form-grid">
+                  <Field label={`${name} execution this session`}>
                     <select
-                      value={contexts[e.id]?.skipReason ?? "unknown"}
+                      value={contexts[e.id]?.execution ?? "unknown"}
                       onChange={(ev) =>
                         updateContext(e.id, {
-                          skipReason: ev.target.value as NonNullable<
-                            D.Entry["coachingContext"]
-                          >["skipReason"],
+                          execution: ev.target.value as
+                            "consistent" | "changed" | "unknown",
                         })
                       }
                     >
                       <option value="unknown">Unknown / not reported</option>
-                      <option value="time">Time limit</option>
-                      <option value="equipment">Equipment unavailable</option>
-                      <option value="performance">
-                        Could not complete targets
+                      <option value="consistent">
+                        Consistent setup and execution
                       </option>
-                      <option value="pain">Pain</option>
-                      <option value="other">Other</option>
+                      <option value="changed">Execution changed</option>
                     </select>
                   </Field>
-                )}
-              </div>
-            </fieldset>
-          );
-        })}
+                  <Field label={`${name} rest this session`}>
+                    <select
+                      value={contexts[e.id]?.rest ?? "unknown"}
+                      onChange={(ev) =>
+                        updateContext(e.id, {
+                          rest: ev.target.value as
+                            "usual" | "shorter" | "longer" | "unknown",
+                        })
+                      }
+                    >
+                      <option value="unknown">Unknown / not reported</option>
+                      <option value="usual">Usual / as planned</option>
+                      <option value="shorter">Shorter than planned</option>
+                      <option value="longer">Longer than planned</option>
+                    </select>
+                  </Field>
+                  {(e.plannedWorkingSets !==
+                    e.sets.filter((t) => t.done && t.kind === "working")
+                      .length ||
+                    e.sets.some(
+                      (t) =>
+                        t.kind === "working" &&
+                        t.prescription &&
+                        t.weight !== t.prescription.weight,
+                    )) && (
+                    <Field label={`${name} changed dose reason`}>
+                      <select
+                        value={contexts[e.id]?.skipReason ?? "unknown"}
+                        onChange={(ev) =>
+                          updateContext(e.id, {
+                            skipReason: ev.target.value as NonNullable<
+                              D.Entry["coachingContext"]
+                            >["skipReason"],
+                          })
+                        }
+                      >
+                        <option value="unknown">Unknown / not reported</option>
+                        <option value="time">Time limit</option>
+                        <option value="equipment">Equipment unavailable</option>
+                        <option value="performance">
+                          Could not complete targets
+                        </option>
+                        <option value="pain">Pain</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </Field>
+                  )}
+                </div>
+              </fieldset>
+            );
+          })}
+        </details>
+        <MuscleFeedbackFields
+          value={muscleFeedback}
+          onChange={setMuscleFeedback}
+          muscles={muscles}
+        />
+        <p className="caption">
+          Pain is not training stimulus. Persistent or concerning pain needs
+          qualified support. No automatic program changes.
+        </p>
       </details>
-      <MuscleFeedbackFields
-        value={muscleFeedback}
-        onChange={setMuscleFeedback}
-        muscles={muscles}
-      />
-      <p className="caption">
-        Pain is not training stimulus. Persistent or concerning pain needs
-        qualified support. No automatic program changes.
-      </p>
+      {error && <p role="alert">{error}</p>}
       <Button
         variant="primary wide"
-        onClick={() =>
-          finish(
-            feedback,
-            muscleFeedback,
-            confirmEffort,
-            Object.fromEntries(
-              Object.entries(contexts).map(([id, context]) => [
-                id,
-                { ...context, recordedAt: Date.now() },
-              ]),
-            ),
-          )
-        }
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError("");
+          try {
+            await finish(
+              feedback,
+              muscleFeedback,
+              confirmEffort,
+              Object.fromEntries(
+                Object.entries(contexts).map(([id, context]) => [
+                  id,
+                  { ...context, recordedAt: Date.now() },
+                ]),
+              ),
+              draft,
+            );
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
       >
-        Save completed workout
+        Save workout
       </Button>
     </div>
   );

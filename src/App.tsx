@@ -1,3 +1,7 @@
+import { TimerSheet } from "./TimerSheet";
+import { WorkoutDashboard } from "./WorkoutDashboard";
+import { WorkoutPreview } from "./WorkoutPreview";
+import { Levels } from "./Levels";
 import { Button, Field, Num, Modal } from "./ui";
 import { WorkoutHome } from "./WorkoutHome";
 import { CoachSheet, CoachSettingsPanel } from "./CoachSheet";
@@ -25,6 +29,7 @@ import {
   cloneElement,
   isValidElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -80,12 +85,12 @@ type Page =
   | "exercises"
   | "insights"
   | "settings";
-const nav: [Page, string, typeof Activity][] = [
+const nav: [Page | "create", string, typeof Activity][] = [
   ["overview", "Dashboard", Activity],
   ["train", "Workout", Dumbbell],
-  ["history", "History", BookOpen],
-  ["exercises", "Exercises", Layers],
-  ["insights", "Progress", TrendingUp],
+  ["create", "Create", Plus],
+  ["insights", "Levels", TrendingUp],
+  ["settings", "More", MoreHorizontal],
 ];
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 const duration = (s: number) =>
@@ -424,10 +429,29 @@ export default function App() {
     setModal(null);
     setNotice("");
   }, [store.user?.id]);
-  const exercises = [...D.catalog, ...s.customExercises];
+  const exercises = useMemo(
+    () => [...D.catalog, ...s.customExercises],
+    [s.customExercises],
+  );
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [store.user?.id, !!s.profile]);
+  useEffect(() => {
+    const screen = document.getElementById("main-content");
+    if (
+      !screen?.animate ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const animation = screen.animate(
+      [
+        { opacity: 0, transform: "translateY(8px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" },
+    );
+    return () => animation.cancel();
+  }, [page]);
   useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
     document
@@ -593,6 +617,14 @@ export default function App() {
     const s = { ...data, draft: data.draft! };
     return (
       <>
+        <Button
+          onClick={() => {
+            close();
+            go("train");
+          }}
+        >
+          Minimize workout
+        </Button>
         <Button onClick={() => void sync()}>Sync now</Button>
         <p className="caption">{optionStore.status}</p>
         {s.draft && (
@@ -625,6 +657,21 @@ export default function App() {
             </Field>
           </section>
         )}
+        <Button
+          variant="ghost danger-text"
+          onClick={() =>
+            confirm(
+              "Discard active workout?",
+              "All sets and notes in this active draft will be removed. This action cannot be undone.",
+              () => {
+                change((s) => ({ ...s, draft: null, timer: null }));
+                go("train");
+              },
+            )
+          }
+        >
+          Discard session
+        </Button>{" "}
       </>
     );
   }
@@ -737,17 +784,25 @@ export default function App() {
       return;
     }
     setModal({
-      title: "Close the loop",
+      title: "Review workout",
       content: (
         <FinishSessionFeedback
           draft={draft}
           exercises={exercises}
-          finish={async (feedback, muscleFeedback, confirmEffort, contexts) => {
+          unit={s.settings.unit}
+          finish={async (
+            feedback,
+            muscleFeedback,
+            confirmEffort,
+            contexts,
+            reviewed,
+          ) => {
+            const actual = reviewed ?? draft;
             const logged = D.completeSession({
-              ...draft,
+              ...actual,
               feedback,
               muscleFeedback,
-              exercises: draft.exercises.map((e) => ({
+              exercises: actual.exercises.map((e) => ({
                 ...e,
                 coachingContext: contexts[e.id] ?? e.coachingContext,
                 sets: e.sets.map((t) =>
@@ -760,21 +815,29 @@ export default function App() {
               ),
             });
             if (
-              await saveChange((s) => ({
-                ...s,
-                sessions: [...s.sessions, logged],
-                coachingEvents: [
-                  ...(s.coachingEvents ?? []),
-                  ...classifyCoachingOutcomes(s, logged),
-                ],
-                draft: null,
-                timer: null,
-              }))
+              await saveChange((s) => {
+                if (JSON.stringify(s.draft) !== JSON.stringify(draft))
+                  throw Error(
+                    "The active workout changed. Reopen its review before saving.",
+                  );
+                return {
+                  ...s,
+                  sessions: [...s.sessions, logged],
+                  coachingEvents: [
+                    ...(s.coachingEvents ?? []),
+                    ...classifyCoachingOutcomes(s, logged),
+                  ],
+                  draft: null,
+                  timer: null,
+                };
+              })
             ) {
               close();
-              go("history");
-              sessionDetail(logged);
-            }
+              go("train");
+            } else
+              throw Error(
+                "Workout is not yet saved. Check device storage and try again.",
+              );
           }}
         />
       ),
@@ -808,12 +871,6 @@ export default function App() {
   const thisWeek = new Date();
   thisWeek.setHours(0, 0, 0, 0);
   thisWeek.setDate(thisWeek.getDate() - ((thisWeek.getDay() + 6) % 7));
-  const weekSessions = s.sessions.filter(
-    (x) => new Date(x.date + "T12:00:00") >= thisWeek && x.date <= D.today(),
-  );
-  const activeProgram = s.programs.find((x) => !x.archived);
-  const weekVolume = D.directVolume(weekSessions, exercises);
-  const totalSets = Object.values(weekVolume).reduce((a, b) => a + b, 0);
   const seconds = D.restRemaining(s.timer, Date.now());
   const title =
     page === "overview"
@@ -846,7 +903,7 @@ export default function App() {
                   ? "nav-item active"
                   : "nav-item"
               }
-              onClick={() => go(p)}
+              onClick={() => (p === "create" ? createMenu() : go(p))}
             >
               <Icon size={20} />
               <span>{label}</span>
@@ -864,13 +921,6 @@ export default function App() {
               <small>Built around your training.</small>
             </span>
           </div>
-          <button
-            className={"nav-item " + (page === "settings" ? "active" : "")}
-            onClick={() => go("settings")}
-          >
-            <Settings size={20} />
-            More
-          </button>
           <div className="account">
             <span className="avatar">
               {s.profile.name.charAt(0).toUpperCase()}
@@ -1053,220 +1103,42 @@ export default function App() {
             </section>
           )}
           {page === "overview" && (
-            <>
-              {s.settings.reminders &&
-                !s.sessions.some((x) => x.date === D.today()) && (
-                  <div className="banner">
-                    <span>
-                      A little space for training today? Choose a session when
-                      it fits.
-                    </span>
-                    <Button onClick={() => go("train")}>View my plan</Button>
-                  </div>
-                )}
-              <div className="page-heading">
-                <div>
-                  <p className="eyebrow">
-                    {new Date()
-                      .toLocaleDateString(undefined, {
-                        weekday: "long",
-                        month: "long",
-                        day: "numeric",
-                      })
-                      .toUpperCase()}
-                  </p>
-                  <h1>
-                    Welcome back, <em>{s.profile.name.split(" ")[0]}.</em>
-                  </h1>
-                  <p>Good training begins with a little intention.</p>
-                </div>
-                <Button variant="primary" onClick={() => start()}>
-                  <Plus size={18} />
-                  Open workout
-                </Button>
-              </div>
-              <div className="stat-grid">
-                <Stat
-                  label="SESSIONS THIS WEEK"
-                  value={String(weekSessions.length)}
-                  detail={`${s.profile.days} planned days`}
-                />
-                <Stat
-                  label="DIRECT HARD SETS"
-                  value={String(totalSets)}
-                  detail="Completed this week"
-                />
-                <Stat
-                  label="TIME INVESTED"
-                  value={`${Math.round(weekSessions.reduce((n, x) => n + x.duration, 0) / 60)}`}
-                  detail="Minutes this week"
-                />
-              </div>
-              <div className="dashboard-grid">
-                <div className="stack">
-                  <section className="hero panel">
-                    <div>
-                      <p className="eyebrow">
-                        <span className="live-dot" />
-                        YOUR NEXT CHAPTER
-                      </p>
-                      <h2>
-                        {s.draft
-                          ? "Keep the momentum."
-                          : activeProgram
-                            ? "Show up. Build forward."
-                            : "Start where you are."}
-                      </h2>
-                      <p>
-                        {s.draft
-                          ? `${s.draft.name} is saved and ready to resume.`
-                          : activeProgram
-                            ? `${activeProgram.name} · Week ${activeProgram.currentWeek} of ${activeProgram.weeks}`
-                            : "A flexible plan turns effort into a practice you can repeat."}
-                      </p>
-                      <Button
-                        variant="primary"
-                        onClick={() =>
-                          s.draft
-                            ? go("session")
-                            : activeProgram
-                              ? start(
-                                  D.nextWorkout(activeProgram, s.sessions),
-                                  activeProgram,
-                                )
-                              : go("train")
-                        }
-                      >
-                        {s.draft
-                          ? "Resume session"
-                          : activeProgram
-                            ? "Start " +
-                              D.nextWorkout(activeProgram, s.sessions).name
-                            : "Build a program"}
-                        <ArrowRight size={18} />
-                      </Button>
-                    </div>
-                    <div className="hero-art" aria-hidden="true">
-                      <svg viewBox="0 0 220 220">
-                        <circle cx="110" cy="110" r="88" />
-                        <circle cx="110" cy="110" r="65" />
-                        <path d="M65 146V74h17l56 72h17V74h-17v47L82 74v72Z" />
-                        <path className="arc" d="M110 22a88 88 0 0 1 88 88" />
-                      </svg>
-                      <small>THE WORK ADDS UP.</small>
-                    </div>
-                  </section>
-                  <section className="panel">
-                    <div className="section-heading">
-                      <div>
-                        <p className="eyebrow">THE LONG VIEW</p>
-                        <h2>Recent training</h2>
-                      </div>
-                      <button
-                        className="text-button"
-                        onClick={() => go("history")}
-                      >
-                        View journal <ArrowRight size={16} />
-                      </button>
-                    </div>
-                    {s.sessions.length ? (
-                      <div className="session-list">
-                        {[...s.sessions]
-                          .sort(
-                            (a, b) =>
-                              b.date.localeCompare(a.date) ||
-                              b.startedAt - a.startedAt,
-                          )
-                          .slice(0, 3)
-                          .map((x) => (
-                            <SessionRow
-                              key={x.id}
-                              session={x}
-                              onClick={() => sessionDetail(x)}
-                            />
-                          ))}
-                      </div>
-                    ) : (
-                      <Empty
-                        title="Your first entry is ahead."
-                        action={
-                          <button
-                            className="text-button"
-                            onClick={() => go("train")}
-                          >
-                            Find your starting point <ArrowRight size={16} />
-                          </button>
-                        }
-                      >
-                        Log a workout to begin your journal. Every chart here
-                        grows from your actual training.
-                      </Empty>
-                    )}
-                  </section>
-                </div>
-                <div className="stack">
-                  <section className="panel week-card">
-                    <p className="eyebrow">A WEEK IN MOTION</p>
-                    <h2>Your rhythm</h2>
-                    <div className="week-strip">
-                      {Array.from({ length: 7 }, (_, i) => {
-                        const d = new Date(thisWeek);
-                        d.setDate(d.getDate() + i);
-                        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                        const logged = weekSessions.some((s) => s.date === day);
-                        return (
-                          <div
-                            key={day}
-                            className={day === D.today() ? "current-day" : ""}
-                          >
-                            <small>
-                              {["M", "T", "W", "T", "F", "S", "S"][i]}
-                            </small>
-                            <span className={logged ? "logged" : ""}>
-                              {logged ? <Check size={15} /> : d.getDate()}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p>
-                      {weekSessions.length} of {s.profile.days} planned sessions
-                      logged.
-                    </p>
-                    <span className="caption">
-                      Consistency is a practice, not a streak.
-                    </span>
-                  </section>
-                  <section className="panel">
-                    <div className="section-heading">
-                      <h2>Weekly volume</h2>
-                      <Layers size={19} />
-                    </div>
-                    <VolumeBars values={weekVolume} />
-                    <p className="caption">
-                      Direct muscle sets only. Working and drop sets at ≤4 RIR;
-                      secondary muscles aren't counted again.
-                    </p>
-                  </section>
-                  <section className="quiet-card">
-                    <Flame size={21} />
-                    <div>
-                      <h3>Leave room to recover.</h3>
-                      <p>
-                        {s.sessions.at(-1)?.feedback.pain
-                          ? "You noted pain last session. Hold progression and reassess before loading."
-                          : "Quality reps, honest feedback, repeatable effort. Progress has more than one pace."}
-                      </p>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            </>
+            <WorkoutDashboard
+              state={s}
+              exercises={exercises}
+              history={() => go("history")}
+              detail={sessionDetail}
+              progress={() => go("insights")}
+            />
           )}
           {page === "train" && (
             <WorkoutHome
               state={s}
-              start={start}
+              start={(w, p) => {
+                if (!w || !p) {
+                  start(w, p);
+                  return;
+                }
+                if (s.draft) {
+                  start();
+                  return;
+                }
+                setModal({
+                  title: "Workout preview",
+                  content: (
+                    <WorkoutPreview
+                      workout={w}
+                      program={p}
+                      state={s}
+                      exercises={exercises}
+                      start={() => {
+                        close();
+                        start(w, p);
+                      }}
+                    />
+                  ),
+                });
+              }}
               edit={editProgram}
               create={createMenu}
               history={() => go("history")}
@@ -1321,10 +1193,16 @@ export default function App() {
                   <span aria-label="Workout duration">
                     {duration(Math.max(0, (tick - s.draft.startedAt) / 1000))}
                   </span>
-                  <span className="slim-rest">
+                  <button
+                    className="slim-rest"
+                    aria-label="Rest timer controls"
+                    onClick={() =>
+                      setModal({ title: "Rest timer", content: <TimerSheet /> })
+                    }
+                  >
                     <Clock size={16} />
                     {duration(seconds)}
-                  </span>
+                  </button>
                   <Button variant="primary" onClick={finish}>
                     Finish session
                   </Button>
@@ -1398,21 +1276,6 @@ export default function App() {
                     <Plus size={18} />
                     Add exercise
                   </Button>
-                  <Button
-                    variant="ghost danger-text"
-                    onClick={() =>
-                      confirm(
-                        "Discard active workout?",
-                        "All sets and notes in this active draft will be removed. This action cannot be undone.",
-                        () => {
-                          change((s) => ({ ...s, draft: null, timer: null }));
-                          go("overview");
-                        },
-                      )
-                    }
-                  >
-                    Discard session
-                  </Button>
                 </div>
               </>
             ) : (
@@ -1470,8 +1333,8 @@ export default function App() {
             <>
               <PageHeading
                 eyebrow="KNOW YOUR MOVEMENTS"
-                title="The exercise library."
-                text="Find your next movement. Keep its load convention consistent."
+                title="Exercise library"
+                text="Search movements, cues and training history."
                 action={
                   <Button
                     variant="primary"
@@ -1572,35 +1435,43 @@ export default function App() {
             </>
           )}
           {page === "insights" && (
-            <Insights
+            <Levels
               state={s}
               exercises={exercises}
-              weekStart={thisWeek}
-              onReviewProgram={editProgram}
-              onApplyDeload={(p) =>
-                confirm(
-                  "Accept a deload?",
-                  `Set ${p.name} to deload. New workouts use the conservative reduced set/rep dose and easier effort shown in the program preview. Existing drafts and completed history stay unchanged.`,
-                  () =>
-                    change((s) => ({
-                      ...s,
-                      programs: s.programs.map((x) =>
-                        x.id === p.id
-                          ? {
-                              ...x,
-                              currentWeek: x.deloadWeek,
-                              phase: "deload" as const,
-                            }
-                          : x,
-                      ),
-                    })),
-                )
+              insights={
+                <Insights
+                  state={s}
+                  exercises={exercises}
+                  weekStart={thisWeek}
+                  onReviewProgram={editProgram}
+                  onApplyDeload={(p) =>
+                    confirm(
+                      "Accept a deload?",
+                      `Set ${p.name} to deload. New workouts use the conservative reduced set/rep dose and easier effort shown in the program preview. Existing drafts and completed history stay unchanged.`,
+                      () =>
+                        change((s) => ({
+                          ...s,
+                          programs: s.programs.map((x) =>
+                            x.id === p.id
+                              ? {
+                                  ...x,
+                                  currentWeek: x.deloadWeek,
+                                  phase: "deload" as const,
+                                }
+                              : x,
+                          ),
+                        })),
+                    )
+                  }
+                />
               }
             />
           )}
           {page === "settings" && (
             <Preferences
               state={s}
+              onLibrary={() => go("exercises")}
+              onHistory={() => go("history")}
               userEmail={store.user.email || ""}
               setNotice={setNotice}
               confirm={confirm}
@@ -1615,15 +1486,7 @@ export default function App() {
         </main>
       </div>
       <nav className="bottom-nav" aria-label="Mobile navigation">
-        {(
-          [
-            ["overview", "Dashboard", Activity],
-            ["train", "Workout", Dumbbell],
-            ["create", "Create", Plus],
-            ["insights", "Progress", TrendingUp],
-            ["settings", "More", MoreHorizontal],
-          ] as const
-        ).map(([p, label, Icon]) => (
+        {nav.map(([p, label, Icon]) => (
           <button
             key={p}
             aria-label={label}
@@ -2376,8 +2239,8 @@ function History({
     <>
       <PageHeading
         eyebrow="YOUR RECORD OF THE WORK"
-        title="Every session has a story."
-        text="Revisit, refine and keep an honest record of your training."
+        title="Workout history"
+        text="Your completed workouts."
         action={
           <Button onClick={backfill}>
             <Plus size={18} />
@@ -2824,8 +2687,8 @@ function Insights({
     <>
       <PageHeading
         eyebrow="EVIDENCE, OVER GUESSWORK"
-        title="See the shape of your effort."
-        text="Real training data. Useful context. No invented streaks."
+        title="Training insights"
+        text="Performance, exposure and recovery details."
       />
       <MuscleReview
         sessions={s.sessions}
@@ -3237,6 +3100,7 @@ function Chart({
               className="area"
             />
             <polyline
+              pathLength="1"
               points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
               className="trendline"
             />
@@ -3264,6 +3128,8 @@ function download(name: string, body: string | Blob, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function Preferences({
+  onLibrary,
+  onHistory,
   state: s,
   userEmail,
   setNotice,
@@ -3271,6 +3137,8 @@ function Preferences({
   open,
   close,
 }: {
+  onLibrary: () => void;
+  onHistory: () => void;
   state: D.State;
   userEmail: string;
   setNotice: (s: string) => void;
@@ -3284,410 +3152,489 @@ function Preferences({
   return (
     <>
       <PageHeading
-        eyebrow="MAKE IT YOURS"
-        title="A workspace, on your terms."
-        text="Preferences, privacy and a way to take your data with you."
+        eyebrow="NEOFORM"
+        title="More"
+        text="Your training, settings and data."
       />
+      <div className="more-links grouped">
+        <button className="group-row" onClick={onLibrary}>
+          <Layers size={20} />
+          <span>Exercise library</span>
+          <ChevronRight size={18} />
+        </button>
+        <button className="group-row" onClick={onHistory}>
+          <BookOpen size={20} />
+          <span>Workout history</span>
+          <ChevronRight size={18} />
+        </button>
+      </div>
       <div className="preferences-grid">
         <div className="stack">
-          <section className="panel">
-            <h2>Training preferences</h2>
-            <div className="form-grid">
-              <Field label="Display name">
-                <input
-                  maxLength={120}
-                  value={s.profile!.name}
-                  onChange={(e) => {
-                    if (e.target.value)
+          <details className="panel preference-group">
+            <summary>Training preferences</summary>
+            <div className="preference-content">
+              <div className="form-grid">
+                <Field label="Display name">
+                  <input
+                    maxLength={120}
+                    value={s.profile!.name}
+                    onChange={(e) => {
+                      if (e.target.value)
+                        change((s) => ({
+                          ...s,
+                          profile: { ...s.profile!, name: e.target.value },
+                        }));
+                    }}
+                  />
+                </Field>
+                <Field label="Planned days / week">
+                  <Num
+                    label="Planned days / week"
+                    min={1}
+                    max={7}
+                    value={s.profile!.days}
+                    onChange={(days) =>
                       change((s) => ({
                         ...s,
-                        profile: { ...s.profile!, name: e.target.value },
-                      }));
+                        profile: { ...s.profile!, days },
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Load units">
+                  <select
+                    value={s.settings.unit}
+                    onChange={(e) =>
+                      change((s) => ({
+                        ...s,
+                        settings: {
+                          ...s.settings,
+                          unit: e.target.value as "kg" | "lb",
+                        },
+                      }))
+                    }
+                  >
+                    <option>kg</option>
+                    <option>lb</option>
+                  </select>
+                </Field>
+                <Field label="Appearance">
+                  <select
+                    value={s.settings.theme}
+                    onChange={(e) =>
+                      change((s) => ({
+                        ...s,
+                        settings: {
+                          ...s.settings,
+                          theme: e.target.value as "dark" | "light",
+                        },
+                      }))
+                    }
+                  >
+                    <option value="dark">Graphite · Dark</option>
+                    <option value="light">Mineral · Light</option>
+                  </select>
+                </Field>
+              </div>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={s.settings.autoAdvance !== false}
+                  onChange={(e) =>
+                    change((data) => ({
+                      ...data,
+                      settings: {
+                        ...data.settings,
+                        autoAdvance: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Automatically move to the next exercise
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={s.settings.timerSound}
+                  onChange={(e) =>
+                    change((s) => ({
+                      ...s,
+                      settings: { ...s.settings, timerSound: e.target.checked },
+                    }))
+                  }
+                />
+                Rest timer chime (while app is open)
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={s.settings.reminders}
+                  onChange={(e) =>
+                    change((s) => ({
+                      ...s,
+                      settings: { ...s.settings, reminders: e.target.checked },
+                    }))
+                  }
+                />
+                Show an in-app training reminder
+              </label>
+              <p className="caption">
+                No background push notifications. Timer sounds depend on browser
+                audio permission and an open app. Standardized loads are stored
+                in kg. Unfamiliar machine/band labels stay raw and are never
+                converted.
+              </p>
+            </div>
+          </details>
+          <details className="panel preference-group">
+            <summary>Equipment</summary>
+            <div className="preference-content">
+              {D.equipment.map((item) => (
+                <label className="check-line" key={item}>
+                  <input
+                    type="checkbox"
+                    checked={s.profile!.equipment.includes(item)}
+                    onChange={(e) =>
+                      change((data) => ({
+                        ...data,
+                        profile: {
+                          ...data.profile!,
+                          equipment: e.target.checked
+                            ? [...data.profile!.equipment, item]
+                            : data.profile!.equipment.filter((x) => x !== item),
+                        },
+                      }))
+                    }
+                  />
+                  {item}
+                </label>
+              ))}
+              <p className="caption">
+                Available load lists stay with each exercise setup.
+              </p>
+            </div>
+          </details>
+          {publicWorkspace ? (
+            <details className="panel preference-group">
+              <summary>AI is unavailable in public mode</summary>
+              <div className="preference-content">
+                <p>
+                  Private Gemini keys are never bound to this workspace. Manual
+                  programs, starter templates, workouts and imports remain
+                  available.
+                </p>
+              </div>
+            </details>
+          ) : (
+            <details className="panel preference-group">
+              <summary>AI provider</summary>
+              <GeminiKeySettings />
+            </details>
+          )}
+          <details className="panel preference-group">
+            <summary>Built-in workout coach</summary>
+            <div className="preference-content">
+              <CoachSettingsPanel />
+            </div>
+          </details>
+          <details className="panel preference-group">
+            <summary>Your data, portable.</summary>
+            <div className="preference-content">
+              <p>
+                Keep a private backup of programs, custom exercises, sessions
+                and drafts. Credentials are never included.
+              </p>
+              <div className="actions wrap">
+                <Button
+                  onClick={async () =>
+                    download(
+                      `neoform-${D.today()}.jsonl`,
+                      await exportHistoryBackup(s),
+                      "application/json",
+                    )
+                  }
+                >
+                  <Download size={18} />
+                  Export JSON backup
+                </Button>
+                <Button
+                  onClick={() =>
+                    download(
+                      `neoform-${D.today()}.csv`,
+                      D.csvSessions(s.sessions, exercises),
+                      "text/csv",
+                    )
+                  }
+                >
+                  <Download size={18} />
+                  Export session CSV
+                </Button>
+                <Button
+                  onClick={async () => {
+                    await Promise.all(
+                      exportPendingCopies().map(async (box, i) =>
+                        download(
+                          `neoform-pending-${i + 1}-${D.today()}.jsonl`,
+                          await exportHistoryBackup(box.data),
+                          "application/x-ndjson",
+                        ),
+                      ),
+                    );
+                  }}
+                >
+                  Export pending tab copies
+                </Button>
+                <Button
+                  onClick={() =>
+                    open({ title: "Import from Hevy", content: <HevyImport /> })
+                  }
+                >
+                  Import from Hevy
+                </Button>
+              </div>
+              <label className="upload-button">
+                Import JSON backup
+                <input
+                  type="file"
+                  accept=".json,.jsonl,application/json,application/x-ndjson"
+                  aria-label="Import JSON backup"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    try {
+                      const incoming = await importHistoryBackup(file);
+                      open({
+                        title: "Review your backup",
+                        content: (
+                          <>
+                            <p>
+                              Validated backup:{" "}
+                              <b>
+                                {incoming.sessions.length} sessions,{" "}
+                                {incoming.programs.length} programs,{" "}
+                                {incoming.customExercises.length} custom
+                                exercises
+                              </b>
+                              {incoming.draft ? " and an active draft" : ""}.
+                            </p>
+                            <p>
+                              Merge retains distinct IDs. Imported versions win
+                              matching IDs, profile, preferences and draft.
+                              Replace removes current account data and uses the
+                              backup. Export first; changes sync to this
+                              account.
+                            </p>
+                            <div className="actions wrap">
+                              <Button onClick={close}>Cancel</Button>
+                              <Button
+                                variant="primary"
+                                onClick={async () => {
+                                  if (
+                                    await saveChange((s) =>
+                                      D.mergeStates(s, incoming),
+                                    )
+                                  ) {
+                                    close();
+                                    setNotice("Backup merged.");
+                                  }
+                                }}
+                              >
+                                Confirm merge
+                              </Button>
+                              <Button
+                                variant="danger"
+                                onClick={async () => {
+                                  if (await saveChange(() => incoming)) {
+                                    close();
+                                    setNotice(
+                                      "Account data replaced from backup.",
+                                    );
+                                  }
+                                }}
+                              >
+                                Confirm replace
+                              </Button>
+                            </div>
+                          </>
+                        ),
+                      });
+                    } catch (err) {
+                      setNotice((err as Error).message);
+                    }
                   }}
                 />
-              </Field>
-              <Field label="Planned days / week">
-                <Num
-                  label="Planned days / week"
-                  min={1}
-                  max={7}
-                  value={s.profile!.days}
-                  onChange={(days) =>
-                    change((s) => ({ ...s, profile: { ...s.profile!, days } }))
-                  }
-                />
-              </Field>
-              <Field label="Load units">
-                <select
-                  value={s.settings.unit}
-                  onChange={(e) =>
-                    change((s) => ({
-                      ...s,
-                      settings: {
-                        ...s.settings,
-                        unit: e.target.value as "kg" | "lb",
-                      },
-                    }))
-                  }
-                >
-                  <option>kg</option>
-                  <option>lb</option>
-                </select>
-              </Field>
-              <Field label="Appearance">
-                <select
-                  value={s.settings.theme}
-                  onChange={(e) =>
-                    change((s) => ({
-                      ...s,
-                      settings: {
-                        ...s.settings,
-                        theme: e.target.value as "dark" | "light",
-                      },
-                    }))
-                  }
-                >
-                  <option value="dark">Graphite · Dark</option>
-                  <option value="light">Mineral · Light</option>
-                </select>
-              </Field>
+              </label>
+              <p className="caption">
+                Checksummed backups include coaching history when present. Older
+                backups remain supported. Files are unencrypted; store them
+                privately. CSV contains completed set rows with canonical kg or
+                raw machine labels, equipment and convention.
+              </p>
             </div>
-            <label className="check-line">
-              <input
-                type="checkbox"
-                checked={s.settings.timerSound}
-                onChange={(e) =>
-                  change((s) => ({
-                    ...s,
-                    settings: { ...s.settings, timerSound: e.target.checked },
-                  }))
-                }
-              />
-              Rest timer chime (while app is open)
-            </label>
-            <label className="check-line">
-              <input
-                type="checkbox"
-                checked={s.settings.reminders}
-                onChange={(e) =>
-                  change((s) => ({
-                    ...s,
-                    settings: { ...s.settings, reminders: e.target.checked },
-                  }))
-                }
-              />
-              Show an in-app training reminder
-            </label>
-            <p className="caption">
-              No background push notifications. Timer sounds depend on browser
-              audio permission and an open app. Standardized loads are stored in
-              kg. Unfamiliar machine/band labels stay raw and are never
-              converted.
-            </p>
-          </section>
-          {publicWorkspace ? (
-            <section className="panel">
-              <h2>AI is unavailable in public mode</h2>
-              <p>
-                Private Gemini keys are never bound to this workspace. Manual
-                programs, starter templates, workouts and imports remain
-                available.
-              </p>
-            </section>
-          ) : (
-            <GeminiKeySettings />
-          )}
-          <section className="panel">
-            <h2>Built-in workout coach</h2>
-            <CoachSettingsPanel />
-          </section>
-          <section className="panel">
-            <h2>Your data, portable.</h2>
-            <p>
-              Keep a private backup of programs, custom exercises, sessions and
-              drafts. Credentials are never included.
-            </p>
-            <div className="actions wrap">
-              <Button
-                onClick={async () =>
-                  download(
-                    `neoform-${D.today()}.jsonl`,
-                    await exportHistoryBackup(s),
-                    "application/json",
-                  )
-                }
-              >
-                <Download size={18} />
-                Export JSON backup
-              </Button>
-              <Button
-                onClick={() =>
-                  download(
-                    `neoform-${D.today()}.csv`,
-                    D.csvSessions(s.sessions, exercises),
-                    "text/csv",
-                  )
-                }
-              >
-                <Download size={18} />
-                Export session CSV
-              </Button>
-              <Button
-                onClick={async () => {
-                  await Promise.all(
-                    exportPendingCopies().map(async (box, i) =>
-                      download(
-                        `neoform-pending-${i + 1}-${D.today()}.jsonl`,
-                        await exportHistoryBackup(box.data),
-                        "application/x-ndjson",
-                      ),
-                    ),
-                  );
-                }}
-              >
-                Export pending tab copies
-              </Button>
-              <Button
-                onClick={() =>
-                  open({ title: "Import from Hevy", content: <HevyImport /> })
-                }
-              >
-                Import from Hevy
-              </Button>
-            </div>
-            <label className="upload-button">
-              Import JSON backup
-              <input
-                type="file"
-                accept=".json,.jsonl,application/json,application/x-ndjson"
-                aria-label="Import JSON backup"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (!file) return;
-                  try {
-                    const incoming = await importHistoryBackup(file);
-                    open({
-                      title: "Review your backup",
-                      content: (
-                        <>
-                          <p>
-                            Validated backup:{" "}
-                            <b>
-                              {incoming.sessions.length} sessions,{" "}
-                              {incoming.programs.length} programs,{" "}
-                              {incoming.customExercises.length} custom exercises
-                            </b>
-                            {incoming.draft ? " and an active draft" : ""}.
-                          </p>
-                          <p>
-                            Merge retains distinct IDs. Imported versions win
-                            matching IDs, profile, preferences and draft.
-                            Replace removes current account data and uses the
-                            backup. Export first; changes sync to this account.
-                          </p>
-                          <div className="actions wrap">
-                            <Button onClick={close}>Cancel</Button>
-                            <Button
-                              variant="primary"
-                              onClick={async () => {
-                                if (
-                                  await saveChange((s) =>
-                                    D.mergeStates(s, incoming),
-                                  )
-                                ) {
-                                  close();
-                                  setNotice("Backup merged.");
-                                }
-                              }}
-                            >
-                              Confirm merge
-                            </Button>
-                            <Button
-                              variant="danger"
-                              onClick={async () => {
-                                if (await saveChange(() => incoming)) {
-                                  close();
-                                  setNotice(
-                                    "Account data replaced from backup.",
-                                  );
-                                }
-                              }}
-                            >
-                              Confirm replace
-                            </Button>
-                          </div>
-                        </>
-                      ),
-                    });
-                  } catch (err) {
-                    setNotice((err as Error).message);
-                  }
-                }}
-              />
-            </label>
-            <p className="caption">
-              Checksummed version 2 backups support large histories. Version 1
-              imports remain supported. Files are unencrypted; store them
-              privately. CSV contains completed set rows with canonical kg or
-              raw machine labels, equipment and convention.
-            </p>
-          </section>
-          <section className="panel">
-            <h2>{publicWorkspace ? "Workspace access" : "Account & access"}</h2>
-            <p>{userEmail}</p>
-            {publicWorkspace ? (
-              <p>
-                No account or sign-in. This shared workspace is publicly
-                readable and writable. Existing private accounts remain separate
-                and cannot be accessed in this mode.
-              </p>
-            ) : singleUser ? (
-              <>
-                <p>Single-user / this PC</p>
-                <p className="caption">
-                  Opens your existing local account without sign-in. Access
-                  changes are disabled; restart with the authenticated
-                  configuration to manage credentials. Do not share or tunnel
-                  this server.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="actions wrap">
-                  <Button
-                    onClick={() =>
-                      open({
-                        title: "Change your password",
-                        content: <PasswordForm close={close} />,
-                      })
-                    }
-                  >
-                    Change password
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      void logout().catch((e) => setNotice(e.message))
-                    }
-                  >
-                    <LogOut size={17} />
-                    Sign out
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() =>
-                      open({
-                        title: "Permanently delete account",
-                        content: <DeleteAccount close={close} />,
-                      })
-                    }
-                  >
-                    Delete account & data
-                  </Button>
-                </div>
-                <p className="caption">
-                  Password change signs out other devices. Sign out clears this
-                  device's account cache after syncing. Email password reset is
-                  unavailable; keep your passphrase safe.
-                </p>
-              </>
-            )}
-          </section>
-        </div>
-        <div className="stack">
-          <section className="panel">
-            <p className="eyebrow">FIELD NOTES</p>
-            <h2>A few useful principles.</h2>
-            <details open>
-              <summary>Effort, sets & comparisons</summary>
-              <p>
-                RIR is reps in reserve; RPE = 10 − RIR here. Direct
-                straight/down sets at ≤4 RIR are counted separately from
-                advanced raw bouts. No fractional growth credits are inferred.
-                Warmups do not contribute to volume, records or progression.
-                Load convention matters: per dumbbell means one implement; total
-                means both sides combined. Machine labels are not standardized.
-              </p>
-            </details>
-            <details>
-              <summary>How progression works</summary>
-              <p>
-                Two recent comparable exposures with known prescriptions and
-                explicit current recovery are needed. Unresolved pain/systemic
-                fatigue and missing context veto escalation. Beginners keep at
-                least 2 RIR. The original load cap is the smaller of 2.5% and
-                2.5 kg, subject to available equipment. Method, bout and phase
-                contexts remain separate; advanced sequence progression stays
-                manual. Acceptance is explicit, never a promise of optimal
-                growth.
-              </p>
-            </details>
-            <details>
-              <summary>Offline & device conflicts</summary>
-              <p>
-                Open the app online once to cache the public shell. Your draft
-                and account outbox stay on this device through refresh.
-                Reconnect to sync. If another device edited the same account,
-                review both versions; export them, then choose cloud, merge or
-                explicit replacement. Account data and credentials are never
-                cached by the service worker. Pending changes must sync or be
-                backed up before sign-out.
-              </p>
-            </details>
-            <details>
-              <summary>Privacy & recovery</summary>
+          </details>
+          <details className="panel preference-group">
+            <summary>
+              {publicWorkspace ? "Workspace access" : "Account & access"}
+            </summary>
+            <div className="preference-content">
+              <p>{userEmail}</p>
               {publicWorkspace ? (
                 <p>
-                  Anyone with this URL can read, edit, import, replace or clear
-                  shared training data. Do not enter private information. AI and
-                  private accounts are unavailable. Export a backup before
-                  making shared changes; the device cache and exported files are
-                  unencrypted.
+                  No account or sign-in. This shared workspace is publicly
+                  readable and writable. Existing private accounts remain
+                  separate and cannot be accessed in this mode.
                 </p>
+              ) : singleUser ? (
+                <>
+                  <p>Single-user / this PC</p>
+                  <p className="caption">
+                    Opens your existing local account without sign-in. Access
+                    changes are disabled; restart with the authenticated
+                    configuration to manage credentials. Do not share or tunnel
+                    this server.
+                  </p>
+                </>
               ) : (
-                <p>
-                  Only your authenticated account can read its data.
-                  Demonstrations use third-party YouTube content. AI sends only
-                  bounded training preferences to Google Gemini using your
-                  account's encrypted API key; Google charges and quotas may
-                  apply. Data is stored in D1; offline cache is unencrypted on
-                  your device. Exports are private files. Account deletion
-                  removes backend records and this browser cache; other offline
-                  devices retain their local copy until sign-out. Treat
-                  persistent pain as a reason to seek qualified advice, not to
-                  force a load increase.
-                </p>
+                <>
+                  <div className="actions wrap">
+                    <Button
+                      onClick={() =>
+                        open({
+                          title: "Change your password",
+                          content: <PasswordForm close={close} />,
+                        })
+                      }
+                    >
+                      Change password
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        void logout().catch((e) => setNotice(e.message))
+                      }
+                    >
+                      <LogOut size={17} />
+                      Sign out
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() =>
+                        open({
+                          title: "Permanently delete account",
+                          content: <DeleteAccount close={close} />,
+                        })
+                      }
+                    >
+                      Delete account & data
+                    </Button>
+                  </div>
+                  <p className="caption">
+                    Password change signs out other devices. Sign out clears
+                    this device's account cache after syncing. Email password
+                    reset is unavailable; keep your passphrase safe.
+                  </p>
+                </>
               )}
-            </details>
-            <details>
-              <summary>Install & references</summary>
-              <p>
-                Use your browser's Install app or Add to Home Screen option on
-                supported HTTPS browsers. Localhost also supports the offline
-                shell.
-              </p>
-              <p>
-                Interaction inspiration:{" "}
-                <a
-                  href="https://macrofactor.com/welcome-to-macrofactor-workouts/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  MacroFactor Workouts
-                </a>{" "}
-                and{" "}
-                <a
-                  href="https://rpstrength.com/pages/hypertrophy-app"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  RP Hypertrophy
-                </a>
-                . NEOFORM uses original templates, text, styling and
-                deterministic heuristics.
-              </p>
-            </details>
-          </section>
+            </div>
+          </details>
+        </div>
+        <div className="stack">
+          <details className="panel preference-group">
+            <p className="eyebrow">FIELD NOTES</p>
+            <summary>A few useful principles.</summary>
+            <div className="preference-content">
+              <details open>
+                <summary>Effort, sets & comparisons</summary>
+                <p>
+                  RIR is reps in reserve; RPE = 10 − RIR here. Direct
+                  straight/down sets at ≤4 RIR are counted separately from
+                  advanced raw bouts. No fractional growth credits are inferred.
+                  Warmups do not contribute to volume, records or progression.
+                  Load convention matters: per dumbbell means one implement;
+                  total means both sides combined. Machine labels are not
+                  standardized.
+                </p>
+              </details>
+              <details>
+                <summary>How progression works</summary>
+                <p>
+                  Two recent comparable exposures with known prescriptions and
+                  explicit current recovery are needed. Unresolved pain/systemic
+                  fatigue and missing context veto escalation. Beginners keep at
+                  least 2 RIR. The original load cap is the smaller of 2.5% and
+                  2.5 kg, subject to available equipment. Method, bout and phase
+                  contexts remain separate; advanced sequence progression stays
+                  manual. Acceptance is explicit, never a promise of optimal
+                  growth.
+                </p>
+              </details>
+              <details>
+                <summary>Offline & device conflicts</summary>
+                <p>
+                  Open the app online once to cache the public shell. Your draft
+                  and account outbox stay on this device through refresh.
+                  Reconnect to sync. If another device edited the same account,
+                  review both versions; export them, then choose cloud, merge or
+                  explicit replacement. Account data and credentials are never
+                  cached by the service worker. Pending changes must sync or be
+                  backed up before sign-out.
+                </p>
+              </details>
+              <details>
+                <summary>Privacy & recovery</summary>
+                {publicWorkspace ? (
+                  <p>
+                    Anyone with this URL can read, edit, import, replace or
+                    clear shared training data. Do not enter private
+                    information. AI and private accounts are unavailable. Export
+                    a backup before making shared changes; the device cache and
+                    exported files are unencrypted.
+                  </p>
+                ) : (
+                  <p>
+                    Only your authenticated account can read its data.
+                    Demonstrations use third-party YouTube content. AI sends
+                    only bounded training preferences to Google Gemini using
+                    your account's encrypted API key; Google charges and quotas
+                    may apply. Data is stored in D1; offline cache is
+                    unencrypted on your device. Exports are private files.
+                    Account deletion removes backend records and this browser
+                    cache; other offline devices retain their local copy until
+                    sign-out. Treat persistent pain as a reason to seek
+                    qualified advice, not to force a load increase.
+                  </p>
+                )}
+              </details>
+              <details>
+                <summary>Install & references</summary>
+                <p>
+                  Use your browser's Install app or Add to Home Screen option on
+                  supported HTTPS browsers. Localhost also supports the offline
+                  shell.
+                </p>
+                <p>
+                  Interaction inspiration:{" "}
+                  <a
+                    href="https://macrofactor.com/welcome-to-macrofactor-workouts/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    MacroFactor Workouts
+                  </a>{" "}
+                  and{" "}
+                  <a
+                    href="https://rpstrength.com/pages/hypertrophy-app"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    RP Hypertrophy
+                  </a>
+                  . NEOFORM uses original templates, text, styling and
+                  deterministic heuristics.
+                </p>
+              </details>
+            </div>
+          </details>
           <section className="quiet-card">
             <ShieldCheck size={22} />
             <div>

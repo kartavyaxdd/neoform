@@ -13,9 +13,11 @@ import { Button, Field, Num } from "./ui";
 
 export function CoachSheet({
   session: initial,
+  entryId,
   onOpenWorkout,
 }: {
   session: D.Session;
+  entryId?: string;
   onOpenWorkout?: () => void;
 }) {
   const state = useStore().box.data;
@@ -39,7 +41,7 @@ export function CoachSheet({
     [state.customExercises],
   );
   const proposals = useMemo(
-    () => evaluateCoaching(state, session, clock),
+    () => evaluateCoaching(state, session, Date.now()),
     [state, session, clock],
   );
   const muscles = [
@@ -149,302 +151,344 @@ export function CoachSheet({
     <div className="training-coaching coach-sheet">
       <h3>{session.name}</h3>
       <p>Review targets from confirmed performance. Coaching works offline.</p>
-      <details>
-        <summary>Current readiness and recovery</summary>
-        <ReadinessSheet
-          key={session.id}
-          value={session.readiness}
-          muscles={muscles}
-          readOnly={session.exercises.some((e) =>
-            e.sets.some((t) => t.done && t.kind !== "warmup"),
-          )}
-          onSave={async (readiness) => {
-            if (state.draft?.id === session.id) {
-              if (
-                !(await saveChange((s) => ({
-                  ...s,
-                  draft: { ...s.draft!, readiness },
-                })))
-              )
-                setError("Readiness is not yet saved.");
-            } else setPreview((s) => ({ ...s, readiness }));
-          }}
-        />
-      </details>
-      <details>
-        <summary>Coaching preferences</summary>
-        <CoachSettingsPanel />
-      </details>
-      <Button
-        onClick={() => {
-          setClock(Date.now());
-          setSelected({});
-          setEdits({});
-          setError("");
-        }}
-      >
-        Refresh evidence
-      </Button>
-      {proposals.map((p) => {
-        const x = exercises.find((x) => x.id === p.exerciseId)!;
-        const canApply = !["hold", "recover"].includes(p.action);
-        const recorded = (state.coachingEvents ?? [])
-          .filter((e) => e.proposalId === p.id && e.kind === "decision")
-          .at(-1);
-        const applied =
-          !!recorded && ["accept", "edit"].includes(recorded.choice ?? "");
-        return (
-          <section className="panel" key={p.id}>
-            <h3>
-              {x.name} · {p.action.replaceAll("-", " ")}
-            </h3>
-            <p>{p.reason}</p>
-            <p className="caption">
-              {p.sourceIds.length} eligible exposures ·{" "}
-              {p.uncertain ? "uncertain / exploratory" : "repeated evidence"} ·{" "}
-              {p.version}
-            </p>
-            {canApply && p.rows.length > 0 && (
-              <div className="table-wrap">
-                <table aria-label={`${x.name} proposed working sets`}>
-                  <thead>
-                    <tr>
-                      <th>Set</th>
-                      <th>Load</th>
-                      <th>Reps</th>
-                      <th>RIR target</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(edits[p.id] ?? p.rows).map((r, i) => (
-                      <tr key={r.ordinal}>
-                        <td>{r.ordinal + 1}</td>
-                        <td>
-                          {D.displayLoad(
-                            r.weight,
-                            x.convention,
-                            state.settings.unit,
-                          ).toFixed(2)}{" "}
-                          {x.convention === "machine-label"
-                            ? "label"
-                            : state.settings.unit}
-                        </td>
-                        <td>{r.reps}</td>
-                        <td>{r.rir}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {canApply && p.rows.length > 0 && !p.afterTarget && (
-              <details>
-                <summary>Edit proposed set targets</summary>
-                {(edits[p.id] ?? p.rows).map((r, i) => (
-                  <div className="form-grid" key={r.ordinal}>
-                    <Field label={`${x.name} proposed set ${i + 1} load`}>
-                      <Num
-                        label={`${x.name} proposed set ${i + 1} load`}
-                        value={D.displayLoad(
-                          r.weight,
-                          x.convention,
-                          state.settings.unit,
-                        )}
-                        step={0.25}
-                        min={0}
-                        max={2000}
-                        onChange={(value) =>
-                          setEdits((old) => ({
-                            ...old,
-                            [p.id]: (old[p.id] ?? p.rows).map((row, j) =>
-                              j === i
-                                ? {
-                                    ...row,
-                                    weight: D.canonicalLoad(
-                                      value,
-                                      x.convention,
-                                      state.settings.unit,
-                                    ),
-                                  }
-                                : row,
-                            ),
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label={`${x.name} proposed set ${i + 1} reps`}>
-                      <Num
-                        label={`${x.name} proposed set ${i + 1} reps`}
-                        value={r.reps}
-                        min={p.beforeTarget?.min ?? 1}
-                        max={p.beforeTarget?.max ?? 100}
-                        onChange={(value) =>
-                          setEdits((old) => ({
-                            ...old,
-                            [p.id]: (old[p.id] ?? p.rows).map((row, j) =>
-                              j === i ? { ...row, reps: value } : row,
-                            ),
-                          }))
-                        }
-                      />
-                    </Field>
-                  </div>
-                ))}
-              </details>
-            )}
-            {p.action === "substitute" && (
-              <Field label={`${x.name} alternative`}>
-                <select
-                  value={alternatives[p.id] ?? ""}
-                  onChange={(e) =>
-                    setAlternatives((old) => ({
-                      ...old,
-                      [p.id]: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Choose an alternative</option>
-                  {p.alternatives?.map((id) => (
-                    <option key={id} value={id}>
-                      {exercises.find((x) => x.id === id)?.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {p.afterTarget && (
+      {proposals
+        .filter((p) => !entryId || p.entryId === entryId)
+        .map((p, index) => {
+          const x = exercises.find((x) => x.id === p.exerciseId)!;
+          const canApply = !["hold", "recover"].includes(p.action);
+          const recorded = (state.coachingEvents ?? [])
+            .filter((e) => e.proposalId === p.id && e.kind === "decision")
+            .at(-1);
+          const applied =
+            !!recorded && ["accept", "edit"].includes(recorded.choice ?? "");
+          const card = (
+            <section className="panel" key={p.id}>
+              <h3>
+                {x.name} · {p.action.replaceAll("-", " ")}
+              </h3>
               <p>
-                Future target: {p.beforeTarget?.sets} → {p.afterTarget.sets}{" "}
-                working sets; {p.beforeTarget?.min}–{p.beforeTarget?.max} →{" "}
-                {p.afterTarget.min}–{p.afterTarget.max} reps. Apply to the
-                future program only; completed work and the current draft stay
-                unchanged.
+                {p.reason.split(". ")[0]}
+                {p.reason.includes(". ") ? "." : ""}
               </p>
-            )}
-            {p.action === "deload" && (
-              <>
-                <p>
-                  Future program deload: fewer working sets and reps, with at
-                  least 5 RIR using the existing phase rules. Review after one
-                  planned week; no automatic return to escalation.
-                </p>
-                <PhaseDosePreview state={state} programId={p.programId} />
-              </>
-            )}
-            {canApply &&
-              !p.afterTarget &&
-              !["substitute", "deload"].includes(p.action) && (
-                <Field label={`${x.name} change scope`}>
-                  <select
-                    value={scope[p.id] ?? "session"}
-                    onChange={(e) =>
-                      setScope((old) => ({
-                        ...old,
-                        [p.id]: e.target.value as "session" | "program",
-                      }))
+              {canApply && p.rows.length > 0 && (
+                <div className="table-wrap">
+                  <table aria-label={`${x.name} proposed working sets`}>
+                    <thead>
+                      <tr>
+                        <th>Set</th>
+                        <th>Load</th>
+                        <th>Reps</th>
+                        <th>RIR target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(edits[p.id] ?? p.rows).map((r, i) => (
+                        <tr key={r.ordinal}>
+                          <td>{r.ordinal + 1}</td>
+                          <td>
+                            {D.displayLoad(
+                              r.weight,
+                              x.convention,
+                              state.settings.unit,
+                            ).toFixed(2)}{" "}
+                            {x.convention === "machine-label"
+                              ? "label"
+                              : state.settings.unit}
+                          </td>
+                          <td>{r.reps}</td>
+                          <td>{r.rir}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <details className="coach-options">
+                <summary>Options and evidence</summary>
+                {canApply && p.rows.length > 0 && !p.afterTarget && (
+                  <details>
+                    <summary>Edit proposed set targets</summary>
+                    {(edits[p.id] ?? p.rows).map((r, i) => (
+                      <div className="form-grid" key={r.ordinal}>
+                        <Field label={`${x.name} proposed set ${i + 1} load`}>
+                          <Num
+                            label={`${x.name} proposed set ${i + 1} load`}
+                            value={D.displayLoad(
+                              r.weight,
+                              x.convention,
+                              state.settings.unit,
+                            )}
+                            step={0.25}
+                            min={0}
+                            max={2000}
+                            onChange={(value) =>
+                              setEdits((old) => ({
+                                ...old,
+                                [p.id]: (old[p.id] ?? p.rows).map((row, j) =>
+                                  j === i
+                                    ? {
+                                        ...row,
+                                        weight: D.canonicalLoad(
+                                          value,
+                                          x.convention,
+                                          state.settings.unit,
+                                        ),
+                                      }
+                                    : row,
+                                ),
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Field label={`${x.name} proposed set ${i + 1} reps`}>
+                          <Num
+                            label={`${x.name} proposed set ${i + 1} reps`}
+                            value={r.reps}
+                            min={p.beforeTarget?.min ?? 1}
+                            max={p.beforeTarget?.max ?? 100}
+                            onChange={(value) =>
+                              setEdits((old) => ({
+                                ...old,
+                                [p.id]: (old[p.id] ?? p.rows).map((row, j) =>
+                                  j === i ? { ...row, reps: value } : row,
+                                ),
+                              }))
+                            }
+                          />
+                        </Field>
+                      </div>
+                    ))}
+                  </details>
+                )}
+                {p.action === "substitute" && (
+                  <Field label={`${x.name} alternative`}>
+                    <select
+                      value={alternatives[p.id] ?? ""}
+                      onChange={(e) =>
+                        setAlternatives((old) => ({
+                          ...old,
+                          [p.id]: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Choose an alternative</option>
+                      {p.alternatives?.map((id) => (
+                        <option key={id} value={id}>
+                          {exercises.find((x) => x.id === id)?.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+                {p.afterTarget && (
+                  <p>
+                    Future target: {p.beforeTarget?.sets} → {p.afterTarget.sets}{" "}
+                    working sets; {p.beforeTarget?.min}–{p.beforeTarget?.max} →{" "}
+                    {p.afterTarget.min}–{p.afterTarget.max} reps. Apply to the
+                    future program only; completed work and the current draft
+                    stay unchanged.
+                  </p>
+                )}
+                {p.action === "deload" && (
+                  <>
+                    <p>
+                      Future program deload: fewer working sets and reps, with
+                      at least 5 RIR using the existing phase rules. Review
+                      after one planned week; no automatic return to escalation.
+                    </p>
+                    <PhaseDosePreview state={state} programId={p.programId} />
+                  </>
+                )}
+                {canApply &&
+                  !p.afterTarget &&
+                  !["substitute", "deload"].includes(p.action) && (
+                    <details>
+                      <summary>Change scope</summary>
+                      <Field label={`${x.name} change scope`}>
+                        <select
+                          value={scope[p.id] ?? "session"}
+                          onChange={(e) =>
+                            setScope((old) => ({
+                              ...old,
+                              [p.id]: e.target.value as "session" | "program",
+                            }))
+                          }
+                        >
+                          <option value="session">This workout only</option>
+                          <option value="program">
+                            Future program targets
+                          </option>
+                        </select>
+                      </Field>
+                    </details>
+                  )}
+                <p className="caption">{p.review}</p>
+                <details>
+                  <summary>Evidence and exclusions</summary>
+                  <p>{p.reason}</p>
+                  <p className="caption">
+                    {p.sourceIds.length} eligible exposures ·{" "}
+                    {p.uncertain
+                      ? "uncertain / exploratory"
+                      : "repeated evidence"}{" "}
+                    · {p.version}
+                  </p>
+
+                  <p className="caption">
+                    Informed by Scientific Principles of Hypertrophy Training
+                    (2020). Increment caps and review windows are app policies.
+                    This is not live Gemini advice or measured growth.
+                  </p>
+                  {p.evidence.map((v, i) => (
+                    <p className="caption" key={i}>
+                      {v}
+                    </p>
+                  ))}
+                  {p.excluded.map((v, i) => (
+                    <p className="caption" key={"x" + i}>
+                      Excluded: {v}
+                    </p>
+                  ))}
+                </details>
+              </details>
+              {recorded && (
+                <p role="status">Recorded choice: {recorded.choice}.</p>
+              )}
+              <p className="caption">
+                {choice(p, "accept").scope === "program"
+                  ? "Changes future program targets only."
+                  : "Changes this workout only."}
+              </p>
+              <div className="actions wrap">
+                {canApply && (
+                  <Button
+                    disabled={
+                      busy ||
+                      applied ||
+                      (p.action === "substitute" && !alternatives[p.id])
+                    }
+                    onClick={() =>
+                      void choose([choice(p, edits[p.id] ? "edit" : "accept")])
                     }
                   >
-                    <option value="session">This workout only</option>
-                    <option value="program">Future program targets</option>
-                  </select>
-                </Field>
+                    {p.afterTarget ||
+                    ["substitute", "deload"].includes(p.action)
+                      ? "Apply to program"
+                      : "Apply"}
+                  </Button>
+                )}
+                <details className="coach-other">
+                  <summary>Other choices</summary>{" "}
+                  <Button
+                    disabled={busy || applied}
+                    onClick={() => void choose([choice(p, "defer")])}
+                  >
+                    Defer
+                  </Button>
+                  <Button
+                    disabled={busy || applied}
+                    onClick={() => void choose([choice(p, "decline")])}
+                  >
+                    Decline
+                  </Button>
+                </details>{" "}
+              </div>
+              {canApply && !applied && (
+                <details>
+                  <summary>Coordinate changes</summary>
+                  <label className="check-line">
+                    <input
+                      type="checkbox"
+                      checked={!!selected[p.id]}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSelected((old) => ({
+                          ...Object.fromEntries(
+                            Object.entries(old).filter(
+                              ([id]) =>
+                                !checked ||
+                                proposals.find((v) => v.id === id)?.entryId !==
+                                  p.entryId,
+                            ),
+                          ),
+                          [p.id]: checked,
+                        }));
+                      }}
+                    />
+                    Include in reviewed bundle (one alternative per exercise)
+                  </label>
+                </details>
               )}
-            <p className="caption">{p.review}</p>
-            <details>
-              <summary>Evidence and exclusions</summary>
-              <p className="caption">
-                Informed by Scientific Principles of Hypertrophy Training
-                (2020). Increment caps and review windows are app policies. This
-                is not live Gemini advice or measured growth.
-              </p>
-              {p.evidence.map((v, i) => (
-                <p className="caption" key={i}>
-                  {v}
-                </p>
-              ))}
-              {p.excluded.map((v, i) => (
-                <p className="caption" key={"x" + i}>
-                  Excluded: {v}
-                </p>
-              ))}
+            </section>
+          );
+          return index === 0 ? (
+            card
+          ) : (
+            <details className="coach-alternative" key={p.id}>
+              <summary>
+                {exercises.find((x) => x.id === p.exerciseId)?.name}:{" "}
+                {p.action.replaceAll("-", " ")}
+              </summary>
+              {card}
             </details>
-            {recorded && (
-              <p role="status">Recorded choice: {recorded.choice}.</p>
+          );
+        })}
+      <details className="coach-settings">
+        <summary>Readiness and coaching settings</summary>
+        <details>
+          <summary>Current readiness and recovery</summary>
+          <ReadinessSheet
+            key={session.id}
+            value={session.readiness}
+            muscles={muscles}
+            readOnly={session.exercises.some((e) =>
+              e.sets.some((t) => t.done && t.kind !== "warmup"),
             )}
-            <div className="actions wrap">
-              {canApply && (
-                <Button
-                  disabled={
-                    busy ||
-                    applied ||
-                    (p.action === "substitute" && !alternatives[p.id])
-                  }
-                  onClick={() =>
-                    void choose([choice(p, edits[p.id] ? "edit" : "accept")])
-                  }
-                >
-                  {edits[p.id]
-                    ? "Apply edited targets"
-                    : p.action === "substitute"
-                      ? "Accept future substitution"
-                      : p.afterTarget || p.action === "deload"
-                        ? "Accept future program change"
-                        : "Accept proposed targets"}
-                </Button>
-              )}
-              <Button
-                disabled={busy || applied}
-                onClick={() => void choose([choice(p, "defer")])}
-              >
-                Defer
-              </Button>
-              <Button
-                disabled={busy || applied}
-                onClick={() => void choose([choice(p, "decline")])}
-              >
-                Decline
-              </Button>
-            </div>
-            {canApply && !applied && (
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={!!selected[p.id]}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setSelected((old) => ({
-                      ...Object.fromEntries(
-                        Object.entries(old).filter(
-                          ([id]) =>
-                            !checked ||
-                            proposals.find((v) => v.id === id)?.entryId !==
-                              p.entryId,
-                        ),
-                      ),
-                      [p.id]: checked,
-                    }));
-                  }}
-                />
-                Include in reviewed bundle (one alternative per exercise)
-              </label>
-            )}
-          </section>
-        );
-      })}
-      <p className="caption">
-        Observed outcomes: {outcomes.filter((e) => e.outcome === "met").length}{" "}
-        targets met ·{" "}
-        {outcomes.filter((e) => e.outcome === "too-demanding").length} too
-        demanding · {outcomes.filter((e) => e.outcome === "easier").length}{" "}
-        easier ·{" "}
-        {
-          outcomes.filter((e) =>
-            ["unknown", "changed"].includes(e.outcome ?? ""),
-          ).length
-        }{" "}
-        unknown or changed. Counts describe reported target attainment, not
-        muscle growth. Small samples remain uncertain.
-      </p>
+            onSave={async (readiness) => {
+              if (state.draft?.id === session.id) {
+                if (
+                  !(await saveChange((s) => ({
+                    ...s,
+                    draft: { ...s.draft!, readiness },
+                  })))
+                )
+                  setError("Readiness is not yet saved.");
+              } else setPreview((s) => ({ ...s, readiness }));
+            }}
+          />
+        </details>
+        <details>
+          <summary>Coaching preferences</summary>
+          <CoachSettingsPanel />
+        </details>
+        <Button
+          onClick={() => {
+            setClock(Date.now());
+            setSelected({});
+            setEdits({});
+            setError("");
+          }}
+        >
+          Refresh evidence
+        </Button>
+        <details>
+          <summary>Outcome history</summary>{" "}
+          <p className="caption">
+            Observed outcomes:{" "}
+            {outcomes.filter((e) => e.outcome === "met").length} targets met ·{" "}
+            {outcomes.filter((e) => e.outcome === "too-demanding").length} too
+            demanding · {outcomes.filter((e) => e.outcome === "easier").length}{" "}
+            easier ·{" "}
+            {
+              outcomes.filter((e) =>
+                ["unknown", "changed"].includes(e.outcome ?? ""),
+              ).length
+            }{" "}
+            unknown or changed. Counts describe reported target attainment, not
+            muscle growth. Small samples remain uncertain.
+          </p>
+        </details>{" "}
+      </details>
       {Object.values(selected).some(Boolean) && (
         <>
           <p>
@@ -467,7 +511,7 @@ export function CoachSheet({
       )}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
-      {onOpenWorkout && (
+      {onOpenWorkout && !state.draft && (
         <Button disabled={busy} onClick={() => void start()}>
           {state.draft
             ? "Open current workout"
