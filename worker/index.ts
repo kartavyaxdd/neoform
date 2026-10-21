@@ -1,9 +1,11 @@
+export { RestAlertDevice } from "./restAlerts";
+import { restAlertsRoute, type RestAlertEnv } from "./restAlerts";
 import { z } from "zod";
 import { emptyState, stateSchema, MAX_BACKUP } from "../src/domain";
 import { geminiRoute, type GeminiEnv } from "./geminiRoutes";
 import { GeminiFault } from "./gemini";
 import { HistoryStorage, HistoryFault } from "./historyStorage";
-interface Env extends GeminiEnv {
+interface Env extends GeminiEnv, RestAlertEnv {
   ASSETS: Fetcher;
   PUBLIC_WORKSPACE?: string;
   SINGLE_USER_MODE?: string;
@@ -116,14 +118,24 @@ async function throttle(env: Env, key: string, limit: number) {
 async function authenticate(req: Request, env: Env) {
   if (env.SINGLE_USER_MODE === "local") {
     if (!env.SINGLE_USER_ID?.trim())
-      throw new Fault(503, "Configure SINGLE_USER_ID with the existing local account ID; no new account will be created.");
+      throw new Fault(
+        503,
+        "Configure SINGLE_USER_ID with the existing local account ID; no new account will be created.",
+      );
     const user = await env.DB.prepare("SELECT id,email FROM users WHERE id=?")
       .bind(env.SINGLE_USER_ID)
       .first<{ id: string; email: string }>();
-    if (!user) throw new Fault(503, "Local account not found. Check SINGLE_USER_ID and the selected database.");
+    if (!user)
+      throw new Fault(
+        503,
+        "Local account not found. Check SINGLE_USER_ID and the selected database.",
+      );
     const expected = req.headers.get("X-Neoform-Account");
     if (expected !== null && expected !== user.id)
-      throw new Fault(412, "Browser account changed. Export pending changes before reopening this account.");
+      throw new Fault(
+        412,
+        "Browser account changed. Export pending changes before reopening this account.",
+      );
     return user;
   }
   const token = req.headers
@@ -161,9 +173,9 @@ async function issueSession(
     env.DB.prepare("DELETE FROM sessions WHERE expires_at<?").bind(Date.now()),
     // Gemini's day counter uses a different window unit and is overwritten
     // atomically each UTC day; auth cleanup must never reset that allowance.
-    env.DB.prepare("DELETE FROM rate_limits WHERE window<? AND key!='gemini-global-day'").bind(
-      Math.floor(Date.now() / 900000) - 2,
-    ),
+    env.DB.prepare(
+      "DELETE FROM rate_limits WHERE window<? AND key!='gemini-global-day'",
+    ).bind(Math.floor(Date.now() / 900000) - 2),
     env.DB.prepare(
       "INSERT INTO sessions(token_hash,user_id,expires_at) SELECT ?,id,? FROM users WHERE id=? AND password_hash=? AND salt=?",
     ).bind(
@@ -176,7 +188,7 @@ async function issueSession(
   ]);
   if (!results[2].meta.changes)
     throw new Fault(401, "Credentials changed. Please sign in again.");
-  return json({ id: user.id, email: user.email, storageFormat:2 }, status, {
+  return json({ id: user.id, email: user.email, storageFormat: 2 }, status, {
     "Set-Cookie": cookie(req, token),
   });
 }
@@ -190,47 +202,91 @@ async function snapshot(env: Env, id: string) {
   return { revision: row.revision, data: JSON.parse(row.body) };
 }
 async function publicSnapshot(env: Env) {
-  await env.DB.prepare("INSERT INTO public_workspace(id,revision,body,updated_at) VALUES (1,0,?,?) ON CONFLICT(id) DO NOTHING")
-    .bind(JSON.stringify(emptyState()), Date.now()).run();
-  const row = await env.DB.prepare("SELECT revision,body FROM public_workspace WHERE id=1")
-    .bind().first<{ revision: number; body: string }>();
-  if (!row) throw new Fault(503, "Public workspace unavailable. Apply migration 0003_public_workspace.sql.");
+  await env.DB.prepare(
+    "INSERT INTO public_workspace(id,revision,body,updated_at) VALUES (1,0,?,?) ON CONFLICT(id) DO NOTHING",
+  )
+    .bind(JSON.stringify(emptyState()), Date.now())
+    .run();
+  const row = await env.DB.prepare(
+    "SELECT revision,body FROM public_workspace WHERE id=1",
+  )
+    .bind()
+    .first<{ revision: number; body: string }>();
+  if (!row)
+    throw new Fault(
+      503,
+      "Public workspace unavailable. Apply migration 0003_public_workspace.sql.",
+    );
   return { revision: row.revision, data: JSON.parse(row.body) };
 }
 function localBoundary(req: Request, env: Env) {
   if (env.SINGLE_USER_MODE !== "local") return;
   const url = new URL(req.url);
   const configuredToken = env.SINGLE_USER_GATEWAY_TOKEN;
-  const trustedGateway = !!configuredToken && /^[a-f0-9]{64}$/.test(configuredToken) &&
+  const trustedGateway =
+    !!configuredToken &&
+    /^[a-f0-9]{64}$/.test(configuredToken) &&
     equal(req.headers.get("x-neoform-local-gateway") || "", configuredToken);
   if (configuredToken && !trustedGateway)
-    throw new Fault(403, "Use the local app listener; direct backend access is blocked.");
-  const proxyHeader = [...req.headers.keys()].some((name) =>
-    name === "forwarded" || name.startsWith("x-forwarded-") ||
-    (name.startsWith("cf-") && !(trustedGateway && name === "cf-connecting-ip" &&
-      ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.headers.get(name) || ""))) ||
-    name === "x-real-ip" || name === "true-client-ip" ||
-    (name === "x-neoform-local-gateway" && !trustedGateway),
+    throw new Fault(
+      403,
+      "Use the local app listener; direct backend access is blocked.",
+    );
+  const proxyHeader = [...req.headers.keys()].some(
+    (name) =>
+      name === "forwarded" ||
+      name.startsWith("x-forwarded-") ||
+      (name.startsWith("cf-") &&
+        !(
+          trustedGateway &&
+          name === "cf-connecting-ip" &&
+          ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
+            req.headers.get(name) || "",
+          )
+        )) ||
+      name === "x-real-ip" ||
+      name === "true-client-ip" ||
+      (name === "x-neoform-local-gateway" && !trustedGateway),
   );
   if (
     !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) ||
     (req.headers.has("host") && req.headers.get("host") !== url.host) ||
     proxyHeader ||
     (req.headers.has("origin") && req.headers.get("origin") !== url.origin) ||
-    (req.headers.has("sec-fetch-site") && !["same-origin", "none"].includes(req.headers.get("sec-fetch-site")!)) ||
-    (!["GET", "HEAD"].includes(req.method) && req.headers.get("origin") !== url.origin)
-  ) throw new Fault(403, "Single-user mode is only available directly on this PC's loopback address; proxies and cross-origin requests are blocked.");
+    (req.headers.has("sec-fetch-site") &&
+      !["same-origin", "none"].includes(req.headers.get("sec-fetch-site")!)) ||
+    (!["GET", "HEAD"].includes(req.method) &&
+      req.headers.get("origin") !== url.origin)
+  )
+    throw new Fault(
+      403,
+      "Single-user mode is only available directly on this PC's loopback address; proxies and cross-origin requests are blocked.",
+    );
 }
 async function route(req: Request, env: Env) {
   if (env.PUBLIC_WORKSPACE === "enabled" && env.SINGLE_USER_MODE === "local")
-    throw new Fault(503, "Choose PUBLIC_WORKSPACE or SINGLE_USER_MODE, not both.");
+    throw new Fault(
+      503,
+      "Choose PUBLIC_WORKSPACE or SINGLE_USER_MODE, not both.",
+    );
   localBoundary(req, env);
   const path = new URL(req.url).pathname,
     method = req.method;
   if (!path.startsWith("/api/")) return env.ASSETS.fetch(req);
-  if (env.SINGLE_USER_MODE === "local" &&
-      ["/api/login", "/api/register", "/api/logout", "/api/password", "/api/account"].includes(path))
-    throw new Fault(403, "Account access changes are disabled in single-user mode. Restart with the authenticated configuration to manage credentials.");
+  if (
+    env.SINGLE_USER_MODE === "local" &&
+    [
+      "/api/login",
+      "/api/register",
+      "/api/logout",
+      "/api/password",
+      "/api/account",
+    ].includes(path)
+  )
+    throw new Fault(
+      403,
+      "Account access changes are disabled in single-user mode. Restart with the authenticated configuration to manage credentials.",
+    );
   if (path === "/api/health" && method === "GET") return json({ ok: true });
   if (
     !["GET", "HEAD"].includes(method) &&
@@ -240,28 +296,67 @@ async function route(req: Request, env: Env) {
   if (env.PUBLIC_WORKSPACE === "enabled") {
     const expected = req.headers.get("X-Neoform-Account");
     if (expected !== null && expected !== "public-workspace")
-      throw new Fault(412, "Workspace changed. Private account changes cannot sync to the public workspace.");
+      throw new Fault(
+        412,
+        "Workspace changed. Private account changes cannot sync to the public workspace.",
+      );
     if (path === "/api/me" && method === "GET")
-      return json({ id: "public-workspace", kind: "workspace", storageFormat: 2, accessMode: "public-workspace" });
+      return json({
+        id: "public-workspace",
+        kind: "workspace",
+        storageFormat: 2,
+        accessMode: "public-workspace",
+      });
+    if (path.startsWith("/api/rest-alerts/"))
+      return restAlertsRoute(req, env, "public-workspace", body, (key, n) =>
+        throttle(env, key, n),
+      );
     const storage = new HistoryStorage(env.DB, null);
     if (path.startsWith("/api/storage/")) return storage.route(req, body);
-    if (path === "/api/data" && method === "GET" && await storage.upgraded())
-      throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
-    if (path === "/api/data" && method === "GET") return json(await publicSnapshot(env));
+    if (path === "/api/data" && method === "GET" && (await storage.upgraded()))
+      throw new Fault(
+        426,
+        "This workspace uses the new history format. Reload the app; export any pending changes first.",
+      );
+    if (path === "/api/data" && method === "GET")
+      return json(await publicSnapshot(env));
     if (path === "/api/data" && method === "PUT") {
-      const input = validate(z.object({ revision: z.number().int().min(0), data: stateSchema }).strict(), await body(req));
+      const input = validate(
+        z
+          .object({ revision: z.number().int().min(0), data: stateSchema })
+          .strict(),
+        await body(req),
+      );
       if (await storage.upgraded())
-        throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
+        throw new Fault(
+          426,
+          "This workspace uses the new history format. Reload the app; export any pending changes first.",
+        );
       await publicSnapshot(env);
-      const result = await env.DB.prepare("UPDATE public_workspace SET body=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=? AND NOT EXISTS(SELECT 1 FROM storage_heads WHERE owner='public-workspace')")
-        .bind(JSON.stringify(input.data), Date.now(), input.revision).run();
-      if (!result.meta.changes && await storage.upgraded())
-        throw new Fault(426, "This workspace uses the new history format. Reload the app; export any pending changes first.");
+      const result = await env.DB.prepare(
+        "UPDATE public_workspace SET body=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=? AND NOT EXISTS(SELECT 1 FROM storage_heads WHERE owner='public-workspace')",
+      )
+        .bind(JSON.stringify(input.data), Date.now(), input.revision)
+        .run();
+      if (!result.meta.changes && (await storage.upgraded()))
+        throw new Fault(
+          426,
+          "This workspace uses the new history format. Reload the app; export any pending changes first.",
+        );
       if (!result.meta.changes)
-        return json({ error: "Another visitor changed the public workspace.", ...(await publicSnapshot(env)) }, 409);
+        return json(
+          {
+            error: "Another visitor changed the public workspace.",
+            ...(await publicSnapshot(env)),
+          },
+          409,
+        );
       return json({ revision: input.revision + 1 });
     }
-    throw new Fault(403, "Private accounts, credentials and AI are unavailable in the public workspace.");
+    throw new Fault(
+      403,
+      "Private accounts, credentials and AI are unavailable in the public workspace.",
+    );
   }
   if (
     (path === "/api/register" || path === "/api/login") &&
@@ -316,14 +411,30 @@ async function route(req: Request, env: Env) {
     return issueSession(req, env, user);
   }
   const user = await authenticate(req, env);
+  if (path.startsWith("/api/rest-alerts/"))
+    return restAlertsRoute(req, env, user.id, body, (key, n) =>
+      throttle(env, key, n),
+    );
   const storage = new HistoryStorage(env.DB, user.id);
   if (path.startsWith("/api/storage/")) return storage.route(req, body);
-  if (path === "/api/data" && method === "GET" && await storage.upgraded())
-    throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
+  if (path === "/api/data" && method === "GET" && (await storage.upgraded()))
+    throw new Fault(
+      426,
+      "This account uses the new history format. Reload the app; export any pending changes first.",
+    );
   if (path.startsWith("/api/ai/"))
-    return geminiRoute(req, env, user.id, body, (key, limit) => throttle(env, key, limit));
+    return geminiRoute(req, env, user.id, body, (key, limit) =>
+      throttle(env, key, limit),
+    );
   if (path === "/api/me" && method === "GET")
-    return json({ id: user.id, email: user.email, storageFormat:2, ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) });
+    return json({
+      id: user.id,
+      email: user.email,
+      storageFormat: 2,
+      ...(env.SINGLE_USER_MODE === "local"
+        ? { accessMode: "single-user-local" }
+        : {}),
+    });
   if (path === "/api/logout" && method === "POST" && "tokenHash" in user) {
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?")
       .bind(user.tokenHash)
@@ -340,14 +451,26 @@ async function route(req: Request, env: Env) {
       await body(req),
     );
     if (await storage.upgraded())
-      throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
+      throw new Fault(
+        426,
+        "This account uses the new history format. Reload the app; export any pending changes first.",
+      );
     const result = await env.DB.prepare(
       "UPDATE account_data SET body=?,revision=revision+1,updated_at=? WHERE user_id=? AND revision=? AND NOT EXISTS(SELECT 1 FROM storage_heads WHERE owner=?)",
     )
-      .bind(JSON.stringify(input.data), Date.now(), user.id, input.revision, storage.owner)
+      .bind(
+        JSON.stringify(input.data),
+        Date.now(),
+        user.id,
+        input.revision,
+        storage.owner,
+      )
       .run();
-    if (!result.meta.changes && await storage.upgraded())
-      throw new Fault(426, "This account uses the new history format. Reload the app; export any pending changes first.");
+    if (!result.meta.changes && (await storage.upgraded()))
+      throw new Fault(
+        426,
+        "This account uses the new history format. Reload the app; export any pending changes first.",
+      );
     if (!result.meta.changes)
       return json(
         {
@@ -411,9 +534,27 @@ export default {
       res = await route(req, env);
     } catch (e) {
       res =
-        (e instanceof Fault || e instanceof GeminiFault || e instanceof HistoryFault)
-          ? json({ error: e.message, ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) }, e.status)
-          : json({ error: "Unable to process request. Please retry.", ...(env.SINGLE_USER_MODE === "local" ? { accessMode: "single-user-local" } : {}) }, 500);
+        e instanceof Fault ||
+        e instanceof GeminiFault ||
+        e instanceof HistoryFault
+          ? json(
+              {
+                error: e.message,
+                ...(env.SINGLE_USER_MODE === "local"
+                  ? { accessMode: "single-user-local" }
+                  : {}),
+              },
+              e.status,
+            )
+          : json(
+              {
+                error: "Unable to process request. Please retry.",
+                ...(env.SINGLE_USER_MODE === "local"
+                  ? { accessMode: "single-user-local" }
+                  : {}),
+              },
+              500,
+            );
     }
     const headers = new Headers(res.headers);
     headers.set(

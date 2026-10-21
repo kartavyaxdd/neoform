@@ -155,6 +155,7 @@ test("changed dose and reported effort require explicit confirmation and survive
     .click();
   await page.getByRole("button", { name: "Targets", exact: true }).click();
   await page
+    .getByRole("dialog")
     .getByRole("button", {
       name: "Remove Barbell back squat set 3",
       exact: true,

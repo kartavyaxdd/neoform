@@ -1,3 +1,8 @@
+import { useRestAlerts, claimRestTimer } from "./restAlerts";
+import { feedbackTone, unlockFeedbackAudio } from "./feedbackAudio";
+import { WorkoutCelebration } from "./RewardProgress";
+import { rewards } from "./rewards";
+import { weekMonday } from "./workoutPresentation";
 import { TimerSheet } from "./TimerSheet";
 import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
@@ -424,12 +429,17 @@ export default function App() {
     ),
     [notice, setNotice] = useState(""),
     [tick, setTick] = useState(Date.now());
+  const [celebration, setCelebration] = useState<{
+    session: D.Session;
+    xp: number;
+  } | null>(null);
   const clockActive = !!(s.draft || s.timer);
   const close = () => setModal(null);
   // Account-scoped dialogs must never survive shared-cookie account switching.
   useEffect(() => {
     setModal(null);
     setNotice("");
+    setCelebration(null);
   }, [store.user?.id]);
   const exercises = useMemo(
     () => [...D.catalog, ...s.customExercises],
@@ -468,6 +478,7 @@ export default function App() {
     const timer = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [clockActive]);
+  const restAlerts = useRestAlerts(s.timer, store.user?.id);
   const expiredSound = useRef(false);
   useEffect(() => {
     if (
@@ -477,24 +488,10 @@ export default function App() {
       !expiredSound.current
     ) {
       expiredSound.current = true;
-      if (s.settings.timerSound) {
-        try {
-          const ctx = new AudioContext(),
-            osc = ctx.createOscillator(),
-            gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          gain.gain.value = 0.06;
-          osc.frequency.value = 660;
-          osc.start();
-          osc.stop(ctx.currentTime + 0.25);
-          osc.onended = () => void ctx.close();
-        } catch {
-          /* Browser may require interaction before audio. */
-        }
-      }
+      if (s.settings.timerSound && (!restAlerts.armed || !navigator.onLine))
+        feedbackTone();
     } else if (!s.timer || tick < s.timer.endAt) expiredSound.current = false;
-  }, [tick, s.timer, s.settings.timerSound]);
+  }, [tick, s.timer, s.settings.timerSound, restAlerts.armed]);
   function go(p: Page) {
     setPage(p);
     localStorage.setItem("neoform:page", p);
@@ -677,7 +674,7 @@ export default function App() {
       </>
     );
   }
-  function start(w?: D.Workout, p?: D.Program) {
+  function start(w?: D.Workout, p?: D.Program, prepared?: D.Entry[]) {
     if (s.draft) {
       go("session");
       setNotice(
@@ -706,12 +703,13 @@ export default function App() {
       return;
     }
     const entries =
-      w && p
+      prepared ??
+      (w && p
         ? D.prepareWorkout(w, p, exercises, s.sessions, s.profile?.experience)
         : (w?.exercises ?? []).flatMap((t) => {
             const ex = exercises.find((e) => e.id === t.exerciseId);
             return ex ? [D.createEntry(ex, t)] : [];
-          });
+          }));
     change((s) => ({
       ...s,
       draft: {
@@ -790,6 +788,7 @@ export default function App() {
       content: (
         <FinishSessionFeedback
           draft={draft}
+          history={s.sessions}
           exercises={exercises}
           unit={s.settings.unit}
           finish={async (
@@ -836,6 +835,25 @@ export default function App() {
             ) {
               close();
               go("train");
+              if (s.settings.celebrations !== false) {
+                const before = rewards(
+                    s.sessions,
+                    exercises,
+                    weekMonday(),
+                    s.profile?.days ?? 4,
+                  ),
+                  after = rewards(
+                    [...s.sessions, logged],
+                    exercises,
+                    weekMonday(),
+                    s.profile?.days ?? 4,
+                  );
+                setCelebration({
+                  session: logged,
+                  xp: Math.max(0, after.xp - before.xp),
+                });
+                if (s.settings.celebrationSound) feedbackTone(true);
+              }
             } else
               throw Error(
                 "Workout is not yet saved. Check device storage and try again.",
@@ -1022,6 +1040,28 @@ export default function App() {
               )}
             </div>
           )}
+          {s.timer && !s.timer.paused && tick >= s.timer.endAt && (
+            <div className="rest-finished-banner" role="status">
+              <b>Rest finished</b>
+              <span>Start when you’re ready.</span>
+              <button
+                className="btn"
+                onClick={() => change((d) => ({ ...d, timer: null }))}
+              >
+                Ready
+              </button>
+            </div>
+          )}
+          {celebration && (
+            <WorkoutCelebration
+              session={celebration.session}
+              goal={s.profile?.days ?? 4}
+              xp={celebration.xp}
+              exercises={exercises}
+              history={s.sessions}
+              close={() => setCelebration(null)}
+            />
+          )}
           {notice && (
             <div className="banner" role="status">
               {notice}
@@ -1158,9 +1198,9 @@ export default function App() {
                       program={p}
                       state={s}
                       exercises={exercises}
-                      start={() => {
+                      start={(rows) => {
                         close();
-                        start(w, p);
+                        start(w, p, rows);
                       }}
                     />
                   ),
@@ -1259,6 +1299,9 @@ export default function App() {
                     )
                   }
                   onDone={(setId, entry) => {
+                    unlockFeedbackAudio();
+                    const timerId = D.uid();
+                    claimRestTimer(timerId);
                     const draft = D.toggleSet(s.draft!, setId);
                     const set = draft.exercises
                       .flatMap((e) => e.sets)
@@ -1270,11 +1313,15 @@ export default function App() {
                       draft,
                       timer: set.done
                         ? {
+                            id: timerId,
+                            setId,
                             endAt: Date.now() + rest * 1000,
                             remaining: rest,
                             paused: false,
                           }
-                        : s.timer,
+                        : s.timer?.setId === setId
+                          ? null
+                          : s.timer,
                     }));
                   }}
                 />
@@ -3273,6 +3320,39 @@ function Preferences({
                   }
                 />
                 Automatically move to the next exercise
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={s.settings.celebrations !== false}
+                  onChange={(e) =>
+                    change((d) => ({
+                      ...d,
+                      settings: {
+                        ...d.settings,
+                        celebrations: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                PR and workout celebrations
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={s.settings.celebrationSound === true}
+                  onChange={(e) => {
+                    unlockFeedbackAudio();
+                    change((d) => ({
+                      ...d,
+                      settings: {
+                        ...d.settings,
+                        celebrationSound: e.target.checked,
+                      },
+                    }));
+                  }}
+                />
+                Celebration sounds
               </label>
               <label className="check-line">
                 <input

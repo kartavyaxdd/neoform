@@ -136,6 +136,7 @@ for (const width of [360, 390, 1440])
       .getByLabel("Barbell back squat set 1 RIR", { exact: true })
       .fill("");
     await expect(page.locator(".sync-status")).toHaveText("Synced");
+    expect((await (await readData(page)).json()).data.timer).toBeNull();
     await context.setOffline(true);
     await page.reload();
     await expect(
@@ -147,6 +148,20 @@ for (const width of [360, 390, 1440])
     await capture("logger");
     await context.setOffline(false);
     await expect(page.locator(".sync-status")).toHaveText("Synced");
+    // Undo cancels the alarm for that set. Re-completing another working set
+    // starts a fresh rest timer without completing the unfinished third set.
+    await page
+      .getByRole("button", {
+        name: "Undo Barbell back squat set 2",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Complete Barbell back squat set 2",
+        exact: true,
+      })
+      .click();
     await page
       .getByRole("button", { name: "Rest timer controls", exact: true })
       .click();
@@ -213,6 +228,7 @@ for (const width of [360, 390, 1440])
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toContainText("Review workout");
+    await page.getByText("Review sets", { exact: true }).click();
     await page
       .locator(".review-exercise")
       .filter({ hasText: "Barbell bench press" })

@@ -13,11 +13,18 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const args = process.argv.slice(2);
+const browserMatch = process.env.NEOFORM_QA_BROWSER_MATCH;
+if (browserMatch && !/^[a-z0-9-]+\.spec\.ts$/.test(browserMatch))
+  throw Error("Invalid focused browser spec.");
 if (
-  args.some((a) => !["--api-only", "--browser-only", "--public-only"].includes(a)) ||
+  args.some(
+    (a) => !["--api-only", "--browser-only", "--public-only"].includes(a),
+  ) ||
   args.length > 1
 )
-  throw Error("Expected no arguments, --api-only, --browser-only or --public-only.");
+  throw Error(
+    "Expected no arguments, --api-only, --browser-only or --public-only.",
+  );
 const root = process.cwd(),
   runId = randomUUID(),
   qaRoot = path.resolve(root, ".qa-state");
@@ -135,9 +142,31 @@ try {
   await finish(launch([path.join(root, "scripts/shell-version.mjs")]));
   const db = "neoform-qa-" + runId.slice(0, 8),
     config = path.join(runDir, "wrangler.json");
+  const qaPushKeys = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
+  const qaPublicKey = Buffer.from(
+      await crypto.subtle.exportKey("raw", qaPushKeys.publicKey),
+    ).toString("base64url"),
+    qaPrivateKey = (await crypto.subtle.exportKey("jwk", qaPushKeys.privateKey))
+      .d;
   const configuration = {
     name: db,
-    ...(args.includes("--public-only")?{vars:{PUBLIC_WORKSPACE:"enabled"}}:{}),
+    vars: {
+      ...(args.includes("--public-only")
+        ? { PUBLIC_WORKSPACE: "enabled" }
+        : {}),
+      REST_PUSH_VAPID_PUBLIC_KEY: qaPublicKey,
+      REST_PUSH_VAPID_PRIVATE_KEY: qaPrivateKey,
+    },
+    durable_objects: {
+      bindings: [{ name: "REST_ALERTS", class_name: "RestAlertDevice" }],
+    },
+    migrations: [
+      { tag: "rest-alerts-v1", new_sqlite_classes: ["RestAlertDevice"] },
+    ],
     compatibility_date: "2026-10-01",
     main: path.join(root, "worker/index.ts"),
     alias: { "./ai-local": path.join(root, "worker/ai-disabled.ts") },
@@ -240,24 +269,35 @@ try {
     await access(process.env.NEOFORM_QA_BROWSER);
     env.NEOFORM_QA_BROWSER = process.env.NEOFORM_QA_BROWSER;
   }
-  env.NEOFORM_QA_MODE=args.includes("--public-only")?"public":"private";
+  env.NEOFORM_QA_MODE = args.includes("--public-only") ? "public" : "private";
   if (!args.includes("--browser-only"))
     await finish(
       launch([
         path.join(root, "node_modules/vitest/vitest.mjs"),
         "run",
         "--maxWorkers=1",
-        ...(args.includes("--public-only")?["tests/public-storage-api.test.ts"]:[
-        "tests/api.test.ts",
-        "tests/training-api.test.ts",
-        "tests/release-api-identity.test.ts",
-        "tests/v2-api.test.ts",
-        "tests/storage-api.test.ts",]),
+        ...(args.includes("--public-only")
+          ? [
+              "tests/public-storage-api.test.ts",
+              "tests/rest-alerts-api.test.ts",
+            ]
+          : [
+              "tests/api.test.ts",
+              "tests/rest-alerts-api.test.ts",
+              "tests/training-api.test.ts",
+              "tests/release-api-identity.test.ts",
+              "tests/v2-api.test.ts",
+              "tests/storage-api.test.ts",
+            ]),
       ]),
     );
   if (!args.includes("--api-only"))
     await finish(
-      launch([path.join(root, "node_modules/@playwright/test/cli.js"), "test"]),
+      launch([
+        path.join(root, "node_modules/@playwright/test/cli.js"),
+        "test",
+        ...(browserMatch ? [browserMatch] : []),
+      ]),
     );
 } finally {
   await stopChildren();
@@ -265,9 +305,13 @@ try {
   // taskkill can return before Windows finishes closing the child's sockets.
   // Wait for closure without ever terminating a process discovered by port.
   const closeDeadline = Date.now() + 5000;
-  while (ownedPort && await listening(ownedPort) && Date.now() < closeDeadline)
+  while (
+    ownedPort &&
+    (await listening(ownedPort)) &&
+    Date.now() < closeDeadline
+  )
     await delay(100);
-  if (ownedPort && await listening(ownedPort))
+  if (ownedPort && (await listening(ownedPort)))
     throw Error(
       "Owned QA listener still responds after cleanup; release gate failed.",
     );

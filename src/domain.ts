@@ -529,6 +529,7 @@ export const sessionSchema = z
     date,
     startedAt: z.number().finite().min(0),
     duration: z.number().finite().min(0).max(86400),
+    sessionFeeling: z.enum(["good", "okay", "rough"]).optional(),
     notes: note,
     feedback: feedbackSchema,
     readiness: readinessSchema.optional(),
@@ -645,6 +646,8 @@ const rawState = z
         unit: z.enum(["kg", "lb"]),
         theme: z.enum(["dark", "light"]),
         timerSound: z.boolean(),
+        celebrations: z.boolean().optional(),
+        celebrationSound: z.boolean().optional(),
         autoAdvance: z.boolean().optional(),
         reminders: z.boolean(),
       })
@@ -673,6 +676,8 @@ const rawState = z
     timer: z
       .object({
         endAt: z.number().min(0),
+        id: id.optional(),
+        setId: id.optional(),
         remaining: z.number().min(0).max(3600),
         paused: z.boolean(),
       })

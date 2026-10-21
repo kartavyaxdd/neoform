@@ -1,3 +1,4 @@
+import { RewardProgress } from "./RewardProgress";
 import { useMemo } from "react";
 import { ChevronRight, CalendarDays, TrendingUp } from "lucide-react";
 import * as D from "./domain";
@@ -47,6 +48,7 @@ export function WorkoutDashboard({
           <CalendarDays size={21} />
         </button>
       </header>
+      <RewardProgress state={state} exercises={exercises} />
       <section className="activity-card">
         <div className="section-heading">
           <h2>This week</h2>

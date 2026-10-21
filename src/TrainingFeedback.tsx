@@ -1,3 +1,4 @@
+import { sessionRecords, rirColour } from "./rewards";
 import { useState } from "react";
 import * as D from "./domain";
 import { Button, Field, Num } from "./ui";
@@ -260,11 +261,13 @@ export function MuscleFeedbackFields({
 
 export function FinishSessionFeedback({
   draft: initial,
+  history = [],
   unit = "kg",
   exercises,
   finish,
 }: {
   draft: D.Session;
+  history?: D.Session[];
   unit?: "kg" | "lb";
   exercises: D.Exercise[];
   finish: (
@@ -341,107 +344,193 @@ export function FinishSessionFeedback({
           working / drop sets
         </span>
       </div>
-      <div className="workout-review-list">
-        {draft.exercises
-          .filter((e) => e.sets.some((t) => t.done))
-          .map((e) => {
-            const x = exercises.find((x) => x.id === e.exerciseId)!;
-            return (
-              <details key={e.id} className="review-exercise">
-                <summary>
-                  {x.name}
-                  <small>
-                    {e.sets
-                      .filter((t) => t.done)
-                      .map(
-                        (t) =>
-                          `${D.displayLoad(t.weight, e.convention || x.convention, unit)} × ${t.reps}`,
-                      )
-                      .join(" / ")}
-                  </small>
-                </summary>
-                {e.sets
-                  .filter((t) => t.done)
-                  .map((t, i) => {
-                    const patch = (value: Partial<D.SetLog>) =>
-                      setDraft((old) => ({
-                        ...old,
-                        exercises: old.exercises.map((row) =>
-                          row.id === e.id
-                            ? {
-                                ...row,
-                                sets: row.sets.map((set) =>
-                                  set.id === t.id ? { ...set, ...value } : set,
-                                ),
-                              }
-                            : row,
-                        ),
-                      }));
-                    return (
-                      <div className="review-set" key={t.id}>
-                        <span>{i + 1}</span>
-                        <label className="field">
-                          <span>Weight</span>
-                          <Num
-                            label={`${x.name} review set ${i + 1} weight`}
-                            value={D.displayLoad(
-                              t.weight,
-                              e.convention || x.convention,
-                              unit,
-                            )}
-                            step={0.01}
-                            onChange={(weight) =>
-                              patch({
-                                weight: D.canonicalLoad(
-                                  weight,
-                                  e.convention || x.convention,
-                                  unit,
-                                ),
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Reps</span>
-                          <Num
-                            label={`${x.name} review set ${i + 1} reps`}
-                            value={t.reps}
-                            min={1}
-                            max={100}
-                            onChange={(reps) => patch({ reps })}
-                          />
-                        </label>
-                        <label className="field">
-                          <span>RIR</span>
-                          <input
-                            aria-label={`${x.name} review set ${i + 1} RIR`}
-                            type="number"
-                            min="0"
-                            max="10"
-                            step="0.5"
-                            placeholder="—"
-                            value={t.effortReported ? t.rir : ""}
-                            onChange={(ev) => {
-                              const n = ev.target.valueAsNumber;
-                              if (ev.target.value === "")
-                                patch({ effortReported: false });
-                              else if (Number.isFinite(n) && n >= 0 && n <= 10)
-                                patch({ rir: n, effortReported: true });
-                            }}
-                          />
-                        </label>
-                      </div>
-                    );
-                  })}
-              </details>
-            );
-          })}
+      <p className="caption">
+        {Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000))} min
+      </p>
+      {sessionRecords(draft, history, exercises)
+        .filter((r) => r.kind !== "baseline")
+        .slice(0, 3)
+        .map((r) => (
+          <div className="pr-banner" key={r.setId + r.kind}>
+            {r.name}: {r.kind === "reps" ? "Rep" : "Load"} PR:{" "}
+            {r.kind === "reps"
+              ? r.before
+              : D.displayLoad(r.before, r.convention, unit)}{" "}
+            to{" "}
+            {r.kind === "reps"
+              ? r.after
+              : D.displayLoad(r.after, r.convention, unit)}
+            {r.kind === "reps"
+              ? ` at ${D.displayLoad(r.weight, r.convention, unit)} ${r.convention === "machine-label" ? "label" : unit}`
+              : ` ${r.convention === "machine-label" ? "label" : unit} at ${r.reps} reps`}
+          </div>
+        ))}
+      <div className="quick-feedback">
+        <fieldset>
+          <legend>
+            How did it feel? <small>Optional</small>
+          </legend>
+          <div className="choice-chips">
+            {(["good", "okay", "rough"] as const).map((feeling) => (
+              <button
+                type="button"
+                key={feeling}
+                className={draft.sessionFeeling === feeling ? "selected" : ""}
+                aria-pressed={draft.sessionFeeling === feeling}
+                onClick={() =>
+                  setDraft((d) => ({
+                    ...d,
+                    sessionFeeling:
+                      d.sessionFeeling === feeling ? undefined : feeling,
+                  }))
+                }
+              >
+                {feeling[0].toUpperCase() + feeling.slice(1)}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>
+            Did anything hurt? <small>Optional</small>
+          </legend>
+          <div className="choice-chips">
+            {([false, true] as const).map((pain) => (
+              <button
+                type="button"
+                key={String(pain)}
+                className={feedback.pain === pain ? "selected" : ""}
+                aria-pressed={feedback.pain === pain}
+                onClick={() =>
+                  setFeedback((f) => ({
+                    ...f,
+                    pain: f.pain === pain ? null : pain,
+                    reported: true,
+                  }))
+                }
+              >
+                {pain ? "Yes" : "No"}
+              </button>
+            ))}
+          </div>
+        </fieldset>
       </div>
+      <details>
+        <summary>Review sets</summary>
+        <div className="workout-review-list">
+          {draft.exercises
+            .filter((e) => e.sets.some((t) => t.done))
+            .map((e) => {
+              const x = exercises.find((x) => x.id === e.exerciseId)!;
+              return (
+                <details key={e.id} className="review-exercise">
+                  <summary>
+                    {x.name}
+                    <small>
+                      {e.sets
+                        .filter((t) => t.done)
+                        .map(
+                          (t) =>
+                            `${D.displayLoad(t.weight, e.convention || x.convention, unit)} × ${t.reps}`,
+                        )
+                        .join(" / ")}
+                    </small>
+                  </summary>
+                  {e.sets
+                    .filter((t) => t.done)
+                    .map((t, i) => {
+                      const patch = (value: Partial<D.SetLog>) =>
+                        setDraft((old) => ({
+                          ...old,
+                          exercises: old.exercises.map((row) =>
+                            row.id === e.id
+                              ? {
+                                  ...row,
+                                  sets: row.sets.map((set) =>
+                                    set.id === t.id
+                                      ? { ...set, ...value }
+                                      : set,
+                                  ),
+                                }
+                              : row,
+                          ),
+                        }));
+                      return (
+                        <div className="review-set" key={t.id}>
+                          <span>{i + 1}</span>
+                          <label className="field">
+                            <span>Weight</span>
+                            <Num
+                              label={`${x.name} review set ${i + 1} weight`}
+                              value={D.displayLoad(
+                                t.weight,
+                                e.convention || x.convention,
+                                unit,
+                              )}
+                              step={0.01}
+                              onChange={(weight) =>
+                                patch({
+                                  weight: D.canonicalLoad(
+                                    weight,
+                                    e.convention || x.convention,
+                                    unit,
+                                  ),
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Reps</span>
+                            <Num
+                              label={`${x.name} review set ${i + 1} reps`}
+                              value={t.reps}
+                              min={1}
+                              max={100}
+                              onChange={(reps) => patch({ reps })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>RIR</span>
+                            <input
+                              aria-label={`${x.name} review set ${i + 1} RIR`}
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.5"
+                              style={{
+                                color: rirColour(
+                                  t.rir,
+                                  t.effortReported === true,
+                                ),
+                              }}
+                              placeholder="—"
+                              value={t.effortReported ? t.rir : ""}
+                              onChange={(ev) => {
+                                const n = ev.target.valueAsNumber;
+                                if (ev.target.value === "")
+                                  patch({ effortReported: false });
+                                else if (
+                                  Number.isFinite(n) &&
+                                  n >= 0 &&
+                                  n <= 10
+                                )
+                                  patch({ rir: n, effortReported: true });
+                              }}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
+                </details>
+              );
+            })}
+        </div>
+      </details>
       <p className="caption">
         Only completed sets are saved. Unreported effort stays unknown.
       </p>
       <details className="optional-feedback">
-        <summary>Optional feedback</summary>
+        <summary>Coaching details</summary>
         <SessionFeedbackFields value={feedback} onChange={setFeedback} />
         <details>
           <summary>Execution, rest and changed sets</summary>
@@ -449,6 +538,27 @@ export function FinishSessionFeedback({
             Confirm what happened for each movement. Unanswered fields stay
             unknown and do not justify escalation.
           </p>
+          <Button
+            onClick={() =>
+              setContexts((old) =>
+                Object.fromEntries(
+                  draft.exercises
+                    .filter((e) => e.sets.some((t) => t.done))
+                    .map((e) => [
+                      e.id,
+                      {
+                        ...(old[e.id] ?? {}),
+                        execution: "consistent",
+                        rest: "usual",
+                        recordedAt: Date.now(),
+                      },
+                    ]),
+                ),
+              )
+            }
+          >
+            Confirm consistent execution and usual rest for all
+          </Button>
           {draft.exercises.map((e) => {
             const name =
               exercises.find((x) => x.id === e.exerciseId)?.name ?? "Exercise";
@@ -537,7 +647,7 @@ export function FinishSessionFeedback({
       </details>
       {error && <p role="alert">{error}</p>}
       <Button
-        variant="primary wide"
+        variant="primary wide save-workout-sticky"
         disabled={busy}
         onClick={async () => {
           setBusy(true);

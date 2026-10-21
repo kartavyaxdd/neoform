@@ -1117,3 +1117,328 @@
     transform: scaleX(1);
   }
 }
+/* Gym interaction layer: quiet surfaces, tactile actions and earned highlights. */
+.compact-logger .log-exercise {
+  box-shadow: none;
+  border: 0;
+  background: var(--surface);
+}
+.compact-exercise-title {
+  gap: 8px;
+}
+.compact-exercise-title h2 {
+  flex: 1;
+  min-width: 0;
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+.queue-open {
+  flex-shrink: 0;
+  font-size: 24px;
+}
+.swipe-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  touch-action: pan-y;
+}
+.swipe-content {
+  position: relative;
+  background: var(--surface);
+  transition: transform 140ms ease;
+}
+.swipe-delete {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 90px;
+  background: #b92b3e;
+  color: white;
+  border: 0;
+  min-height: 44px;
+  font-weight: 700;
+  opacity: 0;
+}
+.swipe-delete:focus-visible {
+  opacity: 1;
+  z-index: 2;
+}
+.swipe-shell:has(.swipe-content[style*="translateX"]) > .swipe-delete {
+  opacity: 1;
+}
+.swipe-shell:hover > .swipe-content {
+  pointer-events: auto;
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 76px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.queue-row.dragging {
+  background: color-mix(in srgb, var(--mint) 10%, var(--surface));
+  outline: 2px solid var(--mint);
+}
+.queue-handle {
+  touch-action: none;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.queue-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  padding: 8px;
+  min-height: 48px;
+}
+.queue-name b,
+.queue-name small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.queue-name small {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.queue-move {
+  display: flex;
+  flex-shrink: 0;
+}
+.queue-move button {
+  width: 36px;
+  min-width: 36px;
+  min-height: 44px;
+}
+.undo-removal,
+.rest-finished-banner {
+  position: fixed;
+  z-index: 80;
+  bottom: calc(82px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 480px);
+  padding: 12px 16px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 8px 36px #0002;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.rest-finished-banner {
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 60;
+}
+.rest-finished-banner span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pr-banner {
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: light-dark(#fff6d7, #342b12);
+  color: light-dark(#755200, #ffe19a);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 10px 0;
+}
+.pr-banner.pr-fresh {
+  animation: pr-arrive 420ms ease both;
+}
+.reward-progress {
+  padding: 20px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-bottom: 16px;
+}
+.reward-progress > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.reward-level {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: light-dark(#82600b, #edc861);
+}
+.reward-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: #d4a62d;
+  border: 0;
+  border-radius: 8px;
+  margin: 14px 0 8px;
+}
+.reward-progress small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.reward-progress details {
+  font-size: 12px;
+  margin-top: 10px;
+  color: var(--muted);
+}
+.milestone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.milestone-chips span {
+  font-size: 11px;
+  padding: 5px 9px;
+  background: #d8b34122;
+  color: var(--ink);
+  border-radius: 20px;
+}
+.workout-celebration {
+  position: fixed;
+  z-index: 90;
+  top: calc(68px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 440px);
+  padding: 24px;
+  border: 1px solid #d4a62d66;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 16px 60px #0003;
+}
+.pr-banner.pr-fresh {
+  animation: pr-arrive 420ms ease both;
+}
+.workout-celebration > button {
+  float: right;
+}
+.workout-celebration h2 {
+  margin: 12px 0;
+  font-size: 24px;
+}
+.workout-celebration > strong {
+  font-size: 32px;
+  color: light-dark(#82600b, #edc861);
+}
+.workout-celebration small {
+  color: var(--muted);
+}
+.quick-feedback {
+  display: grid;
+  gap: 16px;
+  margin: 18px 0;
+}
+.quick-feedback fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.quick-feedback legend {
+  font-weight: 650;
+  font-size: 14px;
+  margin-bottom: 9px;
+}
+.quick-feedback legend small {
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.choice-chips {
+  display: flex;
+  gap: 8px;
+}
+.choice-chips button {
+  flex: 1;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+.choice-chips button.selected {
+  border-color: var(--mint);
+  background: color-mix(in srgb, var(--mint) 12%, var(--surface));
+}
+.review-sets,
+.optional-feedback {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+.save-workout-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 18px;
+  box-shadow: 0 -8px 16px var(--surface);
+}
+.complete-set.checked svg {
+  animation: set-earned 240ms ease both;
+}
+.row-effort {
+  font-weight: 750;
+}
+@keyframes set-earned {
+  0% {
+    transform: scale(0.6);
+  }
+  65% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes pr-arrive {
+  from {
+    opacity: 0;
+    filter: brightness(1.2);
+  }
+  to {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-banner,
+  .workout-celebration,
+  .complete-set.checked svg {
+    animation: none;
+  }
+  .swipe-content {
+    transition: none;
+  }
+}
+
+.effort-scale {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  min-height: 44px;
+  text-decoration: underline dotted;
+}
+
+.reward-progress progress::-webkit-progress-bar {
+  background: var(--line);
+  border-radius: 8px;
+}
+.reward-progress progress::-webkit-progress-value {
+  background: #d4a62d;
+  border-radius: 8px;
+}
+.reward-progress progress::-moz-progress-bar {
+  background: #d4a62d;
+  border-radius: 8px;
+}

@@ -122,7 +122,7 @@ for (const width of [360, 390])
     await page
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
-    await page.getByText("Optional feedback", { exact: true }).click();
+    await page.getByText("Coaching details", { exact: true }).click();
     await page
       .getByText("Execution, rest and changed sets", { exact: true })
       .click();

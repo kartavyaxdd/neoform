@@ -34,6 +34,99 @@ self.addEventListener("activate", (event) =>
     })(),
   ),
 );
+function restDeviceDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("neoform-rest-device", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("kv");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let payload;
+      try {
+        payload = event.data?.json();
+      } catch {
+        return;
+      }
+      if (
+        payload?.type !== "neoform-rest" ||
+        typeof payload.timerId !== "string" ||
+        !Number.isSafeInteger(payload.version) ||
+        typeof payload.expiresAt !== "number" ||
+        Date.now() > payload.expiresAt
+      )
+        return;
+      const database = await restDeviceDatabase();
+      let display = false;
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = database.transaction("kv", "readwrite"),
+            store = tx.objectStore("kv"),
+            read = store.get("active");
+          read.onsuccess = () => {
+            const device = read.result;
+            if (
+              !device?.enabled ||
+              !device?.allowed ||
+              device.timerId !== payload.timerId ||
+              device.version !== payload.version
+            )
+              return;
+            const seen = store.get("last-shown");
+            seen.onsuccess = () => {
+              const key = payload.timerId + ":" + payload.version;
+              if (seen.result !== key) {
+                store.put(key, "last-shown");
+                display = true;
+              }
+            };
+          };
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } finally {
+        database.close();
+      }
+      if (!display) return;
+      await self.registration.showNotification("Rest finished", {
+        body: "Ready when you are. Open NEOFORM to continue.",
+        tag: "neoform-rest-" + payload.timerId,
+        renotify: false,
+        icon: "/icon-192.png",
+        data: { url: "/", timerId: payload.timerId },
+      });
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      windows.forEach((client) =>
+        client.postMessage({
+          type: "neoform-rest-finished",
+          timerId: payload.timerId,
+        }),
+      );
+    })(),
+  );
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
+      const client = windows.find(
+        (w) => new URL(w.url).origin === self.location.origin,
+      );
+      if (client) return client.focus();
+      return self.clients.openWindow("/");
+    })(),
+  );
+});
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (

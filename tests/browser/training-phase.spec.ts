@@ -68,7 +68,7 @@ for (const width of [360, 390])
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     dialog = page.getByRole("dialog");
-    await dialog.getByText("Optional feedback", { exact: true }).click();
+    await dialog.getByText("Coaching details", { exact: true }).click();
     await expect(
       dialog.getByLabel("Systemic fatigue", { exact: true }),
     ).toHaveValue("unknown");

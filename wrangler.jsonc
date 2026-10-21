@@ -16,5 +16,23 @@
       "migrations_dir": "migrations"
     }
   ],
-  "observability": { "enabled": false }
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REST_ALERTS",
+        "class_name": "RestAlertDevice"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "rest-alerts-v1",
+      "new_sqlite_classes": [
+        "RestAlertDevice"
+      ]
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
 }
