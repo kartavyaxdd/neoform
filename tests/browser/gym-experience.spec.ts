@@ -92,6 +92,14 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("tab", { name: "Barbell bench press", exact: true })
       .click();
+    const headingBox = await page
+        .getByRole("heading", { name: "Barbell bench press", exact: true })
+        .boundingBox(),
+      queueBox = await page
+        .getByRole("button", { name: "Exercise queue", exact: true })
+        .boundingBox();
+    expect(queueBox!.x).toBeGreaterThan(headingBox!.x);
+    expect(queueBox!.y).toBeLessThan(headingBox!.y + headingBox!.height);
     const num = page.locator(".set-row .previous-set").first(),
       box = await num.boundingBox();
     await page.mouse.move(box!.x + box!.width - 2, box!.y + box!.height / 2);
@@ -268,6 +276,7 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
     await context.setOffline(true);
     await page.reload();
     await expect(

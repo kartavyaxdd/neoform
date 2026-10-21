@@ -1124,7 +1124,13 @@
   background: var(--surface);
 }
 .compact-exercise-title {
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 4px 8px;
+}
+.compact-exercise-title > small {
+  grid-column: 1 / -1;
 }
 .compact-exercise-title h2 {
   flex: 1;
@@ -1133,6 +1139,8 @@
   letter-spacing: -0.5px;
 }
 .queue-open {
+  grid-column: 2;
+  grid-row: 1;
   flex-shrink: 0;
   font-size: 24px;
 }
