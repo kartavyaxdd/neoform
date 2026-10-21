@@ -1,4 +1,4 @@
-import { LiveRecordBadge } from "./RewardProgress";
+import { LiveRecordBadge, recordAlreadyCelebrated } from "./RewardProgress";
 import { unlockFeedbackAudio, feedbackTone } from "./feedbackAudio";
 import { SwipeRow, ExerciseQueue, UndoRemoval } from "./WorkoutInteractions";
 import {
@@ -507,6 +507,7 @@ export function SessionLogger({
                             !set.done &&
                             data.settings.celebrations !== false &&
                             !celebrated.current.has(e.id) &&
+                            !recordAlreadyCelebrated(s.id, e.id) &&
                             sessionRecords(toggled, previous, exercises).some(
                               (r) =>
                                 r.entryId === e.id && r.kind !== "baseline",

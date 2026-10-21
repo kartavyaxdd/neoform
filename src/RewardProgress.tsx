@@ -3,6 +3,15 @@ import * as D from "./domain";
 import { rewards, sessionRecords } from "./rewards";
 import { weekMonday } from "./workoutPresentation";
 import type { PersonalRecord } from "./rewards";
+const celebrationKey = (sessionId: string, entryId: string) =>
+  `neoform:pr-seen:${sessionId}:${entryId}`;
+export function recordAlreadyCelebrated(sessionId: string, entryId: string) {
+  try {
+    return sessionStorage.getItem(celebrationKey(sessionId, entryId)) === "1";
+  } catch {
+    return false;
+  }
+}
 export function LiveRecordBadge({
   sessionId,
   entryId,
@@ -25,7 +34,7 @@ export function LiveRecordBadge({
     [fresh, setFresh] = useState(false);
   useEffect(() => {
     if (!r || r.kind === "baseline") return;
-    const key = `neoform:pr-seen:${sessionId}:${entryId}`;
+    const key = celebrationKey(sessionId, entryId);
     try {
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, "1");

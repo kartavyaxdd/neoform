@@ -9,6 +9,18 @@ for (const width of [360, 390, 1440])
   }) => {
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, "vibrate", {
+        configurable: true,
+        value: () => {
+          sessionStorage.setItem(
+            "qa:pr-haptics",
+            String(Number(sessionStorage.getItem("qa:pr-haptics") ?? 0) + 1),
+          );
+          return true;
+        },
+      }),
+    );
     if (process.env.NEOFORM_QA_MODE === "public") await page.goto("/");
     else await fixture(page);
     const remote = await (await readData(page)).json(),
@@ -282,6 +294,15 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("tab", { name: "Barbell bench press", exact: true }),
     ).toBeVisible();
+    await page
+      .getByRole("button", {
+        name: "Complete Barbell bench press set 2",
+        exact: true,
+      })
+      .click();
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("qa:pr-haptics")),
+    ).toBe("1");
     await page
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
