@@ -12,7 +12,7 @@ test("sign out purges the signed-out account from both device databases", async 
 }) => {
   await fixture(page);
   const user = await (await page.request.get("/api/me")).json();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByText("Account & access", { exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
@@ -60,7 +60,7 @@ test("large backup restores through the logger, survives offline reload and expo
   });
   const blob = await exportHistoryBackup(state);
   expect(blob.size).toBeGreaterThan(D.MAX_BACKUP);
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByText("Your data, portable.", { exact: true }).click();
   await page.getByLabel("Import JSON backup", { exact: true }).setInputFiles({
     name: "synthetic-history.jsonl",

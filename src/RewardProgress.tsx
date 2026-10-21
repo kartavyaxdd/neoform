@@ -116,6 +116,7 @@ export function WorkoutCelebration({
   history,
   close,
   goal = 4,
+  recap,
 }: {
   session: D.Session;
   xp: number;
@@ -123,6 +124,7 @@ export function WorkoutCelebration({
   history: D.Session[];
   close: () => void;
   goal?: number;
+  recap?: () => void;
 }) {
   const dismiss = useRef(close);
   dismiss.current = close;
@@ -157,7 +159,7 @@ export function WorkoutCelebration({
         ×
       </button>
       <span className="reward-level">WORKOUT SAVED</span>
-      <h2>Training logged. Progress earned.</h2>
+      <h2>Workout complete</h2>
       <strong>{xp ? `+${shown} XP` : "Session saved"}</strong>
       <p>
         Level {progress.level} · {progress.week} / {progress.goal} training days
@@ -169,6 +171,11 @@ export function WorkoutCelebration({
           : "Your consistency counts."}
       </p>
       <small>Saved on this device · cloud status is shown above</small>
+      {recap && (
+        <button className="btn wide" onClick={recap}>
+          View recap & share
+        </button>
+      )}
     </div>
   );
 }

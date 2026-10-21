@@ -133,7 +133,7 @@ test("same-account two offline tabs retain both edits after both reload", async 
       }),
     );
   }
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByLabel("Load units", { exact: true }).selectOption("lb");
   await second
     .getByRole("button", { name: "Toggle theme", exact: true })
@@ -141,7 +141,7 @@ test("same-account two offline tabs retain both edits after both reload", async 
   await page.reload();
   await second.reload();
   for (const tab of [page, second]) {
-    await tab.getByRole("button", { name: "Settings", exact: true }).click();
+    await tab.getByRole("button", { name: "More", exact: true }).click();
     await expect(tab.getByLabel("Load units", { exact: true })).toHaveValue(
       "lb",
     );

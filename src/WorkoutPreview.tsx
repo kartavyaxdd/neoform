@@ -1,4 +1,5 @@
 import * as D from "./domain";
+import { TrainingBodyMap } from "./TrainingBodyMap";
 import { Button } from "./ui";
 import { useState } from "react";
 import { ExerciseQueue, UndoRemoval } from "./WorkoutInteractions";
@@ -62,6 +63,26 @@ export function WorkoutPreview({
         <span>{rows.length} exercises</span>
         <span>About {minutes} min</span>
         <span>{D.programPhase(program)}</span>
+      </div>
+      <div className="preview-body">
+        <TrainingBodyMap
+          counts={Object.fromEntries(
+            D.muscles.map((m) => [
+              m,
+              rows
+                .filter(
+                  (e) =>
+                    exercises.find((x) => x.id === e.exerciseId)?.muscle === m,
+                )
+                .reduce(
+                  (n, e) =>
+                    n + e.sets.filter((t) => t.kind === "working").length,
+                  0,
+                ),
+            ]),
+          )}
+          countLabel="planned working sets"
+        />
       </div>
       <div className="muscle-chips">
         {[

@@ -1,3 +1,4 @@
+import { WorkoutRecap } from "./WorkoutRecapScreen";
 import { useRestAlerts, claimRestTimer } from "./restAlerts";
 import { feedbackTone, unlockFeedbackAudio } from "./feedbackAudio";
 import { WorkoutCelebration } from "./RewardProgress";
@@ -43,6 +44,9 @@ import {
 } from "react";
 import {
   Activity,
+  LayoutGrid,
+  Rocket,
+  CircleEllipsis,
   ArrowDown,
   ArrowRight,
   ArrowUp,
@@ -93,11 +97,11 @@ type Page =
   | "insights"
   | "settings";
 const nav: [Page | "create", string, typeof Activity][] = [
-  ["overview", "Dashboard", Activity],
+  ["overview", "Dashboard", LayoutGrid],
   ["train", "Workout", Dumbbell],
   ["create", "Create", Plus],
-  ["insights", "Levels", TrendingUp],
-  ["settings", "More", MoreHorizontal],
+  ["insights", "Levels", Rocket],
+  ["settings", "More", CircleEllipsis],
 ];
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 const duration = (s: number) =>
@@ -424,9 +428,11 @@ export default function App() {
     [page, setPage] = useState<Page>(
       () => (localStorage.getItem("neoform:page") as Page) || "train",
     ),
-    [modal, setModal] = useState<{ title: string; content: ReactNode } | null>(
-      null,
-    ),
+    [modal, setModal] = useState<{
+      title: string;
+      content: ReactNode;
+      footer?: ReactNode;
+    } | null>(null),
     [notice, setNotice] = useState(""),
     [tick, setTick] = useState(Date.now());
   const [celebration, setCelebration] = useState<{
@@ -489,9 +495,15 @@ export default function App() {
     ) {
       expiredSound.current = true;
       if (s.settings.timerSound && (!restAlerts.armed || !navigator.onLine))
-        feedbackTone();
+        feedbackTone(false, s.settings.restChimeVolume);
     } else if (!s.timer || tick < s.timer.endAt) expiredSound.current = false;
-  }, [tick, s.timer, s.settings.timerSound, restAlerts.armed]);
+  }, [
+    tick,
+    s.timer,
+    s.settings.timerSound,
+    s.settings.restChimeVolume,
+    restAlerts.armed,
+  ]);
   function go(p: Page) {
     setPage(p);
     localStorage.setItem("neoform:page", p);
@@ -722,7 +734,12 @@ export default function App() {
   }
   function sessionDetail(sess: D.Session) {
     setModal({
-      title: "Session detail",
+      title: "Workout recap",
+      footer: (
+        <Button variant="primary wide" onClick={close}>
+          Done
+        </Button>
+      ),
       content: (
         <HistoryDetail
           session={sess}
@@ -1055,6 +1072,10 @@ export default function App() {
           {celebration && (
             <WorkoutCelebration
               session={celebration.session}
+              recap={() => {
+                setCelebration(null);
+                sessionDetail(celebration.session);
+              }}
               goal={s.profile?.days ?? 4}
               xp={celebration.xp}
               exercises={exercises}
@@ -1631,7 +1652,7 @@ export default function App() {
         </div>
       )}
       {modal && (
-        <Modal title={modal.title} close={close}>
+        <Modal title={modal.title} close={close} footer={modal.footer}>
           {modal.content}
         </Modal>
       )}
@@ -2393,89 +2414,93 @@ function HistoryDetail({
     .filter((t) => t.done && t.kind !== "warmup");
   return (
     <>
-      <p className="eyebrow">
-        {niceDate(s.date)} · {Math.round(s.duration / 60)} MINUTES
-      </p>
-      <h2>{s.name}</h2>
-      <div className="summary-grid">
-        <Stat
-          label="RAW WORK BOUTS"
-          value={String(working.length)}
-          detail="Completed only"
-        />
-        <Stat
-          label="HARD SETS"
-          value={String(
-            Object.values(D.directVolume([s], exercises)).reduce(
-              (a, b) => a + b,
-              0,
-            ),
-          )}
-          detail="Straight/down sets, ≤4 RIR; advanced bouts separate"
-        />
-      </div>
-      {s.exercises.map((e) => (
-        <div className="history-exercise" key={e.id}>
-          <h3>{exercises.find((x) => x.id === e.exerciseId)?.name}</h3>
-          <p className="caption">
-            {e.equipment ||
-              exercises.find((x) => x.id === e.exerciseId)?.equipment}{" "}
-            ·{" "}
-            {
-              D.conventionLabels[
-                e.convention ||
-                  exercises.find((x) => x.id === e.exerciseId)!.convention
-              ]
-            }
-          </p>
-          <div className="table-wrap">
-            <table>
-              <caption className="sr-only">Logged sets</caption>
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>
-                    {(e.convention ||
-                      exercises.find((x) => x.id === e.exerciseId)!
-                        .convention) === "machine-label"
-                      ? "Machine label"
-                      : `Load (${unit})`}
-                  </th>
-                  <th>Reps</th>
-                  <th>RIR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {e.sets.map((t) => (
-                  <tr key={t.id}>
-                    <td>{t.kind}</td>
-                    <td>
-                      {fmt(
-                        D.displayLoad(
-                          t.weight,
-                          e.convention ||
-                            exercises.find((x) => x.id === e.exerciseId)!
-                              .convention,
-                          unit,
-                        ),
-                      )}
-                    </td>
-                    <td>{t.reps}</td>
-                    <td>{t.effortReported === false ? "Unknown" : t.rir}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {e.notes && <p>{e.notes}</p>}
+      <WorkoutRecap session={s} exercises={exercises} unit={unit} />
+      <details className="recap-details">
+        <summary>Workout details</summary>
+        <p className="eyebrow">
+          {niceDate(s.date)} · {Math.round(s.duration / 60)} MINUTES
+        </p>
+        <h2>{s.name}</h2>
+        <div className="summary-grid">
+          <Stat
+            label="RAW WORK BOUTS"
+            value={String(working.length)}
+            detail="Completed only"
+          />
+          <Stat
+            label="HARD SETS"
+            value={String(
+              Object.values(D.directVolume([s], exercises)).reduce(
+                (a, b) => a + b,
+                0,
+              ),
+            )}
+            detail="Straight/down sets, ≤4 RIR; advanced bouts separate"
+          />
         </div>
-      ))}
-      <p>{s.notes || "No session notes."}</p>
-      <FeedbackSummary session={s} />
-      <p className="caption">
-        Records and trends are recalculated from all logged sessions in
-        Insights. Warmups are excluded.
-      </p>
+        {s.exercises.map((e) => (
+          <div className="history-exercise" key={e.id}>
+            <h3>{exercises.find((x) => x.id === e.exerciseId)?.name}</h3>
+            <p className="caption">
+              {e.equipment ||
+                exercises.find((x) => x.id === e.exerciseId)?.equipment}{" "}
+              ·{" "}
+              {
+                D.conventionLabels[
+                  e.convention ||
+                    exercises.find((x) => x.id === e.exerciseId)!.convention
+                ]
+              }
+            </p>
+            <div className="table-wrap">
+              <table>
+                <caption className="sr-only">Logged sets</caption>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>
+                      {(e.convention ||
+                        exercises.find((x) => x.id === e.exerciseId)!
+                          .convention) === "machine-label"
+                        ? "Machine label"
+                        : `Load (${unit})`}
+                    </th>
+                    <th>Reps</th>
+                    <th>RIR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {e.sets.map((t) => (
+                    <tr key={t.id}>
+                      <td>{t.kind}</td>
+                      <td>
+                        {fmt(
+                          D.displayLoad(
+                            t.weight,
+                            e.convention ||
+                              exercises.find((x) => x.id === e.exerciseId)!
+                                .convention,
+                            unit,
+                          ),
+                        )}
+                      </td>
+                      <td>{t.reps}</td>
+                      <td>{t.effortReported === false ? "Unknown" : t.rir}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {e.notes && <p>{e.notes}</p>}
+          </div>
+        ))}
+        <p>{s.notes || "No session notes."}</p>
+        <FeedbackSummary session={s} />
+        <p className="caption">
+          Records and trends are recalculated from all logged sessions in
+          Insights. Warmups are excluded.
+        </p>
+      </details>
       <div className="actions wrap">
         <Button variant="primary" onClick={edit}>
           Edit session
@@ -3225,6 +3250,16 @@ function Preferences({
         title="More"
         text="Your training, settings and data."
       />
+      <div className="more-profile">
+        <span className="avatar">{s.profile?.name?.slice(0, 1) || "N"}</span>
+        <span>
+          <b>{s.profile?.name}</b>
+          <small>
+            {s.profile?.experience} · {s.profile?.days} training days / week
+          </small>
+        </span>
+      </div>
+      <h2 className="settings-section-title">Feature Settings</h2>
       <div className="more-links grouped">
         <button className="group-row" onClick={onLibrary}>
           <Layers size={20} />
@@ -3381,10 +3416,11 @@ function Preferences({
                 Show an in-app training reminder
               </label>
               <p className="caption">
-                No background push notifications. Timer sounds depend on browser
-                audio permission and an open app. Standardized loads are stored
-                in kg. Unfamiliar machine/band labels stay raw and are never
-                converted.
+                Enable background rest alerts from the rest timer controls. The
+                in-app chime mixes with music where supported; iPhone Silent
+                mode may mute it. Lock-screen sound is controlled by iOS.
+                Standardized loads are stored in kg. Unfamiliar machine/band
+                labels stay raw and are never converted.
               </p>
             </div>
           </details>

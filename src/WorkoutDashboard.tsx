@@ -1,8 +1,12 @@
 import { RewardProgress } from "./RewardProgress";
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { ChevronRight, CalendarDays, TrendingUp } from "lucide-react";
 import * as D from "./domain";
-import { weekMonday, weekSessions, localDate } from "./workoutPresentation";
+import {
+  weekMonday,
+  weekSessions,
+  weeklyPrimarySets,
+} from "./workoutPresentation";
 export function WorkoutDashboard({
   state,
   exercises,
@@ -36,10 +40,70 @@ export function WorkoutDashboard({
     () => D.records(state.sessions, exercises).slice(0, 4),
     [state.sessions, exercises],
   );
+  const completed = week
+    .flatMap((s) => s.exercises)
+    .filter((e) =>
+      e.sets.some(
+        (t) =>
+          t.done &&
+          t.kind === "working" &&
+          (!t.bout || ["straight", "down"].includes(t.bout)),
+      ),
+    );
+  const primary = weeklyPrimarySets(state.sessions, exercises, monday);
+  const trainingDays = new Set(
+    week
+      .filter((s) =>
+        s.exercises.some((e) =>
+          e.sets.some((t) => t.done && t.kind === "working"),
+        ),
+      )
+      .map((s) => s.date),
+  ).size;
+  const totals = [
+    {
+      label: "Muscles",
+      value: Object.values(primary).filter((n) => n > 0).length,
+      color: "#548bff",
+    },
+    {
+      label: "Sets",
+      value: Object.values(primary).reduce((a, b) => a + b, 0),
+      color: "#ff855c",
+    },
+    {
+      label: "Exercises",
+      value: new Set(completed.map((e) => e.exerciseId)).size,
+      color: "#00b8c8",
+    },
+  ];
+  const lastSeven = [...state.sessions]
+    .sort((a, b) => a.startedAt - b.startedAt)
+    .slice(-7)
+    .map(
+      (s) =>
+        s.exercises
+          .flatMap((e) => e.sets)
+          .filter(
+            (t) =>
+              t.done &&
+              t.kind === "working" &&
+              (!t.bout || ["straight", "down"].includes(t.bout)),
+          ).length,
+    );
   return (
     <div className="simple-dashboard">
       <header className="screen-heading">
-        <h1>Dashboard</h1>
+        <div>
+          <p className="dashboard-date">
+            {new Date().toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </p>
+          <h1>Dashboard</h1>
+        </div>
         <button
           className="icon-button"
           aria-label="Workout history"
@@ -48,50 +112,63 @@ export function WorkoutDashboard({
           <CalendarDays size={21} />
         </button>
       </header>
-      <RewardProgress state={state} exercises={exercises} />
       <section className="activity-card">
         <div className="section-heading">
-          <h2>This week</h2>
-          <span>
-            {week.length} / {state.profile?.days ?? 0} workouts
-          </span>
+          <h2>Weekly Workouts</h2>
         </div>
-        <div className="activity-week">
-          {Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(monday + "T12:00:00");
-            d.setDate(d.getDate() + i);
-            const date = localDate(d),
-              done = week.some((s) => s.date === date);
-            return (
-              <div key={date} className={done ? "trained" : ""}>
-                <small>
-                  {d.toLocaleDateString(undefined, { weekday: "narrow" })}
-                </small>
-                <span>{done ? "✓" : d.getDate()}</span>
+        <div className="weekly-rings" aria-label="Completed training this week">
+          {totals.map((t) => (
+            <div
+              className="weekly-ring-stat"
+              key={t.label}
+              style={{ "--ring-color": t.color } as CSSProperties}
+            >
+              <div className="weekly-ring">
+                <b>{t.value}</b>
+                <small>completed</small>
               </div>
-            );
-          })}
+              <span>{t.label}</span>
+            </div>
+          ))}
         </div>
-        <div className="activity-totals">
-          <span>
-            <b>{Math.round(week.reduce((n, s) => n + s.duration, 0) / 60)}</b>{" "}
-            minutes
-          </span>
-          <span>
-            <b>
-              {week.reduce(
-                (n, s) =>
-                  n +
-                  s.exercises
-                    .flatMap((e) => e.sets)
-                    .filter((t) => t.done && t.kind === "working").length,
-                0,
-              )}
-            </b>{" "}
-            working sets
-          </span>
+        <div className="weekly-scope">All workouts · This week</div>
+      </section>
+      <section className="dashboard-analytics">
+        <h2>Insights &amp; Analytics</h2>
+        <div className="analytics-tiles">
+          <button className="analytics-tile" onClick={history}>
+            <b>Workouts</b>
+            <small>Last {lastSeven.length || 0} workouts</small>
+            <div className="mini-bars" aria-hidden="true">
+              {lastSeven.map((n, i) => (
+                <i
+                  key={i}
+                  style={{
+                    height: `${Math.max(3, (n / Math.max(1, ...lastSeven)) * 44)}px`,
+                  }}
+                />
+              ))}
+            </div>
+            <span>
+              {lastSeven.at(-1) ?? 0} sets <ChevronRight size={16} />
+            </span>
+          </button>
+          <button className="analytics-tile" onClick={review}>
+            <b>Training days</b>
+            <small>This week</small>
+            <div className="day-markers" aria-label="Weekly training days">
+              {Array.from({ length: state.profile?.days ?? 4 }, (_, i) => (
+                <i key={i} className={i < trainingDays ? "done" : ""} />
+              ))}
+            </div>
+            <span>
+              {trainingDays} / {state.profile?.days ?? 4} days{" "}
+              <ChevronRight size={16} />
+            </span>
+          </button>
         </div>
       </section>
+      <RewardProgress state={state} exercises={exercises} />
       <button className="group-row weekly-review-link grouped" onClick={review}>
         <CalendarDays size={19} />
         <span>

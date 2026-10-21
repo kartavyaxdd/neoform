@@ -37,6 +37,7 @@ export function WorkoutHome({
     [templates, setTemplates] = useState(false);
   const monday = new Date();
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const exercises = [...D.catalog, ...s.customExercises];
   const active = s.programs.find((p) => !p.archived);
   function program(p: D.Program, open = false) {
     const next = p.workouts.indexOf(D.nextWorkout(p, s.sessions));
@@ -69,9 +70,29 @@ export function WorkoutHome({
             >
               <span>
                 <b>{w.name}</b>
-                <small>
-                  {w.exercises.length} exercises · {w.day}
+                <small className="program-exercise-names">
+                  {w.exercises
+                    .map(
+                      (t) => exercises.find((x) => x.id === t.exerciseId)?.name,
+                    )
+                    .filter(Boolean)
+                    .join(", ")}
                 </small>
+                <span className="program-muscle-tags">
+                  {[
+                    ...new Set(
+                      w.exercises
+                        .map(
+                          (t) =>
+                            exercises.find((x) => x.id === t.exerciseId)
+                              ?.muscle,
+                        )
+                        .filter(Boolean),
+                    ),
+                  ].map((m) => (
+                    <small key={m}>{m}</small>
+                  ))}
+                </span>
               </span>
               {open && i === next && <span className="next-tag">Next</span>}
               <ArrowRight size={18} />
@@ -261,7 +282,9 @@ export function WorkoutHome({
         <section>
           <div className="group-heading">
             <h2>Active Program</h2>
-            {active && <small>Week {active.currentWeek}</small>}
+            {active && (
+              <small className="current-week">Week {active.currentWeek}</small>
+            )}
           </div>
           {active ? (
             program(active, true)

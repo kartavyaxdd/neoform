@@ -1450,3 +1450,14 @@
   background: #d4a62d;
   border-radius: 8px;
 }
+.rest-chime-controls {
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.rest-chime-controls input[type="range"] {
+  min-height: 44px;
+  padding: 0;
+  accent-color: var(--mint);
+  width: 100%;
+}

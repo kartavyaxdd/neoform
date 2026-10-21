@@ -159,7 +159,7 @@ for (const width of [360, 390])
     await page
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByText("Your data, portable.", { exact: true }).click();
     const download = page.waitForEvent("download");
     await page

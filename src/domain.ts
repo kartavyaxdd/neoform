@@ -646,6 +646,7 @@ const rawState = z
         unit: z.enum(["kg", "lb"]),
         theme: z.enum(["dark", "light"]),
         timerSound: z.boolean(),
+        restChimeVolume: z.number().finite().min(0.1).max(1).optional(),
         celebrations: z.boolean().optional(),
         celebrationSound: z.boolean().optional(),
         autoAdvance: z.boolean().optional(),

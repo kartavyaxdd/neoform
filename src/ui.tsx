@@ -100,10 +100,12 @@ export function Modal({
   title,
   children,
   close,
+  footer,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  footer?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -113,7 +115,7 @@ export function Modal({
     dialog?.showModal();
     return () => {
       dialog?.close();
-      if (trigger?.isConnected) trigger.focus();
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
   }, []);
   useEffect(() => {
@@ -141,6 +143,7 @@ export function Modal({
         </button>
       </div>
       <div className="modal-body">{children}</div>
+      {footer && <div className="modal-foot">{footer}</div>}
     </dialog>
   );
 }

@@ -57,6 +57,12 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Start workout", exact: true })
       .click();
+    // Exercise navigation can fade, but must never move the editable grid or
+    // the completion hit targets while a user is tapping them.
+    await expect(page.locator(".log-exercise")).toHaveCSS(
+      "animation-name",
+      "neo-fade-in",
+    );
     await expect(
       page.getByLabel("Barbell back squat set 1 RIR", { exact: true }),
     ).toHaveValue("");
@@ -132,6 +138,12 @@ for (const width of [360, 390, 1440])
         exact: true,
       })
       .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Complete Barbell back squat set 3",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
     await page
       .getByLabel("Barbell back squat set 1 RIR", { exact: true })
       .fill("");

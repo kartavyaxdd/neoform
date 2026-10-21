@@ -14,11 +14,13 @@ export default defineConfig({
           "ui-redesign.spec.ts",
           "adaptive-workout.spec.ts",
           "gym-experience.spec.ts",
+          "workout-recap.spec.ts",
         ]
       : [
           "ui-redesign.spec.ts",
           "adaptive-workout.spec.ts",
           "gym-experience.spec.ts",
+          "workout-recap.spec.ts",
           "coaching.spec.ts",
           "readiness.spec.ts",
           "reliability.spec.ts",
