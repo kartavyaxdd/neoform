@@ -1,6 +1,11 @@
 import { it, expect } from "vitest";
 import * as D from "../src/domain";
-import { sessionRecords, rewards, rirColour } from "../src/rewards";
+import {
+  sessionRecords,
+  rewards,
+  rirColour,
+  recentPersonalRecords,
+} from "../src/rewards";
 import { exportHistoryBackup, importHistoryBackup } from "../src/historyBackup";
 function workout(day: string, reps = 10, weight = 50) {
   const e = D.createEntry(D.catalog[0]);
@@ -13,6 +18,19 @@ function workout(day: string, reps = 10, weight = 50) {
   s.startedAt = Date.parse(day + "T10:00:00Z");
   return s;
 }
+it("dashboard records reuse comparable observed improvements and deduplicate imports", () => {
+  const a = workout("2026-10-01"),
+    b = workout("2026-10-02", 11),
+    c = workout("2026-10-03", 12);
+  expect(recentPersonalRecords([a], D.catalog)).toEqual([]);
+  const records = recentPersonalRecords([c, a, b, c], D.catalog);
+  expect(records.map((r) => [r.record.before, r.record.after])).toEqual([
+    [11, 12],
+    [10, 11],
+  ]);
+  c.exercises[0].sets[0].done = false;
+  expect(recentPersonalRecords([a, b, c], D.catalog)).toHaveLength(1);
+});
 it("requires a comparable baseline and detects raw same-load rep and same-rep load records", () => {
   const a = workout("2026-10-01"),
     b = workout("2026-10-02", 11);

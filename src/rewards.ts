@@ -110,6 +110,29 @@ export function sessionRecords(
     assess(s, index, exercises, true);
   return assess(session, index, exercises);
 }
+// Single chronological pass using the logger's observed-record comparator.
+export function recentPersonalRecords(
+  sessions: D.Session[],
+  exercises: D.Exercise[],
+) {
+  const index: Index = new Map();
+  return ordered(sessions)
+    .flatMap((s) => {
+      const best = new Map<string, PersonalRecord>();
+      for (const r of assess(s, index, exercises, true)) {
+        if (r.kind === "baseline") continue;
+        const key = r.entryId + ":" + r.kind,
+          old = best.get(key);
+        if (!old || r.after > old.after) best.set(key, r);
+      }
+      return [...best.values()].map((record) => ({
+        record,
+        sessionId: s.id,
+        date: s.date,
+      }));
+    })
+    .reverse();
+}
 export function rewards(
   sessions: D.Session[],
   exercises: D.Exercise[],

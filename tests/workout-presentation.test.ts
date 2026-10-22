@@ -5,6 +5,8 @@ import {
   resumeExerciseId,
   nextExerciseId,
   weeklyPrimarySets,
+  dashboardActivity,
+  dashboardWeights,
 } from "../src/workoutPresentation";
 it("previous rows exclude warmups, unfinished bouts and different execution contexts", () => {
   const e = D.createEntry(D.catalog[0], D.target(D.catalog[0].id));
@@ -55,4 +57,88 @@ it("weekly body-map counts primary completed working sets without inventing hard
   expect(
     weeklyPrimarySets([s], D.catalog, "2026-10-26")[D.catalog[0].muscle],
   ).toBe(0);
+});
+
+it("dashboard rings use current phase prescriptions, explicit program scope and unique exercise identities", () => {
+  const state = D.emptyState(),
+    p = D.starterProgram("balanced");
+  p.workouts = [p.workouts[0]];
+  p.workouts[0].exercises = [D.target("bench"), D.target("bench")];
+  state.programs = [p];
+  const e = D.createEntry(D.catalog.find((x) => x.id === "bench")!);
+  e.sets[0].done = true;
+  e.sets[1].done = true;
+  e.sets[1].kind = "warmup";
+  const s = D.startSession("Other program", [e]);
+  s.date = "2026-10-19";
+  state.sessions = [s];
+  const before = JSON.stringify(state);
+  const all = dashboardActivity(state, D.catalog, "2026-10-19", "all");
+  expect(all.completed).toEqual({ muscles: 1, sets: 1, exercises: 1 });
+  expect(all.planned).toEqual({ muscles: 1, sets: 6, exercises: 1 });
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "program").completed.sets,
+  ).toBe(0);
+  expect(JSON.stringify(state)).toBe(before);
+  p.currentWeek = p.deloadWeek;
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "all").planned?.sets,
+  ).toBe(4);
+  p.phase = "active-rest";
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "all").planned?.sets,
+  ).toBe(0);
+  state.programs = [];
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "all").planned,
+  ).toBeNull();
+});
+
+it("weight charts retain only real dated observations, latest per day, without extending or inventing a trend", () => {
+  const state = D.emptyState(),
+    at = new Date("2026-10-22T12:00:00").getTime();
+  const make = (kg: number, time: number) => ({
+    ...D.startSession("QA", []),
+    bodyweight: { kg, at: time },
+  });
+  state.sessions = [
+    make(61, at - 86400000),
+    make(60, at),
+    make(62, at - 3600000),
+    make(80, at - 8 * 86400000),
+    make(70, at + 86400000),
+  ];
+  state.coaching = {
+    enabled: false,
+    minutes: 60,
+    diet: "unknown",
+    earlyTrials: false,
+    priorities: [],
+    bodyweight: { kg: 60, at },
+  };
+  expect(dashboardWeights(state, "2026-10-22").map((x) => x.kg)).toEqual([
+    61, 60,
+  ]);
+  state.sessions = [];
+  state.coaching = undefined;
+  expect(dashboardWeights(state, "2026-10-22")).toEqual([]);
+});
+
+it("dashboard targets keep unsupported advanced sequences out of ordinary set equivalents", () => {
+  const state = D.emptyState(),
+    p = D.starterProgram("balanced");
+  p.workouts = [p.workouts[0]];
+  p.workouts[0].exercises = [
+    { ...D.target("bench"), technique: "myoreps" },
+    { ...D.target("row"), technique: "drop-set" },
+    { ...D.target("squat"), technique: "giant-set" },
+  ];
+  state.programs = [p];
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "all").planned,
+  ).toEqual({ muscles: 0, sets: 0, exercises: 0 });
+  p.workouts[0].exercises.push({ ...D.target("bench"), technique: "down-set" });
+  expect(
+    dashboardActivity(state, D.catalog, "2026-10-19", "all").planned?.sets,
+  ).toBe(3);
 });

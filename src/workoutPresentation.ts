@@ -72,3 +72,88 @@ export function weeklyPrimarySets(
     }
   return counts;
 }
+
+export type DashboardScope = "all" | "program";
+// Descriptive activity only. Planned totals are one cycle of the active
+// program's current phase, not a new dose recommendation or a growth score.
+export function dashboardActivity(
+  state: D.State,
+  exercises: D.Exercise[],
+  monday: string,
+  scope: DashboardScope,
+) {
+  const program = state.programs.find((p) => !p.archived);
+  const index = new Map(exercises.map((x) => [x.id, x]));
+  const sessions = weekSessions(state.sessions, monday).filter(
+    (s) => scope === "all" || (program && s.programId === program.id),
+  );
+  const muscles = new Set<string>(),
+    ids = new Set<string>();
+  let sets = 0;
+  for (const s of sessions)
+    for (const e of s.exercises) {
+      const n = e.sets.filter(
+        (t) =>
+          t.done &&
+          t.kind === "working" &&
+          (!t.bout || ["straight", "down"].includes(t.bout)),
+      ).length;
+      if (n) {
+        sets += n;
+        ids.add(e.exerciseId);
+        const x = index.get(e.exerciseId);
+        if (x) muscles.add(x.muscle);
+      }
+    }
+  const plannedMuscles = new Set<string>(),
+    plannedIds = new Set<string>();
+  let plannedSets = 0;
+  if (program && D.programPhase(program) !== "active-rest")
+    for (const w of program.workouts)
+      for (const target of w.exercises) {
+        const x = index.get(target.exerciseId);
+        if (
+          !x ||
+          target.kind !== "working" ||
+          ["myoreps", "drop-set", "giant-set"].includes(target.technique ?? "")
+        )
+          continue;
+        plannedSets += D.phaseTarget(
+          target,
+          program,
+          state.profile?.experience,
+        ).sets;
+        plannedMuscles.add(x.muscle);
+        plannedIds.add(x.id);
+      }
+  return {
+    completed: { muscles: muscles.size, sets, exercises: ids.size },
+    planned: program
+      ? {
+          muscles: plannedMuscles.size,
+          sets: plannedSets,
+          exercises: plannedIds.size,
+        }
+      : null,
+    program,
+  };
+}
+
+export function dashboardWeights(state: D.State, today = D.today()) {
+  const start = new Date(today + "T00:00:00");
+  start.setDate(start.getDate() - 6);
+  const end = new Date(today + "T00:00:00");
+  end.setDate(end.getDate() + 1);
+  const byDay = new Map<string, { kg: number; at: number; date: string }>();
+  const reports = [
+    state.coaching?.bodyweight,
+    ...state.sessions.map((s) => s.bodyweight),
+  ];
+  for (const r of reports) {
+    if (!r || r.at < start.getTime() || r.at >= end.getTime()) continue;
+    const date = localDate(new Date(r.at)),
+      old = byDay.get(date);
+    if (!old || old.at < r.at) byDay.set(date, { ...r, date });
+  }
+  return [...byDay.values()].sort((a, b) => a.at - b.at);
+}

@@ -1172,6 +1172,12 @@ export default function App() {
               history={() => go("history")}
               detail={sessionDetail}
               progress={() => go("insights")}
+              weight={() =>
+                setModal({
+                  title: "Bodyweight & coaching preferences",
+                  content: <CoachSettingsPanel />,
+                })
+              }
               review={() =>
                 setModal({ title: "Weekly review", content: <WeeklyReview /> })
               }
