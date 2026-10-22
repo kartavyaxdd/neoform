@@ -7,7 +7,75 @@ import {
   weeklyPrimarySets,
   dashboardActivity,
   dashboardWeights,
+  programPrescriptionRows,
+  plannedMuscleCards,
+  programSchedule,
 } from "../src/workoutPresentation";
+it("program schedule inserts rest days only for unambiguous saved weekday assignments", () => {
+  const p = D.starterProgram("balanced");
+  p.workouts = p.workouts.slice(0, 2);
+  expect(
+    programSchedule(p).map((d) => (d.kind === "rest" ? d.day : d.workout.name)),
+  ).toEqual([
+    "Full body A",
+    "Tuesday",
+    "Full body B",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ]);
+  p.workouts[1].day = "Monday";
+  expect(programSchedule(p).map((d) => d.kind)).toEqual(["workout", "workout"]);
+  p.workouts[1].day = "";
+  expect(programSchedule(p).map((d) => d.kind)).toEqual(["workout", "workout"]);
+});
+
+it("program week cards match prepared row prescriptions without changing the routine", () => {
+  const p = D.starterProgram("balanced"),
+    w = p.workouts[0];
+  const t = w.exercises[0];
+  t.nextRows = Array.from({ length: t.sets }, (_, ordinal) => ({
+    ordinal,
+    weight: 50,
+    reps: 10 + ordinal,
+    rir: 2,
+  }));
+  const before = JSON.stringify(p);
+  for (const currentWeek of [1, p.deloadWeek]) {
+    const selected = { ...p, currentWeek };
+    const expected = D.prepareWorkout(
+      w,
+      selected,
+      D.catalog,
+      [],
+      "Intermediate",
+    )[0].sets;
+    const actual = programPrescriptionRows(t, p, currentWeek, "Intermediate");
+    expect(actual.map((r) => [r.min, r.max, r.reps, r.rir])).toEqual(
+      expected.map((s) => [
+        s.prescription!.min,
+        s.prescription!.max,
+        s.prescription!.reps,
+        s.prescription!.rir,
+      ]),
+    );
+  }
+  expect(JSON.stringify(p)).toBe(before);
+  expect(programPrescriptionRows(t, { ...p, phase: "active-rest" }, 1)).toEqual(
+    [],
+  );
+});
+
+it("muscle cards separate primary planned sets from advanced sequence rows and warmups", () => {
+  const a = D.createEntry(D.catalog.find((x) => x.id === "bench")!),
+    b = D.createEntry(D.catalog.find((x) => x.id === "incline-db")!);
+  a.sets[0].kind = "warmup";
+  b.technique = "myoreps";
+  expect(plannedMuscleCards([a, b], D.catalog)).toEqual([
+    { muscle: "Chest", exercises: 2, sets: 2, advancedRows: 3 },
+  ]);
+});
 it("previous rows exclude warmups, unfinished bouts and different execution contexts", () => {
   const e = D.createEntry(D.catalog[0], D.target(D.catalog[0].id));
   e.sets[0].done = true;

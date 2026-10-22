@@ -13,7 +13,11 @@ async function edit(page: Page) {
   if ((await options.getAttribute("open")) === null)
     await options.getByText("Program options", { exact: true }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
-  return page.getByRole("dialog");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Program settings", exact: true })
+    .click();
+  return page.getByRole("dialog", { name: "Program settings", exact: true });
 }
 for (const width of [360, 390])
   test(`phase dose → optional muscle finish → Worker reload at ${width}px`, async ({
@@ -35,7 +39,11 @@ for (const width of [360, 390])
     await expect(
       dialog.getByText("Actual next-workout targets", { exact: true }),
     ).toBeVisible();
-    await dialog.getByRole("button", { name: "Save mesocycle" }).click();
+    await dialog.getByRole("button", { name: "Done", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Save program" })
+      .click();
     await synced(page);
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
@@ -160,12 +168,20 @@ for (const width of [360, 390])
     await dialog
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
     expect((await data(page)).programs[0].phase).toBe("deload");
     dialog = await edit(page);
     await dialog
       .getByLabel("Training phase", { exact: true })
       .selectOption("active-rest");
-    await dialog.getByRole("button", { name: "Save mesocycle" }).click();
+    await dialog.getByRole("button", { name: "Done", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Save program" })
+      .click();
     await synced(page);
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })

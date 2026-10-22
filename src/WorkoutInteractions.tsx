@@ -35,7 +35,7 @@ export function SwipeRow({
         if (
           disabled ||
           (e.target as HTMLElement).closest(
-            "select,a,textarea,[data-drag-handle],.swipe-delete",
+            "select,a,textarea,[data-drag-handle],[data-horizontal-scroll],.swipe-delete",
           )
         )
           return;
@@ -114,13 +114,15 @@ export function ExerciseQueue({
   onRemove,
   onSelect,
   onSaveOrder,
+  renderDetail,
 }: {
   session: D.Session;
   exercises: D.Exercise[];
   onChange: (s: D.Session) => void;
-  onRemove: (id: string) => void;
+  onRemove?: (id: string) => void;
   onSelect?: (id: string) => void;
   onSaveOrder?: () => void;
+  renderDetail?: (group: D.Entry[]) => ReactNode;
 }) {
   const groups = exerciseGroups(session),
     drag = useRef<{
@@ -140,9 +142,11 @@ export function ExerciseQueue({
   );
   return (
     <div className="exercise-queue">
-      <p className="caption">
-        Hold a handle to drag. Swipe left to remove. Today’s order changes
-        immediately.
+      <p className={renderDetail ? "sr-only" : "caption"}>
+        Hold a handle to drag.{" "}
+        {onRemove
+          ? "Swipe left to remove. Today’s order changes immediately."
+          : "Use Move up or down as a keyboard alternative. Save the program to apply this order."}
       </p>
       {groups.map((group, i) => {
         const id = group[0].id,
@@ -159,106 +163,113 @@ export function ExerciseQueue({
           total = group
             .flatMap((e) => e.sets)
             .filter((t) => t.kind !== "warmup").length;
+        const NameTag = onSelect ? "button" : "span";
         return (
           <SwipeRow
             key={id}
             label={`Remove ${name}`}
-            remove={() => onRemove(id)}
+            remove={() => onRemove?.(id)}
+            disabled={!onRemove}
           >
-            <div
-              className={"queue-row " + (dragging === id ? "dragging" : "")}
-              data-queue-id={id}
-            >
-              <button
-                className="queue-handle icon-button"
-                data-drag-handle
-                aria-label={`Drag ${name}`}
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  const g = {
-                    id,
-                    x: e.clientX,
-                    y: e.clientY,
-                    ready: false,
-                    timer: setTimeout(() => {
-                      g.ready = true;
-                      setDragging(id);
-                    }, 250),
-                  };
-                  drag.current = g;
-                }}
-                onPointerMove={(e) => {
-                  const g = drag.current;
-                  if (!g) return;
-                  if (!g.ready) {
-                    if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > 8) {
-                      clearTimeout(g.timer);
-                      drag.current = null;
-                    }
-                    return;
-                  }
-                  const target = document
-                    .elementsFromPoint(e.clientX, e.clientY)
-                    .map((x) => x.closest<HTMLElement>("[data-queue-id]"))
-                    .find(Boolean);
-                  if (target) g.target = target.dataset.queueId;
-                  const sheet = e.currentTarget.closest(".modal");
-                  if (sheet) {
-                    const box = sheet.getBoundingClientRect();
-                    if (e.clientY > box.bottom - 60) sheet.scrollBy(0, 12);
-                    if (e.clientY < box.top + 60) sheet.scrollBy(0, -12);
-                  }
-                }}
-                onPointerUp={() => {
-                  const g = drag.current;
-                  if (g) {
-                    clearTimeout(g.timer);
-                    if (g.ready && g.target)
-                      onChange(moveGroup(session, g.id, g.target));
-                  }
-                  drag.current = null;
-                  setDragging(null);
-                }}
-                onPointerCancel={() => {
-                  if (drag.current) clearTimeout(drag.current.timer);
-                  drag.current = null;
-                  setDragging(null);
-                }}
+            <div data-queue-id={id}>
+              <div
+                className={"queue-row " + (dragging === id ? "dragging" : "")}
               >
-                <GripVertical size={19} />
-              </button>
-              <button className="queue-name" onClick={() => onSelect?.(id)}>
-                <b>{name}</b>
-                <small>
-                  {done} / {total} completed
-                  {group[0].target
-                    ? ` · ${group[0].target.min}–${group[0].target.max} reps · ${group[0].target.rir} RIR`
-                    : ""}
-                  {group.length > 1 ? " · linked group" : ""}
-                </small>
-              </button>
-              <div className="queue-move">
                 <button
-                  className="icon-button"
-                  aria-label={`Move ${name} up`}
-                  disabled={i === 0}
-                  onClick={() =>
-                    onChange(moveGroup(session, id, groups[i - 1][0].id))
-                  }
+                  className="queue-handle icon-button"
+                  data-drag-handle
+                  aria-label={`Drag ${name}`}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    const g = {
+                      id,
+                      x: e.clientX,
+                      y: e.clientY,
+                      ready: false,
+                      timer: setTimeout(() => {
+                        g.ready = true;
+                        setDragging(id);
+                      }, 250),
+                    };
+                    drag.current = g;
+                  }}
+                  onPointerMove={(e) => {
+                    const g = drag.current;
+                    if (!g) return;
+                    if (!g.ready) {
+                      if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > 8) {
+                        clearTimeout(g.timer);
+                        drag.current = null;
+                      }
+                      return;
+                    }
+                    const target = document
+                      .elementsFromPoint(e.clientX, e.clientY)
+                      .map((x) => x.closest<HTMLElement>("[data-queue-id]"))
+                      .find(Boolean);
+                    if (target) g.target = target.dataset.queueId;
+                    const sheet = e.currentTarget.closest(".modal");
+                    if (sheet) {
+                      const box = sheet.getBoundingClientRect();
+                      if (e.clientY > box.bottom - 60) sheet.scrollBy(0, 12);
+                      if (e.clientY < box.top + 60) sheet.scrollBy(0, -12);
+                    }
+                  }}
+                  onPointerUp={() => {
+                    const g = drag.current;
+                    if (g) {
+                      clearTimeout(g.timer);
+                      if (g.ready && g.target)
+                        onChange(moveGroup(session, g.id, g.target));
+                    }
+                    drag.current = null;
+                    setDragging(null);
+                  }}
+                  onPointerCancel={() => {
+                    if (drag.current) clearTimeout(drag.current.timer);
+                    drag.current = null;
+                    setDragging(null);
+                  }}
                 >
-                  ↑
+                  <GripVertical size={19} />
                 </button>
-                <button
-                  className="icon-button"
-                  aria-label={`Move ${name} down`}
-                  disabled={i === groups.length - 1}
-                  onClick={() =>
-                    onChange(moveGroup(session, id, groups[i + 1][0].id))
-                  }
+                <NameTag
+                  className="queue-name"
+                  onClick={onSelect ? () => onSelect(id) : undefined}
                 >
-                  ↓
-                </button>
+                  <b>{name}</b>
+                  <small>
+                    {done} / {total} completed
+                    {group[0].target
+                      ? ` · ${group[0].target.min}–${group[0].target.max} reps · ${group[0].target.rir} RIR`
+                      : ""}
+                    {group.length > 1 ? " · linked group" : ""}
+                  </small>
+                </NameTag>
+                <div className="queue-move">
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${name} up`}
+                    disabled={i === 0}
+                    onClick={() =>
+                      onChange(moveGroup(session, id, groups[i - 1][0].id))
+                    }
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${name} down`}
+                    disabled={i === groups.length - 1}
+                    onClick={() =>
+                      onChange(moveGroup(session, id, groups[i + 1][0].id))
+                    }
+                  >
+                    ↓
+                  </button>
+                </div>
               </div>
+              {renderDetail?.(group)}
             </div>
           </SwipeRow>
         );

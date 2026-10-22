@@ -74,6 +74,95 @@ export function weeklyPrimarySets(
 }
 
 export type DashboardScope = "all" | "program";
+export function programSchedule(
+  program: D.Program,
+): ({ kind: "workout"; workout: D.Workout } | { kind: "rest"; day: string })[] {
+  const days = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+  const assigned = program.workouts.map((w) =>
+    days.findIndex((day) => day.toLowerCase() === w.day.trim().toLowerCase()),
+  );
+  if (assigned.some((i) => i < 0) || new Set(assigned).size !== assigned.length)
+    return program.workouts.map((workout) => ({ kind: "workout", workout }));
+  return days.map((day, i) => {
+    const index = assigned.indexOf(i);
+    return index < 0
+      ? { kind: "rest", day }
+      : { kind: "workout", workout: program.workouts[index] };
+  });
+}
+// Presentation of the existing phase recipe; these cards do not assign a new
+// program week or predict future loads. Reviewed row reps follow prepareWorkout.
+export function programPrescriptionRows(
+  target: D.Target,
+  program: D.Program,
+  week: number,
+  experience?: D.Experience,
+) {
+  const p = { ...program, currentWeek: week },
+    phase = D.programPhase(p);
+  if (phase === "active-rest") return [];
+  const t = D.phaseTarget(target, p, experience);
+  return Array.from({ length: t.sets }, (_, ordinal) => ({
+    ordinal,
+    min: t.min,
+    max: t.max,
+    rir: t.rir,
+    kind: t.kind,
+    reps:
+      phase === "accumulation"
+        ? (target.nextRows?.[ordinal]?.reps ?? t.min)
+        : t.min,
+    assignedReps:
+      phase === "accumulation" && target.nextRows?.[ordinal] !== undefined,
+  }));
+}
+
+export function plannedMuscleCards(
+  entries: D.Entry[],
+  exercises: D.Exercise[],
+) {
+  const index = new Map(exercises.map((x) => [x.id, x]));
+  const cards = new Map<
+    D.Exercise["muscle"],
+    {
+      muscle: D.Exercise["muscle"];
+      exercises: number;
+      sets: number;
+      advancedRows: number;
+    }
+  >();
+  for (const e of entries) {
+    const x = index.get(e.exerciseId),
+      rows = e.sets.filter((t) => t.kind !== "warmup");
+    if (!x || !rows.length) continue;
+    const card = cards.get(x.muscle) ?? {
+      muscle: x.muscle,
+      exercises: 0,
+      sets: 0,
+      advancedRows: 0,
+    };
+    card.exercises++;
+    for (const row of rows) {
+      if (
+        ["myoreps", "drop-set", "giant-set"].includes(e.technique ?? "") ||
+        row.kind === "drop" ||
+        (row.bout && !["straight", "down"].includes(row.bout))
+      )
+        card.advancedRows++;
+      else card.sets++;
+    }
+    cards.set(x.muscle, card);
+  }
+  return [...cards.values()];
+}
 // Descriptive activity only. Planned totals are one cycle of the active
 // program's current phase, not a new dose recommendation or a growth score.
 export function dashboardActivity(

@@ -1,6 +1,9 @@
 import * as D from "./domain";
-import { TrainingBodyMap } from "./TrainingBodyMap";
-import { Button } from "./ui";
+import { TargetMuscleCards, EntryPrescription } from "./ProgramPresentation";
+import { ExercisePicker } from "./ExercisePicker";
+import { VideoInfo } from "./VideoInfo";
+import { Plus } from "lucide-react";
+import { Button, Modal } from "./ui";
 import { useState } from "react";
 import { ExerciseQueue, UndoRemoval } from "./WorkoutInteractions";
 import {
@@ -38,6 +41,8 @@ export function WorkoutPreview({
     ),
   );
   const rows = session.exercises;
+  const [picker, setPicker] = useState(false),
+    [info, setInfo] = useState<D.Exercise | null>(null);
   const [undo, setUndo] = useState<{ item: Removal; until: number } | null>(
       null,
     ),
@@ -55,52 +60,58 @@ export function WorkoutPreview({
   );
   return (
     <div className="workout-preview">
-      <p className="caption">
-        {program.name} &middot; Week {program.currentWeek}
+      <span className="sr-only">Workout preview</span>
+      <TargetMuscleCards entries={rows} exercises={exercises} />
+      <div className="program-exercise-count">
+        <div>
+          <h3>{rows.length} Exercises</h3>
+          <p className="caption">Estimated workout time is {minutes} min</p>
+        </div>
+        <button
+          className="icon-button preview-add"
+          disabled={
+            rows.length >= 60 || D.programPhase(program) === "active-rest"
+          }
+          aria-label="Add Exercises"
+          onClick={() => setPicker(true)}
+        >
+          <Plus size={23} />
+        </button>
+      </div>
+      <p className="preview-phase caption">
+        {program.name} · Week {program.currentWeek} · {D.programPhase(program)}
       </p>
-      <h3>{workout.name}</h3>
-      <div className="preview-stats">
-        <span>{rows.length} exercises</span>
-        <span>About {minutes} min</span>
-        <span>{D.programPhase(program)}</span>
-      </div>
-      <div className="preview-body">
-        <TrainingBodyMap
-          counts={Object.fromEntries(
-            D.muscles.map((m) => [
-              m,
-              rows
-                .filter(
-                  (e) =>
-                    exercises.find((x) => x.id === e.exerciseId)?.muscle === m,
-                )
-                .reduce(
-                  (n, e) =>
-                    n + e.sets.filter((t) => t.kind === "working").length,
-                  0,
-                ),
-            ]),
-          )}
-          countLabel="planned working sets"
-        />
-      </div>
-      <div className="muscle-chips">
-        {[
-          ...new Set(
-            rows.map(
-              (e) => exercises.find((x) => x.id === e.exerciseId)?.muscle,
-            ),
-          ),
-        ]
-          .filter(Boolean)
-          .map((m) => (
-            <span key={m}>{m}</span>
-          ))}
-      </div>
       <ExerciseQueue
         session={session}
         exercises={exercises}
         onChange={setSession}
+        onSelect={(id) => {
+          const entry = rows.find((e) => e.id === id);
+          const x = exercises.find((x) => x.id === entry?.exerciseId);
+          if (x) setInfo(x);
+        }}
+        renderDetail={(group) => (
+          <div className="preview-prescriptions">
+            {group.map((entry) => {
+              const x = exercises.find((x) => x.id === entry.exerciseId);
+              return x ? (
+                <div key={entry.id}>
+                  {group.length > 1 && <h4>{x.name}</h4>}
+                  <EntryPrescription
+                    entry={entry}
+                    exercise={x}
+                    exact={
+                      D.programPhase(program) === "accumulation" &&
+                      !!workout.exercises.find(
+                        (t) => t.id === entry.sourceTargetId,
+                      )?.nextRows
+                    }
+                  />
+                </div>
+              ) : null;
+            })}
+          </div>
+        )}
         onRemove={(id) => {
           const r = removeEntry(session, id);
           setSession(r.session);
@@ -124,19 +135,51 @@ export function WorkoutPreview({
         }}
       />
       {notice && <p role="status">{notice}</p>}
-      {D.programPhase(program) === "active-rest" ? (
-        <p>
-          No lifting is scheduled in active rest. Review your program phase to
-          resume.
-        </p>
-      ) : (
-        <Button
-          variant="primary wide"
-          disabled={!rows.length}
-          onClick={() => start(rows)}
+      <div className="preview-start">
+        {D.programPhase(program) === "active-rest" ? (
+          <p>
+            No lifting is scheduled in active rest. Review your program phase to
+            resume.
+          </p>
+        ) : (
+          <Button
+            variant="primary wide"
+            disabled={!rows.length}
+            onClick={() => start(rows)}
+          >
+            Start workout
+          </Button>
+        )}
+      </div>
+      {picker && (
+        <Modal
+          title="Add Exercises"
+          close={() => setPicker(false)}
+          footer={
+            <Button variant="primary wide" onClick={() => setPicker(false)}>
+              Done
+            </Button>
+          }
         >
-          Start workout
-        </Button>
+          <ExercisePicker
+            exercises={exercises}
+            disabled={rows.length >= 60}
+            onPick={(x) =>
+              setSession((current) => ({
+                ...current,
+                exercises:
+                  current.exercises.length < 60
+                    ? [...current.exercises, D.createEntry(x)]
+                    : current.exercises,
+              }))
+            }
+          />
+        </Modal>
+      )}
+      {info && (
+        <Modal title={info.name} close={() => setInfo(null)}>
+          <VideoInfo exercise={info} />
+        </Modal>
       )}
     </div>
   );

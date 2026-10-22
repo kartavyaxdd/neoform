@@ -52,7 +52,19 @@ export function WorkoutHome({
             <Dumbbell size={22} />
           </span>
           <span>
-            <h3>{p.name}</h3>
+            <h3>
+              <button
+                className="program-name-link"
+                aria-label={`View program ${p.name}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  edit(p);
+                }}
+              >
+                {p.name}
+              </button>
+            </h3>
             <small>
               {p.workouts.length} workouts · Week {p.currentWeek}
             </small>

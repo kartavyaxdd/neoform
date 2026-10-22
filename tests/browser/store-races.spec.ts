@@ -176,6 +176,59 @@ test("late device acknowledgements preserve edits made while acknowledgement is 
   expect(result.local.settings.unit).toBe("lb");
   expect(result.remote.settings.unit).toBe("lb");
 });
+
+test("a durable receipt cannot reject a timer pause while send cleanup is pending", async ({
+  page,
+}) => {
+  await mount(page);
+  const result = await page.evaluate(async () => {
+    const r = window.__race,
+      s = r.store,
+      original = r.Vault.prototype.remove;
+    let release!: () => void,
+      reached!: () => void,
+      blocked = false;
+    const gate = new Promise<void>((resolve) => (release = resolve)),
+      entered = new Promise<void>((resolve) => (reached = resolve));
+    r.Vault.prototype.remove = async function (...args: any[]) {
+      if (String(args[1]).startsWith("send:") && !blocked) {
+        blocked = true;
+        reached();
+        await gate;
+      }
+      return original.apply(this, args);
+    };
+    s.change((d: any) => ({
+      ...d,
+      timer: {
+        id: "qa-rest",
+        endAt: Date.now() + 60000,
+        remaining: 60,
+        paused: false,
+      },
+    }));
+    const pending = s.sync();
+    await entered;
+    s.change((d: any) => ({ ...d, timer: { ...d.timer, paused: true } }));
+    const during = {
+      paused: s.useStore().box.data.timer.paused,
+      error: s.useStore().error,
+    };
+    release();
+    await pending;
+    r.Vault.prototype.remove = original;
+    await s.sync();
+    return {
+      during,
+      local: s.useStore().box.data.timer,
+      remote: r.states["fixture-a"].data.timer,
+    };
+  });
+  expect(result.during.paused).toBe(true);
+  expect(result.during.error).toBe("");
+  expect(result.local.paused).toBe(true);
+  expect(result.remote.paused).toBe(true);
+});
 test("offline writes report saving until the device transaction actually commits", async ({
   page,
   context,

@@ -16,6 +16,7 @@ export default defineConfig({
           "gym-experience.spec.ts",
           "workout-recap.spec.ts",
           "reference-fidelity.spec.ts",
+          "program-layout.spec.ts",
         ]
       : [
           "ui-redesign.spec.ts",
@@ -23,6 +24,7 @@ export default defineConfig({
           "gym-experience.spec.ts",
           "workout-recap.spec.ts",
           "reference-fidelity.spec.ts",
+          "program-layout.spec.ts",
           "coaching.spec.ts",
           "readiness.spec.ts",
           "reliability.spec.ts",

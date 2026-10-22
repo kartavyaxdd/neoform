@@ -237,10 +237,21 @@ test("replacing a program exercise clears its equipment setup without changing h
   await page.reload();
   const dialog = await openEditor(page);
   await dialog
+    .getByRole("button", {
+      name: "Edit Barbell back squat targets",
+      exact: true,
+    })
+    .click();
+  const targetDialog = page.getByRole("dialog", {
+    name: "Edit base targets",
+    exact: true,
+  });
+  await targetDialog
     .getByLabel("Exercise 1", { exact: true })
     .first()
     .selectOption("bench");
-  await dialog.getByRole("button", { name: "Save mesocycle" }).click();
+  await targetDialog.getByRole("button", { name: "Done", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save program" }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   const state = (await (await readData(page)).json()).data;
   expect(state.programs[0].workouts[0].exercises[0].exerciseId).toBe("bench");
@@ -252,12 +263,18 @@ test("moving an exercise stays in preview until explicit save", async ({
 }) => {
   await fixture(page);
   const dialog = await openEditor(page);
-  await dialog
-    .getByRole("button", { name: "Move exercise down", exact: true })
+  await dialog.getByRole("button", { name: "Re-order", exact: true }).click();
+  const orderDialog = page.getByRole("dialog", {
+    name: "Re-order exercises",
+    exact: true,
+  });
+  await orderDialog
+    .getByRole("button", { name: "Move Barbell back squat down", exact: true })
     .first()
     .click();
+  await orderDialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog).toHaveCount(1);
-  await dialog.getByRole("button", { name: "Save mesocycle" }).click();
+  await dialog.getByRole("button", { name: "Save program" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   const state = (await (await readData(page)).json()).data;
@@ -362,7 +379,7 @@ test("editing a program preserves active identity", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   const dialog = await openEditor(page);
-  await dialog.getByRole("button", { name: "Save mesocycle" }).click();
+  await dialog.getByRole("button", { name: "Save program" }).click();
   await expect(page.locator(".program-card").first().locator("h3")).toHaveText(
     "Balanced foundations",
   );

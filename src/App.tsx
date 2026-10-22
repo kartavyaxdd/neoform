@@ -1,3 +1,5 @@
+import { ProgramEditor as ProgramBuilder } from "./ProgramEditor";
+import { ExercisePicker } from "./ExercisePicker";
 import { WorkoutRecap } from "./WorkoutRecapScreen";
 import { useRestAlerts, claimRestTimer } from "./restAlerts";
 import { feedbackTone, unlockFeedbackAudio } from "./feedbackAudio";
@@ -28,8 +30,6 @@ import {
   SessionFeedbackFields,
   MuscleFeedbackFields,
   FeedbackSummary,
-  PhaseControls,
-  PhasePreview,
   MuscleReview,
   DecisionEvidence,
 } from "./TrainingFeedback";
@@ -47,9 +47,7 @@ import {
   LayoutGrid,
   Rocket,
   CircleEllipsis,
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   BookOpen,
   Check,
   ChevronRight,
@@ -432,6 +430,7 @@ export default function App() {
       title: string;
       content: ReactNode;
       footer?: ReactNode;
+      presentation?: "screen" | "sheet";
     } | null>(null),
     [notice, setNotice] = useState(""),
     [tick, setTick] = useState(Date.now());
@@ -549,7 +548,8 @@ export default function App() {
   }
   function editProgram(p: D.Program) {
     setModal({
-      title: "Shape your mesocycle",
+      title: p.name,
+      presentation: "screen",
       content: (
         <ProgramBuilder
           program={p}
@@ -1218,7 +1218,8 @@ export default function App() {
                   return;
                 }
                 setModal({
-                  title: "Workout preview",
+                  title: w.name,
+                  presentation: "screen",
                   content: (
                     <WorkoutPreview
                       workout={w}
@@ -1658,7 +1659,12 @@ export default function App() {
         </div>
       )}
       {modal && (
-        <Modal title={modal.title} close={close} footer={modal.footer}>
+        <Modal
+          title={modal.title}
+          close={close}
+          footer={modal.footer}
+          presentation={modal.presentation}
+        >
           {modal.content}
         </Modal>
       )}
@@ -1761,109 +1767,6 @@ function VolumeBars({ values }: { values: Record<string, number> }) {
     </p>
   );
 }
-function ExercisePicker({
-  exercises,
-  onPick,
-  browse = false,
-  preferredMuscle,
-}: {
-  exercises: D.Exercise[];
-  onPick: (e: D.Exercise) => void;
-  browse?: boolean;
-  preferredMuscle?: string;
-}) {
-  const [q, setQ] = useState(""),
-    [muscle, setMuscle] = useState(preferredMuscle || ""),
-    [gear, setGear] = useState(""),
-    [pattern, setPattern] = useState("");
-  const filtered = exercises.filter(
-    (e) =>
-      (!q ||
-        (e.name + " " + e.muscle).toLowerCase().includes(q.toLowerCase())) &&
-      (!muscle || e.muscle === muscle) &&
-      (!gear || e.equipment === gear) &&
-      (!pattern || e.pattern === pattern),
-  );
-  return (
-    <>
-      <div className="filter-row">
-        <label className="search">
-          <Search size={18} />
-          <input
-            aria-label="Search exercises"
-            placeholder="Search movements…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-        <select
-          aria-label="Muscle filter"
-          value={muscle}
-          onChange={(e) => setMuscle(e.target.value)}
-        >
-          <option value="">All muscles</option>
-          {D.muscles.map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </select>
-        <select
-          aria-label="Equipment filter"
-          value={gear}
-          onChange={(e) => setGear(e.target.value)}
-        >
-          <option value="">All equipment</option>
-          {D.equipment.map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </select>
-        <select
-          aria-label="Movement filter"
-          value={pattern}
-          onChange={(e) => setPattern(e.target.value)}
-        >
-          <option value="">All patterns</option>
-          {D.patterns.map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </select>
-      </div>
-      <p className="caption">
-        {filtered.length} movements ·{" "}
-        {browse
-          ? "Select for instructions and alternatives."
-          : "Substitutions begin a new comparable load history."}
-      </p>
-      <div className={browse ? "exercise-grid" : "picker-list"}>
-        {filtered.map((e) => (
-          <button
-            className="exercise-card"
-            key={e.id}
-            onClick={() => onPick(e)}
-          >
-            <span className="muscle-icon">
-              {e.muscle.slice(0, 2).toUpperCase()}
-            </span>
-            <span>
-              <b>{e.name}</b>
-              <small>
-                {e.muscle} · {e.equipment}
-              </small>
-              <span className="caption">
-                {D.conventionLabels[e.convention]}
-              </span>
-            </span>
-            {browse ? <ChevronRight size={18} /> : <Plus size={18} />}
-          </button>
-        ))}
-      </div>
-      {!filtered.length && (
-        <Empty title="No movements found.">
-          Try a different filter or create your own exercise.
-        </Empty>
-      )}
-    </>
-  );
-}
 function ExerciseEditor({
   exercise,
   isNew,
@@ -1962,340 +1865,6 @@ function ExerciseEditor({
       <Button type="submit" variant="primary">
         Save exercise
       </Button>
-    </form>
-  );
-}
-function ProgramBuilder({
-  program,
-  exercises,
-  sessions,
-  experience,
-  save,
-}: {
-  program: D.Program;
-  exercises: D.Exercise[];
-  sessions: D.Session[];
-  experience?: NonNullable<D.State["profile"]>["experience"];
-  save: (p: D.Program) => void;
-}) {
-  const [p, setP] = useState(structuredClone(program)),
-    [error, setError] = useState("");
-  const updateWorkout = (i: number, w: D.Workout) =>
-    setP({ ...p, workouts: p.workouts.map((x, j) => (j === i ? w : x)) });
-  const updateTarget = (wi: number, ti: number, t: D.Target) =>
-    updateWorkout(wi, {
-      ...p.workouts[wi],
-      exercises: p.workouts[wi].exercises.map((x, j) =>
-        j === ti
-          ? { ...t, nextRows: undefined, coachingProposalId: undefined }
-          : x,
-      ),
-    });
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        const valid = D.programSchema.safeParse(p);
-        if (!valid.success) {
-          setError(valid.error.issues[0].message);
-          return;
-        }
-        save(valid.data);
-      }}
-    >
-      <Field label="Program name">
-        <input
-          required
-          value={p.name}
-          maxLength={120}
-          onChange={(e) => setP({ ...p, name: e.target.value })}
-        />
-      </Field>
-      <Field label="Program notes">
-        <textarea
-          value={p.description}
-          maxLength={2000}
-          onChange={(e) => setP({ ...p, description: e.target.value })}
-        />
-      </Field>
-      <div className="form-grid three">
-        <Field label="Cycle weeks">
-          <Num
-            label="Cycle weeks"
-            min={2}
-            max={16}
-            value={p.weeks}
-            onChange={(n) =>
-              setP({
-                ...p,
-                weeks: n,
-                deloadWeek: Math.min(p.deloadWeek, n),
-                currentWeek: Math.min(p.currentWeek, n),
-              })
-            }
-          />
-        </Field>
-        <Field label="Deload week">
-          <Num
-            label="Deload week"
-            min={1}
-            max={p.weeks}
-            value={p.deloadWeek}
-            onChange={(n) => setP({ ...p, deloadWeek: n })}
-          />
-        </Field>
-        <Field label="Current week">
-          <Num
-            label="Current week"
-            min={1}
-            max={p.weeks}
-            value={p.currentWeek}
-            onChange={(n) => setP({ ...p, currentWeek: n })}
-          />
-        </Field>
-      </div>
-      <PhaseControls program={p} onChange={setP} />
-      <PhasePreview
-        program={p}
-        exercises={exercises}
-        sessions={sessions}
-        experience={experience}
-      />
-      <div className="builder-workouts">
-        {p.workouts.map((w, wi) => (
-          <section className="builder-workout" key={w.id}>
-            <div className="form-grid">
-              <Field label={`Workout ${wi + 1} name`}>
-                <input
-                  required
-                  maxLength={120}
-                  value={w.name}
-                  onChange={(e) =>
-                    updateWorkout(wi, { ...w, name: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Preferred day">
-                <input
-                  maxLength={30}
-                  value={w.day}
-                  onChange={(e) =>
-                    updateWorkout(wi, { ...w, day: e.target.value })
-                  }
-                />
-              </Field>
-            </div>
-            {w.exercises.map((t, ti) => (
-              <div className="builder-target" key={t.id}>
-                <div className="target-top">
-                  <Field label={`Exercise ${ti + 1}`}>
-                    <select
-                      value={t.exerciseId}
-                      onChange={(e) =>
-                        updateTarget(wi, ti, {
-                          ...t,
-                          exerciseId: e.target.value,
-                          setup:
-                            e.target.value === t.exerciseId
-                              ? t.setup
-                              : undefined,
-                          startingLoad:
-                            e.target.value === t.exerciseId
-                              ? t.startingLoad
-                              : undefined,
-                        })
-                      }
-                    >
-                      {exercises.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label="Move exercise up"
-                    disabled={ti === 0}
-                    onClick={() => {
-                      const arr = [...w.exercises];
-                      [arr[ti - 1], arr[ti]] = [arr[ti], arr[ti - 1]];
-                      updateWorkout(wi, { ...w, exercises: arr });
-                    }}
-                  >
-                    <ArrowUp size={17} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label="Move exercise down"
-                    disabled={ti === w.exercises.length - 1}
-                    onClick={() => {
-                      const arr = [...w.exercises];
-                      [arr[ti + 1], arr[ti]] = [arr[ti], arr[ti + 1]];
-                      updateWorkout(wi, { ...w, exercises: arr });
-                    }}
-                  >
-                    <ArrowDown size={17} />
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button danger-text"
-                    aria-label="Remove target"
-                    onClick={() =>
-                      updateWorkout(wi, {
-                        ...w,
-                        exercises: w.exercises.filter((x) => x.id !== t.id),
-                      })
-                    }
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-                <Field
-                  label={
-                    exercises.find((e) => e.id === t.exerciseId)?.convention ===
-                    "machine-label"
-                      ? "First-session machine label"
-                      : "First-session load (kg)"
-                  }
-                >
-                  <Num
-                    label={
-                      exercises.find((e) => e.id === t.exerciseId)
-                        ?.convention === "machine-label"
-                        ? "First-session machine label"
-                        : "First-session load (kg)"
-                    }
-                    min={0}
-                    max={2000}
-                    step={0.25}
-                    value={t.startingLoad ?? 0}
-                    onChange={(startingLoad) =>
-                      updateTarget(wi, ti, { ...t, startingLoad })
-                    }
-                  />
-                </Field>
-                <p className="caption">
-                  An editable starting reference, not a progression
-                  recommendation. Comparable logged loads take precedence. A
-                  saved equipment setup requires a fresh load choice.
-                </p>
-                <div className="target-fields">
-                  {(["sets", "min", "max", "rir", "rest"] as const).map(
-                    (key, i) => (
-                      <Field
-                        key={key}
-                        label={
-                          ["Sets", "Min reps", "Max reps", "RIR", "Rest (s)"][i]
-                        }
-                      >
-                        <Num
-                          label={`${w.name} ${ti + 1} ${key}`}
-                          value={t[key]}
-                          min={key === "rir" || key === "rest" ? 0 : 1}
-                          max={
-                            key === "sets" || key === "rir"
-                              ? 10
-                              : key === "rest"
-                                ? 900
-                                : 100
-                          }
-                          onChange={(n) =>
-                            updateTarget(wi, ti, { ...t, [key]: n })
-                          }
-                        />
-                      </Field>
-                    ),
-                  )}
-                </div>
-                <div className="form-grid">
-                  <Field label="Set type">
-                    <select
-                      value={t.kind}
-                      onChange={(e) =>
-                        updateTarget(wi, ti, {
-                          ...t,
-                          kind: e.target.value as D.Target["kind"],
-                        })
-                      }
-                    >
-                      <option value="working">Working</option>
-                      <option value="warmup">Warmup</option>
-                      <option value="drop">Drop</option>
-                    </select>
-                  </Field>
-                  <Field label="Superset group (optional)">
-                    <input
-                      placeholder="e.g. A"
-                      maxLength={20}
-                      value={t.superset}
-                      onChange={(e) =>
-                        updateTarget(wi, ti, { ...t, superset: e.target.value })
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
-            <div className="actions wrap">
-              <Button
-                onClick={() =>
-                  updateWorkout(wi, {
-                    ...w,
-                    exercises: [...w.exercises, D.target(exercises[0].id)],
-                  })
-                }
-              >
-                <Plus size={17} />
-                Add movement
-              </Button>
-              <Button
-                variant="ghost danger-text"
-                disabled={p.workouts.length === 1}
-                onClick={() =>
-                  setP({
-                    ...p,
-                    workouts: p.workouts.filter((x) => x.id !== w.id),
-                  })
-                }
-              >
-                Remove workout
-              </Button>
-            </div>
-          </section>
-        ))}
-      </div>
-      <Button
-        onClick={() =>
-          setP({
-            ...p,
-            workouts: [
-              ...p.workouts,
-              {
-                id: D.uid(),
-                name: `Workout ${p.workouts.length + 1}`,
-                day: "",
-                exercises: [],
-              },
-            ],
-          })
-        }
-      >
-        <Plus size={17} />
-        Add workout day
-      </Button>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <div className="modal-sticky">
-        <Button type="submit" variant="primary wide">
-          Save mesocycle <Check size={18} />
-        </Button>
-      </div>
     </form>
   );
 }

@@ -7,7 +7,7 @@ import {
   useId,
   type ReactNode,
 } from "react";
-import { X } from "lucide-react";
+import { X, ChevronLeft } from "lucide-react";
 export function Button({
   children,
   onClick,
@@ -101,11 +101,13 @@ export function Modal({
   children,
   close,
   footer,
+  presentation = "sheet",
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
   footer?: ReactNode;
+  presentation?: "screen" | "sheet";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -128,7 +130,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={`modal ${presentation === "screen" ? "screen-modal" : ""}`}
       onCancel={close}
       aria-labelledby={titleId}
     >
@@ -139,7 +141,11 @@ export function Modal({
           aria-label="Close dialog"
           onClick={close}
         >
-          <X size={20} />
+          {presentation === "screen" ? (
+            <ChevronLeft size={23} />
+          ) : (
+            <X size={20} />
+          )}
         </button>
       </div>
       <div className="modal-body">{children}</div>

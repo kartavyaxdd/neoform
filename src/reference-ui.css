@@ -1393,3 +1393,403 @@ h3 {
 .exercise-info-history h3 {
   margin-bottom: 5px;
 }
+
+/* Program schedule and workout preview geometry follow the supplied phone panels. */
+.program-name-link {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  min-height: 26px;
+}
+.modal:has(.program-editor),
+.modal:has(.workout-preview) {
+  width: min(100%, 760px);
+  height: min(94dvh, 980px);
+  display: flex;
+  flex-direction: column;
+}
+.modal:has(.program-editor) > .modal-head,
+.modal:has(.workout-preview) > .modal-head {
+  flex: 0 0 auto;
+}
+.modal:has(.program-editor) > .modal-body,
+.modal:has(.workout-preview) > .modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 16px;
+}
+.program-editor {
+  min-width: 0;
+}
+.program-day-tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 0;
+  margin: 0 -16px;
+  padding: 0 8px;
+  border-bottom: 3px solid var(--surface3);
+  scrollbar-width: none;
+}
+.program-day-tabs > button {
+  flex: 0 0 auto;
+  border: 0;
+  background: none;
+  border-bottom: 3px solid transparent;
+  padding: 12px 15px;
+  min-height: 54px;
+  color: var(--ink);
+  font-size: 15px;
+  margin-bottom: -3px;
+}
+.program-day-tabs > [aria-selected="true"] {
+  border-bottom-color: var(--ink);
+}
+.program-tools {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 14px -16px 22px;
+  padding-inline: 12px;
+  scrollbar-width: none;
+}
+.program-tools .btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  font-weight: 400;
+  border-radius: 24px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.program-editor section h3,
+.workout-preview h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.target-muscles {
+  margin: 20px 0 0;
+}
+.target-muscles > h3 {
+  margin: 0 0 14px !important;
+}
+.target-muscle-rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.target-muscle-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--surface3);
+  border-radius: 11px;
+  flex: 0 0 184px;
+  height: 80px;
+  overflow: hidden;
+}
+.muscle-artwork {
+  width: 100%;
+  height: 100%;
+}
+.target-muscle-card > svg {
+  flex: 0 0 80px;
+  width: 80px;
+  height: 100%;
+}
+.target-muscle-card b {
+  display: block;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.target-muscle-card small {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+.anatomy-base {
+  fill: var(--surface2);
+  stroke: var(--surface3);
+  stroke-width: 2;
+}
+.anatomy-muted {
+  fill: var(--surface3);
+  stroke: var(--surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.anatomy-target {
+  fill: #236bfe;
+  stroke: var(--surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.program-exercise-count {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 32px 0 6px;
+}
+.program-exercise-count h3 {
+  margin: 0 !important;
+  font-size: 19px;
+  font-weight: 600;
+}
+.program-exercise-count .text-button {
+  font-size: 14px;
+  min-height: 44px;
+}
+.program-exercise {
+  padding: 22px 16px 8px;
+  border-bottom: 4px solid var(--surface2);
+  margin: 0 -16px;
+}
+.program-exercise-heading {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 14px;
+}
+.program-exercise-heading h3 {
+  margin: 0 0 5px !important;
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  line-height: 1.4;
+}
+.program-muscle-chips {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.program-muscle-chips > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  background: var(--surface2);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+.program-muscle-chips > span.secondary {
+  background: none;
+  border-color: var(--surface3);
+}
+.exercise-art {
+  width: 38px;
+  height: 50px;
+  background: var(--surface2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.program-week-rail {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  margin-top: 16px;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+}
+.program-week-card {
+  flex: 0 0 140px;
+  border: 1.5px solid var(--surface3);
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 124px;
+}
+.program-week-card.current-week-card {
+  border-color: var(--subtle);
+}
+.program-week-card > b {
+  display: block;
+  font-size: 15px;
+  font-weight: 500;
+}
+.program-week-card > small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin: 2px 0 8px;
+  text-transform: capitalize;
+}
+.planned-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.planned-row {
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  min-height: 20px;
+}
+.planned-number {
+  display: grid;
+  place-items: center;
+  background: var(--surface2);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+}
+.planned-rir {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  min-height: 22px;
+  border-radius: 50%;
+  background: var(--rir-color);
+  color: light-dark(#fff, #111);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.program-week-card .planned-row {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  gap: 4px;
+  font-size: 12px;
+}
+.program-week-card .planned-number {
+  display: none;
+}
+.program-draft-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 20px 0 12px;
+  line-height: 1.5;
+}
+.program-save,
+.preview-start {
+  position: sticky;
+  bottom: -16px;
+  margin: 0 -16px -16px;
+  padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 3;
+}
+.program-save .btn,
+.preview-start .btn {
+  min-height: 50px;
+  border-radius: 8px;
+}
+.program-settings-fields .phase-preview {
+  margin-top: 20px;
+}
+.workout-preview {
+  padding: 0;
+}
+.workout-preview .program-exercise-count .caption {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.preview-add {
+  border-radius: 50%;
+  background: var(--surface2);
+  width: 44px;
+  height: 44px;
+}
+.preview-phase {
+  font-size: 10px;
+  margin: 7px 0 12px;
+}
+.workout-preview .queue-row {
+  border: 0;
+  min-height: 50px;
+  padding: 5px 0 0;
+}
+.workout-preview .queue-name {
+  padding: 4px 0 4px 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.workout-preview .queue-name small {
+  display: none;
+}
+.workout-preview .queue-name b {
+  font-weight: 500;
+}
+.workout-preview .queue-handle {
+  width: 44px;
+  min-width: 44px;
+}
+.workout-preview .queue-move button {
+  width: 44px;
+  min-width: 44px;
+}
+.preview-prescriptions {
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+.preview-prescription {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 6px 0;
+}
+.preview-prescription .exercise-art {
+  width: 44px;
+  height: 66px;
+}
+.preview-prescription .program-muscle-chips {
+  margin-top: 10px;
+}
+.preview-prescriptions h4 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 8px 0;
+}
+.workout-preview .exercise-queue > .btn {
+  font-size: 12px;
+  margin: 16px 0 24px;
+}
+
+:root[data-theme="dark"] .modal:has(.program-editor) {
+  --surface: #1f1f1f;
+  --surface2: #3b3b3b;
+  --surface3: #4b4b4b;
+  --line: #3c3c3c;
+}
+.program-rest-day {
+  padding: 38px 4px 70px;
+}
+.program-rest-day p {
+  margin: 12px 0;
+  font-size: 14px;
+}
+.program-rest-day small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.screen-modal > .modal-head::before {
+  display: none;
+}
+.screen-modal > .modal-head {
+  padding-top: max(12px, env(safe-area-inset-top));
+  min-height: 56px;
+}
+@media (max-width: 767px) {
+  .modal.screen-modal {
+    top: 0;
+    bottom: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+}

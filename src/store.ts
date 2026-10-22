@@ -836,6 +836,19 @@ export async function sync() {
           result.id ? { id: result.id, revision: result.revision } : undefined,
         );
         if (epoch !== syncEpoch) return;
+        // This operation's receipt is now durable. Mark its known journal
+        // lineage before exposing receipts while asynchronous send cleanup
+        // runs, so an intervening logger/timer edit is not rejected as a
+        // foreign acknowledgement. Data and the eventual rebase stay intact.
+        publish({
+          box: {
+            ...current.box,
+            acknowledgedJournals: {
+              ...current.box.acknowledgedJournals,
+              ...sent.incorporated,
+            },
+          },
+        });
         acks.forEach((a) =>
           diskAcks.set(journalAckKey(a.journal, a.generation), a.revision),
         );
