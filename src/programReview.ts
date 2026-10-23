@@ -54,7 +54,11 @@ export function pendingProgramTarget(
     exercise &&
     decision.at <= now &&
     !evidenceFor(state, session, entry, exercise, now).valid.some(
-      (r) => r.session.startedAt > decision.at,
+      (r) =>
+        r.session.startedAt > decision.at &&
+        r.entry.sets
+          .filter((t) => t.kind === "working")
+          .every((t) => t.prescription?.proposalId === decision.proposalId),
     )
   );
 }

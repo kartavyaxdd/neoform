@@ -20,4 +20,4 @@ Approved October 24, 2026. Preserve accounts, history, programs, compact logging
 
 ## Current status
 
-Correctness candidate implemented locally; validation and publication in progress. The feature releases above remain pending. This file records the full authorized scope so a foundation release is not mistaken for completion of the roadmap.
+Correctness release `991071ed9b4d853bddfa8bdf89c9fa2e4a197e34` is on GitHub and verified on the existing Cloudflare app, including isolated hosted flows at 360/390px and desktop. Preview guidance is implemented with explicit staged scope and atomic saving; final validation/publication is in progress (see PREVIEW-GUIDANCE.md). Next-set advice, experiment review, lift progress and scheduling remain pending. A foundation or preview release is not completion of the roadmap.

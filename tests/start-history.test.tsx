@@ -38,7 +38,10 @@ vi.mock("../src/store", () => ({
       box: { ...fixture.snapshot.box, data: fn(fixture.snapshot.box.data) },
     };
   },
-  saveChange: vi.fn(),
+  saveChange: async (fn: any) => {
+    fixture.snapshot = { ...fixture.snapshot, box: { ...fixture.snapshot.box, data: fn(fixture.snapshot.box.data) } };
+    return true;
+  },
   request: vi.fn(),
   initialize: vi.fn(),
   login: vi.fn(),

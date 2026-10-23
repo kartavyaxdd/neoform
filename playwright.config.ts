@@ -12,6 +12,7 @@ export default defineConfig({
       : process.env.NEOFORM_QA_MODE === "public"
         ? [
             "public-storage.spec.ts",
+            "preview-guidance.spec.ts",
             "coaching.spec.ts",
             "ui-redesign.spec.ts",
             "adaptive-workout.spec.ts",
@@ -21,6 +22,7 @@ export default defineConfig({
             "program-layout.spec.ts",
           ]
         : [
+            "preview-guidance.spec.ts",
             "ui-redesign.spec.ts",
             "adaptive-workout.spec.ts",
             "gym-experience.spec.ts",

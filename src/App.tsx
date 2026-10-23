@@ -14,6 +14,7 @@ import { TimerSheet } from "./TimerSheet";
 import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
+import { commitGuidance, type GuidancePreview } from "./workoutGuidance";
 import { Levels } from "./Levels";
 import { Button, Field, Num, Modal } from "./ui";
 import { ProgramReviewSheet } from "./ProgramReviewSheet";
@@ -719,8 +720,14 @@ export default function App() {
       </>
     );
   }
-  function start(w?: D.Workout, p?: D.Program, prepared?: D.Entry[]) {
+  async function start(
+    w?: D.Workout,
+    p?: D.Program,
+    prepared?: D.Entry[],
+    guidance?: GuidancePreview,
+  ) {
     if (s.draft) {
+      close();
       go("session");
       setNotice(
         "Your active session is ready to resume. Complete or discard it before starting another.",
@@ -755,8 +762,9 @@ export default function App() {
             const ex = exercises.find((e) => e.id === t.exerciseId);
             return ex ? [D.createEntry(ex, t)] : [];
           }));
-    change((current) => {
+    const saved = await saveChange((current) => {
       if (current.draft) return current;
+      if (guidance) return commitGuidance(current, guidance);
       if (p && w) {
         const live = current.programs.find((x) => x.id === p.id),
           liveWorkout = live?.workouts.find((x) => x.id === w.id);
@@ -783,7 +791,10 @@ export default function App() {
         timer: null,
       };
     });
-    go("session");
+    if (saved) {
+      close();
+      go("session");
+    }
   }
   function sessionDetail(sess: D.Session) {
     setModal({
@@ -1283,9 +1294,8 @@ export default function App() {
                       program={p}
                       state={s}
                       exercises={exercises}
-                      start={(rows) => {
-                        close();
-                        start(w, p, rows);
+                      start={(rows, guidance) => {
+                        return start(w, p, rows, guidance);
                       }}
                     />
                   ),
