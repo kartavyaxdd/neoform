@@ -114,7 +114,7 @@ export function prepareHistoryMutation(
   base: State,
   next: State,
   revision: number,
-  id = crypto.randomUUID(),
+  id: string = crypto.randomUUID(),
 ): HistoryMutation {
   storageBaseRevision.parse(revision);
   z.uuid().parse(id);
@@ -132,6 +132,32 @@ export function prepareHistoryMutation(
       ? { coachingCount: next.coachingEvents?.length ?? 0 }
       : {}),
   };
+}
+
+// Repair only the known old manifest omission, using its immutable saved state.
+// A different delta/header is never permission to reuse a transaction ID.
+export async function recoverHistoryMutation(
+  mutation: HistoryMutation,
+  base: State,
+  next: State,
+) {
+  if (
+    mutation.coachingCount !== undefined ||
+    (!base.coachingEvents && !next.coachingEvents)
+  )
+    return mutation;
+  const recovered = prepareHistoryMutation(
+    base,
+    next,
+    mutation.revision,
+    mutation.id,
+  );
+  const { coachingCount: _count, ...withoutCount } = recovered;
+  if ((await storageHash(withoutCount)) !== (await storageHash(mutation)))
+    throw Error(
+      "Pending transaction differs from its device copy. Export copies before recovery.",
+    );
+  return recovered;
 }
 
 export async function writeHistoryMutation(

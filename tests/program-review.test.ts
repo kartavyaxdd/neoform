@@ -144,6 +144,7 @@ it("applies future targets explicitly without creating a draft or changing histo
   const completed = structuredClone(pending.session);
   completed.id = D.uid();
   completed.startedAt = now + DAY;
+  completed.date = new Date(completed.startedAt).toISOString().slice(0, 10);
   completed.duration = 3600;
   completed.exercises[0].sets.forEach((t) => {
     t.done = true;

@@ -755,14 +755,34 @@ export default function App() {
             const ex = exercises.find((e) => e.id === t.exerciseId);
             return ex ? [D.createEntry(ex, t)] : [];
           }));
-    change((s) => ({
-      ...s,
-      draft: {
-        ...D.startSession(w?.name || "Open session", entries, p, w),
-        bodyweight: s.coaching?.bodyweight,
-      },
-      timer: null,
-    }));
+    change((current) => {
+      if (current.draft) return current;
+      if (p && w) {
+        const live = current.programs.find((x) => x.id === p.id),
+          liveWorkout = live?.workouts.find((x) => x.id === w.id);
+        const targets = (rows: D.Target[]) =>
+          JSON.stringify([...rows].sort((a, b) => a.id.localeCompare(b.id)));
+        if (
+          !live ||
+          live.archived ||
+          !liveWorkout ||
+          live.currentWeek !== p.currentWeek ||
+          D.programPhase(live) !== D.programPhase(p) ||
+          targets(liveWorkout.exercises) !== targets(w.exercises)
+        )
+          throw Error(
+            "The workout changed. Open a fresh preview before starting.",
+          );
+      }
+      return {
+        ...current,
+        draft: {
+          ...D.startSession(w?.name || "Open session", entries, p, w),
+          bodyweight: current.coaching?.bodyweight,
+        },
+        timer: null,
+      };
+    });
     go("session");
   }
   function sessionDetail(sess: D.Session) {

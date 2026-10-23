@@ -120,9 +120,21 @@ export class MutationQueue {
       revision,
       header,
       count: mutation.count,
+      ...(mutation.coachingCount === undefined
+        ? {}
+        : {
+            coachingCount: z
+              .number()
+              .int()
+              .min(0)
+              .max(100000)
+              .parse(mutation.coachingCount),
+          }),
       hashes,
     };
     const fingerprint = await storageHash(base);
+    const { coachingCount: _count, ...legacyBase } = base;
+    const legacyFingerprint = await storageHash(legacyBase);
     const plan: StoredPlan = { ...base, owner, fingerprint };
     return this.transaction("readwrite", async (tx) => {
       const receipts = tx.objectStore("receipts"),
@@ -143,8 +155,16 @@ export class MutationQueue {
       const existing = (await request(plans.get([owner, plan.id]))) as
         StoredPlan | undefined;
       if (existing) {
-        if (existing.fingerprint !== fingerprint)
+        if (
+          existing.fingerprint !== fingerprint &&
+          !(
+            existing.coachingCount === undefined &&
+            mutation.coachingCount !== undefined &&
+            existing.fingerprint === legacyFingerprint
+          )
+        )
           throw Error("A pending transaction ID belongs to different changes.");
+        if (existing.fingerprint !== fingerprint) plans.put(plan);
         return null;
       }
       plans.put(plan);

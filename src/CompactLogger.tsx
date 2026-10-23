@@ -117,6 +117,7 @@ export function SessionLogger({
           const x = exercises.find((x) => x.id === e.exerciseId)!;
           return (
             <button
+              type="button"
               key={e.id}
               role="tab"
               aria-label={x.name}
@@ -212,6 +213,7 @@ export function SessionLogger({
                 <h2>{ex.name}</h2>
                 {!history && (
                   <button
+                    type="button"
                     className="icon-button queue-open"
                     aria-label="Exercise queue"
                     onClick={() => setSheet("Exercise queue")}
@@ -271,6 +273,7 @@ export function SessionLogger({
                   </span>
                   <span>Reps</span>
                   <button
+                    type="button"
                     className="effort-scale"
                     aria-label="Effort scale"
                     onClick={() => setSheet("Effort scale")}
@@ -319,6 +322,7 @@ export function SessionLogger({
                       }}
                     >
                       <button
+                        type="button"
                         className="set-type-button"
                         aria-label={`Change ${ex.name} set ${i + 1} type`}
                         onClick={() => setTypeSet(set.id)}
@@ -501,6 +505,7 @@ export function SessionLogger({
                           )}
                       </div>
                       <button
+                        type="button"
                         className={
                           "complete-set " + (set.done ? "checked" : "")
                         }
@@ -601,7 +606,7 @@ export function SessionLogger({
                 )}
               <Button
                 variant="ghost add-set"
-                disabled={history || e.sets.length >= 40}
+                disabled={e.sets.length >= 40}
                 onClick={() => {
                   if (e.technique && e.technique !== "straight") {
                     setSheet("Add bout");
@@ -657,6 +662,7 @@ export function SessionLogger({
                         ] as const
                       ).map(([kind, label]) => (
                         <button
+                          type="button"
                           key={kind}
                           aria-pressed={
                             e.sets.find((set) => set.id === typeSet)?.kind ===
@@ -1059,6 +1065,7 @@ export function SessionLogger({
                             <option value="drop">Drop</option>
                           </select>
                           <button
+                            type="button"
                             className="icon-button"
                             aria-label={`Remove ${ex.name} set ${i + 1}`}
                             onClick={() => {

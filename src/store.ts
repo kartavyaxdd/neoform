@@ -21,6 +21,7 @@ import {
   historyChanged,
   prepareHistoryMutation,
   writeHistoryMutation,
+  recoverHistoryMutation,
   type HistoryMutation,
 } from "./historyTransport";
 type User =
@@ -690,7 +691,7 @@ async function modernWrite(sent: Outbox) {
     const queued = (await selectedQueue!.list(owner)).sort(
       (a, b) => a.revision - b.revision,
     );
-    for (const mutation of queued) {
+    for (let mutation of queued) {
       const acknowledged = await selectedVault!.acknowledgedOperation(
         owner,
         mutation.id,
@@ -710,6 +711,15 @@ async function modernWrite(sent: Outbox) {
           "Pending cloud transaction needs recovery; export device copies before changing accounts.",
         );
       check();
+      if (saved.base && mutation.coachingCount === undefined) {
+        mutation = await recoverHistoryMutation(
+          mutation,
+          saved.base.data,
+          saved.data,
+        );
+        await selectedQueue.stage(owner, mutation);
+        check();
+      }
       pendingSend = { mutation, sent: saved };
       break;
     }

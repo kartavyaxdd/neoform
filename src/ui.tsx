@@ -137,6 +137,7 @@ export function Modal({
       <div className="modal-head">
         <h2 id={titleId}>{title}</h2>
         <button
+          type="button"
           className="icon-button"
           aria-label="Close dialog"
           onClick={close}

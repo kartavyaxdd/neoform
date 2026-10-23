@@ -34,6 +34,7 @@ export default defineConfig({
             "v2-layout.spec.ts",
             "v2-accessibility.spec.ts",
             "mutation-queue.spec.ts",
+            "coaching-recovery.spec.ts",
             "storage-release.spec.ts",
             "store-races.spec.ts",
           ],

@@ -2,10 +2,27 @@ import { it, expect } from "vitest";
 import * as D from "../src/domain";
 import { syntheticCoachingEvent } from "./coaching-fixture";
 import { headerOf, historyDelta } from "../src/storageProtocol";
-import { prepareHistoryMutation } from "../src/historyTransport";
+import {
+  prepareHistoryMutation,
+  recoverHistoryMutation,
+} from "../src/historyTransport";
 import { exportHistoryBackup, importHistoryBackup } from "../src/historyBackup";
 import { editState } from "../src/stateEdit";
 import { mergeThreeWay } from "../src/syncPolicy";
+it("recovers only the missing coaching manifest count from the immutable saved copy", async () => {
+  const base = D.emptyState(),
+    next = { ...base, coachingEvents: [syntheticCoachingEvent()] };
+  const plan = prepareHistoryMutation(base, next, 0);
+  const { coachingCount, ...legacy } = plan;
+  expect(await recoverHistoryMutation(legacy, base, next)).toEqual(plan);
+  await expect(
+    recoverHistoryMutation(legacy, base, {
+      ...next,
+      settings: { ...next.settings, unit: "lb" },
+    }),
+  ).rejects.toThrow(/differs/);
+  expect(await recoverHistoryMutation(plan, base, next)).toBe(plan);
+});
 it("keeps an unbounded-by-header ledger in normalized transfer parts and checksummed version 3 backups", async () => {
   const before = D.emptyState(),
     state = {

@@ -2,6 +2,63 @@ import { test, expect } from "@playwright/test";
 import * as D from "../../src/domain";
 import { fixture } from "./v2-fixture";
 import { readData, writeData } from "./storage-client";
+test("history navigation, Undo and adding sets never save until explicit submission", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (process.env.NEOFORM_QA_MODE === "public") await page.goto("/");
+  else await fixture(page);
+  const remote = await (await readData(page)).json(),
+    state = D.emptyState();
+  state.profile = {
+    name: "History QA",
+    experience: "Intermediate",
+    goal: "Build muscle",
+    equipment: ["Barbell", "Dumbbell"],
+    days: 4,
+  };
+  const entries = [D.createEntry(D.catalog[0]), D.createEntry(D.catalog[1])];
+  entries.forEach((e) => e.sets.forEach((t) => (t.done = true)));
+  state.sessions = [
+    D.completeSession(D.startSession("History controls QA", entries)),
+  ];
+  await writeData(page, { data: { ...remote, data: state } });
+  await page.reload();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("button", { name: /History controls QA/ }).click();
+  await page.getByRole("button", { name: "Edit session", exact: true }).click();
+  await page.getByRole("tab", { name: D.catalog[1].name, exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Edit logged session");
+  await page
+    .getByRole("button", {
+      name: `Undo ${D.catalog[1].name} set 1`,
+      exact: true,
+    })
+    .click();
+  await page.getByRole("button", { name: "Add set", exact: true }).click();
+  await expect(page.locator(".set-row")).toHaveCount(4);
+  expect((await (await readData(page)).json()).data.sessions).toEqual(
+    state.sessions,
+  );
+  await expect(
+    page.getByRole("button", {
+      name: `Undo ${D.catalog[1].name} set 4`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Save journal changes", exact: true })
+    .click();
+  await expect(page.locator(".sync-status")).toHaveText("Synced");
+  const saved = (await (await readData(page)).json()).data.sessions[0];
+  expect(saved.exercises[1].sets).toHaveLength(3);
+  expect(
+    saved.exercises[1].sets.some(
+      (t: D.SetLog) => t.id === entries[1].sets[0].id,
+    ),
+  ).toBe(false);
+  expect(saved.exercises[0]).toEqual(entries[0]);
+});
 for (const width of [360, 390, 1440])
   test(`gym rewards, drag, swipe, finish and rest settings at ${width}px`, async ({
     page,

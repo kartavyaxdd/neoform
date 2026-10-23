@@ -252,9 +252,15 @@ export function evaluateCoaching(
   for (const entry of session.exercises) {
     const ex = exercises.find((e) => e.id === entry.exerciseId);
     if (!ex) continue;
-    const target = program?.workouts
+    const candidateTarget = program?.workouts
       .find((w) => w.id === session.workoutId)
       ?.exercises.find((t) => t.id === entry.sourceTargetId);
+    const target =
+      candidateTarget?.exerciseId === ex.id &&
+      D.comparableKey(D.createEntry(ex, candidateTarget), ex) ===
+        D.comparableKey(entry, ex)
+        ? candidateTarget
+        : undefined;
     const history = evidenceFor(state, session, entry, ex, now);
     const latest = history.valid.at(-1),
       latestSets = latest ? working(latest.entry) : [];
@@ -776,20 +782,51 @@ export function evaluateCoaching(
     const span = history.valid.length
       ? recoveryTime(latest.session) - recoveryTime(history.valid[0].session)
       : 0;
-    const recoveryReports = history.valid.filter(
-      ({ session: s }) =>
-        s.readiness?.pain === false &&
-        s.readiness.context === "usual" &&
-        (s.readiness.fatigue ?? 5) <= 2 &&
-        s.readiness.muscles.some(
-          (m) =>
-            m.muscle === ex.muscle &&
-            m.recovered === "yes" &&
-            m.pain === false &&
-            m.soreness !== null &&
-            m.soreness <= 2,
-        ),
-    ).length;
+    const recoveryReports = new Set(
+      history.valid.flatMap(({ session: s }) => {
+        const r = s.readiness,
+          m = r?.muscles.find((m) => m.muscle === ex.muscle);
+        if (
+          !r ||
+          !m ||
+          !readinessFresh(r, s.startedAt) ||
+          !readinessFresh(
+            { recordedAt: m.recordedAt ?? r.recordedAt },
+            s.startedAt,
+          ) ||
+          r.pain !== false ||
+          r.context !== "usual" ||
+          (r.fatigue ?? 5) > 2 ||
+          m.recovered !== "yes" ||
+          m.pain !== false ||
+          m.soreness == null ||
+          m.soreness > 2
+        )
+          return [];
+        const prior = state.sessions
+          .filter(
+            (other) =>
+              other.id !== s.id &&
+              recoveryTime(other) <= s.startedAt &&
+              other.exercises.some((e) => {
+                const x = exercises.find((x) => x.id === e.exerciseId);
+                return (
+                  x &&
+                  [x.muscle, ...x.secondary].includes(ex.muscle) &&
+                  e.sets.some((t) => t.done && t.kind !== "warmup")
+                );
+              }),
+          )
+          .map(recoveryTime);
+        if (
+          !prior.length ||
+          Math.min(r.recordedAt, m.recordedAt ?? r.recordedAt) <=
+            Math.max(...prior)
+        )
+          return [];
+        return [`${r.recordedAt}:${m.recordedAt ?? r.recordedAt}`];
+      }),
+    ).size;
     const volumeRecentlyChanged = (state.coachingEvents ?? []).some(
       (e) =>
         e.at >= now - 7 * DAY &&
@@ -1042,10 +1079,17 @@ export function applyCoaching(
       } else {
         const program = next.programs.find((v) => v.id === p.programId),
           workout = program?.workouts.find((w) => w.id === p.workoutId),
-          target = workout?.exercises.find((t) => t.id === p.targetId);
+          target = workout?.exercises.find((t) => t.id === p.targetId),
+          exercise = [...D.catalog, ...next.customExercises].find(
+            (x) => x.id === entry.exerciseId,
+          );
         if (
           !program ||
           !target ||
+          target.exerciseId !== p.exerciseId ||
+          !exercise ||
+          D.comparableKey(D.createEntry(exercise, target), exercise) !==
+            D.comparableKey(entry, exercise) ||
           canonical(targetValue(target)) !== canonical(p.beforeTarget)
         )
           throw Error("Future target changed. Refresh the proposal.");

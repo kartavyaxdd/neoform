@@ -71,7 +71,12 @@ export function SwipeRow({
       }}
     >
       {!disabled && (
-        <button className="swipe-delete" aria-label={label} onClick={remove}>
+        <button
+          type="button"
+          className="swipe-delete"
+          aria-label={label}
+          onClick={remove}
+        >
           Remove
         </button>
       )}
@@ -101,7 +106,7 @@ export function UndoRemoval({
   return undo && now < undo.until ? (
     <div className="undo-removal" role="status">
       Removed from this workout{" "}
-      <button className="btn" onClick={restore}>
+      <button type="button" className="btn" onClick={restore}>
         Undo
       </button>
     </div>
@@ -176,6 +181,7 @@ export function ExerciseQueue({
                 className={"queue-row " + (dragging === id ? "dragging" : "")}
               >
                 <button
+                  type="button"
                   className="queue-handle icon-button"
                   data-drag-handle
                   aria-label={`Drag ${name}`}
@@ -234,6 +240,7 @@ export function ExerciseQueue({
                   <GripVertical size={19} />
                 </button>
                 <NameTag
+                  {...(onSelect ? { type: "button" as const } : {})}
                   className="queue-name"
                   onClick={onSelect ? () => onSelect(id) : undefined}
                 >
@@ -248,6 +255,7 @@ export function ExerciseQueue({
                 </NameTag>
                 <div className="queue-move">
                   <button
+                    type="button"
                     className="icon-button"
                     aria-label={`Move ${name} up`}
                     disabled={i === 0}
@@ -258,6 +266,7 @@ export function ExerciseQueue({
                     ↑
                   </button>
                   <button
+                    type="button"
                     className="icon-button"
                     aria-label={`Move ${name} down`}
                     disabled={i === groups.length - 1}
@@ -275,7 +284,7 @@ export function ExerciseQueue({
         );
       })}
       {onSaveOrder && (
-        <button className="btn wide" onClick={onSaveOrder}>
+        <button type="button" className="btn wide" onClick={onSaveOrder}>
           <ListOrdered size={17} /> Save order for future workouts
         </button>
       )}

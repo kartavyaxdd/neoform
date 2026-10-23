@@ -5,8 +5,12 @@ export function reviewRecommendation(
   entry: D.Entry,
   recommendation: ReturnType<typeof D.recommend>,
 ): ReturnType<typeof D.recommend> {
-  if (canApplyStraightProgression(entry) &&
-      (!recommendation.setTargets || recommendation.setTargets.length === entry.sets.filter(s => s.kind === "working").length))
+  if (
+    canApplyStraightProgression(entry) &&
+    (!recommendation.setTargets ||
+      recommendation.setTargets.length ===
+        entry.sets.filter((s) => s.kind === "working").length)
+  )
     return recommendation;
   return {
     ...recommendation,
@@ -78,10 +82,12 @@ export function pairTechnique(
   )
     throw new Error("Choose non-overlapping muscles for this superset.");
   const group = D.uid();
-  const protocol = [first, second].map((e) => {
-    const x = exercises.find((x) => x.id === e.exerciseId)!;
-    return `${e.exerciseId}[${e.equipment ?? x.equipment}/${e.convention ?? x.convention}]`;
-  }).join(" -> ");
+  const protocol = [first, second]
+    .map((e) => {
+      const x = exercises.find((x) => x.id === e.exerciseId)!;
+      return `${e.exerciseId}[${e.equipment ?? x.equipment}/${e.convention ?? x.convention}]`;
+    })
+    .join(" -> ");
   const pair = [first, second].map((e, role) => {
     let round = 0;
     return {
@@ -218,7 +224,7 @@ export function configureTechnique(
         bout: "straight" as const,
         groupId: undefined,
       }));
-  return {
+  const converted = {
     ...entry,
     technique,
     protocol: undefined,
@@ -240,5 +246,29 @@ export function configureTechnique(
         ? { ...entry.target }
         : undefined,
     sets: [...entry.sets.filter((s) => s.kind === "warmup"), ...sets],
+  };
+  let ordinal = 0;
+  return {
+    ...converted,
+    plannedWorkingSets: sets.length,
+    sets: converted.sets.map((s) =>
+      s.kind === "warmup"
+        ? s
+        : {
+            ...s,
+            effortReported: false,
+            prescription: converted.target
+              ? {
+                  weight: s.weight,
+                  reps: Math.max(
+                    converted.target.min,
+                    Math.min(converted.target.max, s.reps),
+                  ),
+                  ...converted.target,
+                  ordinal: ordinal++,
+                }
+              : undefined,
+          },
+    ),
   };
 }

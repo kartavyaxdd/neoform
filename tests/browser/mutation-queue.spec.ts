@@ -56,6 +56,41 @@ const mutation = () => {
   return prepareHistoryMutation(base, next, 0);
 };
 
+test("queue preserves coaching manifests across reopen and repairs legacy count omission", async ({
+  page,
+}) => {
+  await mount(page);
+  const base = emptyState(),
+    next = { ...base, coachingEvents: [syntheticCoachingEvent()] };
+  const plan = prepareHistoryMutation(base, next, 0);
+  const result = await page.evaluate(async (plan) => {
+    const name = "neoform-qa-" + crypto.randomUUID();
+    let q = await window.__storageQA.MutationQueue.open(name);
+    await q.stage("a", plan);
+    q.close();
+    q = await window.__storageQA.MutationQueue.open(name);
+    const recovered = await q.list("a");
+    // Simulate the actual old manifest shape through its public staging path.
+    const { coachingCount, ...legacy } = plan;
+    await q.stage("b", legacy);
+    q.close();
+    q = await window.__storageQA.MutationQueue.open(name);
+    await q.stage("b", plan);
+    const repaired = await q.list("b");
+    let rejected = false;
+    try {
+      await q.stage("b", { ...plan, coachingCount: 2 });
+    } catch {
+      rejected = true;
+    }
+    q.close();
+    return { recovered, repaired, rejected };
+  }, plan);
+  expect(result.recovered).toEqual([plan]);
+  expect(result.repaired).toEqual([plan]);
+  expect(result.rejected).toBe(true);
+});
+
 test("normalized device journals preserve newer generations through acknowledgement and recreation", async ({
   page,
 }) => {
