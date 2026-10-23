@@ -53,8 +53,10 @@ export class HistoryStorage {
   constructor(
     private db: D1Database,
     private user: string | null,
+    profileOwner?: string,
   ) {
-    this.owner = user === null ? "public-workspace" : `user:${user}`;
+    this.owner =
+      profileOwner ?? (user === null ? "public-workspace" : `user:${user}`);
   }
   private query(sql: string, ...args: (string | number | null)[]) {
     return this.db.prepare(sql).bind(...args);
@@ -67,6 +69,15 @@ export class HistoryStorage {
   }
   async ensure() {
     if (await this.upgraded()) return;
+    if (this.user === null && this.owner !== "public-workspace") {
+      await this.query(
+        "INSERT INTO storage_heads(owner,private_user,revision,body,session_count,attempt,coaching_count) VALUES (?,NULL,0,?,0,?,0) ON CONFLICT(owner) DO NOTHING",
+        this.owner,
+        JSON.stringify(headerOf(emptyState())),
+        crypto.randomUUID(),
+      ).run();
+      return;
+    }
     for (let retry = 0; retry < 3; retry++) {
       if (this.user === null)
         await this.query(

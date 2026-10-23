@@ -1793,3 +1793,106 @@ h3 {
     border-radius: 0;
   }
 }
+.session-set-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.session-set-progress progress {
+  flex: 1;
+  width: 0;
+  height: 5px;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  accent-color: var(--ink);
+}
+.session-set-progress progress::-webkit-progress-bar {
+  background: var(--line);
+  border-radius: 4px;
+}
+.session-set-progress progress::-webkit-progress-value {
+  background: var(--ink);
+  border-radius: 4px;
+}
+.session-set-progress span {
+  white-space: nowrap;
+}
+.compact-logger .set-type-button {
+  display: grid;
+  place-items: start center;
+  padding: 0;
+  margin-top: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+.compact-logger .set-type-button .set-number {
+  margin-top: 0;
+}
+.compact-logger .set-header,
+.compact-logger .set-row {
+  grid-template-columns: 44px minmax(42px, 0.85fr) minmax(
+      52px,
+      1.2fr
+    ) 44px 44px 44px;
+}
+@media (min-width: 768px) {
+  .compact-logger .set-header,
+  .compact-logger .set-row {
+    grid-template-columns: 44px minmax(70px, 1fr) minmax(70px, 1.2fr) minmax(
+        55px,
+        0.8fr
+      ) minmax(55px, 0.8fr) 44px;
+  }
+}
+.quick-set-types {
+  display: grid;
+  margin-bottom: 16px;
+}
+.quick-set-types button {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  padding: 18px 8px;
+  min-height: 52px;
+  display: flex;
+  justify-content: space-between;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.profile-gate {
+  width: min(420px, 100%);
+  margin: 10vh auto;
+  padding: 24px;
+}
+.profile-choices {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.profile-choices button {
+  text-align: left;
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: inherit;
+  border: 1px solid var(--line);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+.profile-gate form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}

@@ -32,6 +32,15 @@ type User =
       storageFormat?: 2;
     }
   | {
+      id: string;
+      kind: "workspace";
+      accessMode: "workspace-profiles";
+      profileId: string;
+      profileName: string;
+      email?: never;
+      storageFormat: 2;
+    }
+  | {
       id: "public-workspace";
       kind: "workspace";
       accessMode: "public-workspace";
@@ -40,7 +49,7 @@ type User =
     };
 type Snapshot = {
   user: User | null;
-  accessMode?: "single-user-local" | "public-workspace";
+  accessMode?: "single-user-local" | "public-workspace" | "workspace-profiles";
   box: Outbox;
   ready: boolean;
   status: string;
@@ -83,6 +92,7 @@ let activeSync: object | null = null,
   accountBlocked = false;
 let debounce: ReturnType<typeof setTimeout>;
 const identityKey = "neoform:identity",
+  profileModeKey = "neoform:profile-mode",
   signedOutKey = "neoform:signed-out";
 function publish(p: Partial<Snapshot>) {
   current = { ...current, ...p };
@@ -150,7 +160,9 @@ export async function request<T = unknown>(
   options?: { signal?: AbortSignal; headers?: Record<string, string> },
 ): Promise<T> {
   if (
-    current.accessMode === "public-workspace" &&
+    ["public-workspace", "workspace-profiles"].includes(
+      current.accessMode || "",
+    ) &&
     (path.startsWith("/ai/") ||
       ["/login", "/register", "/logout", "/password", "/account"].includes(
         path,
@@ -159,7 +171,14 @@ export async function request<T = unknown>(
     throw new Error(
       "Private accounts, credentials and AI are unavailable in the public workspace.",
     );
-  const bound = !["/login", "/register", "/me", "/health"].includes(path),
+  const bound = ![
+      "/login",
+      "/register",
+      "/me",
+      "/health",
+      "/profiles",
+      "/profiles/open",
+    ].includes(path),
     requestEpoch = epoch;
   if (bound && !observeAccount())
     throw Object.assign(
@@ -1073,12 +1092,16 @@ export async function initialize(user?: User) {
   try {
     user = user || (await request<User>("/me"));
     if (epoch !== initEpoch) return;
+    if (user.accessMode === "workspace-profiles")
+      localStorage.setItem(profileModeKey, "1");
+    else localStorage.removeItem(profileModeKey);
     // Probe safe identity metadata even after an older authenticated-mode logout.
     // Never re-open an ordinary cookie account against an explicit sign-out.
     if (
       explicitlySignedOut &&
       user.accessMode !== "single-user-local" &&
-      user.accessMode !== "public-workspace"
+      user.accessMode !== "public-workspace" &&
+      user.accessMode !== "workspace-profiles"
     )
       throw Object.assign(new Error("Signed out"), { status: 401 });
     if (
@@ -1087,7 +1110,14 @@ export async function initialize(user?: User) {
         ? user.id !== "public-workspace" ||
           user.kind !== "workspace" ||
           "email" in user
-        : !user.email)
+        : user.accessMode === "workspace-profiles"
+          ? user.kind !== "workspace" ||
+            !user.profileId ||
+            !user.profileName ||
+            user.storageFormat !== 2 ||
+            (user.id !== "public-workspace" &&
+              user.id !== `workspace-profile:${user.profileId}`)
+          : !user.email)
     )
       throw new Error("Invalid account identity.");
     try {
@@ -1130,7 +1160,7 @@ export async function initialize(user?: User) {
     if (epoch !== initEpoch) return;
     const err = e as Error & {
       status?: number;
-      data?: { accessMode?: "single-user-local" };
+      data?: { accessMode?: "single-user-local" | "workspace-profiles" };
     };
     if (err.data?.accessMode === "single-user-local") {
       publish({
@@ -1139,6 +1169,19 @@ export async function initialize(user?: User) {
         ready: true,
         status: "Local setup required",
         error: err.message,
+        conflict: null,
+      });
+      return;
+    }
+    if (err.data?.accessMode === "workspace-profiles") {
+      localStorage.setItem(profileModeKey, "1");
+      publish({
+        user: null,
+        accessMode: "workspace-profiles",
+        box: freshBox(),
+        ready: true,
+        status: "Choose profile",
+        error: "",
         conflict: null,
       });
       return;
@@ -1153,7 +1196,12 @@ export async function initialize(user?: User) {
             ? identity.id === "public-workspace" &&
               identity.kind === "workspace" &&
               !("email" in identity)
-            : identity?.id && identity?.email;
+            : identity?.accessMode === "workspace-profiles"
+              ? identity.kind === "workspace" &&
+                identity.profileId &&
+                (identity.id === "public-workspace" ||
+                  identity.id === `workspace-profile:${identity.profileId}`)
+              : identity?.id && identity?.email;
         if (validIdentity) await openDevice(identity, initEpoch);
         if (epoch !== initEpoch) return;
         const cache = validIdentity && cached(identity);
@@ -1179,7 +1227,9 @@ export async function initialize(user?: User) {
       box: freshBox(),
       ready: true,
       status: "Signed out",
-      accessMode: undefined,
+      accessMode: localStorage.getItem(profileModeKey)
+        ? "workspace-profiles"
+        : undefined,
       conflict: null,
       error: "",
     });
@@ -1193,6 +1243,54 @@ export async function login(
   const loginEpoch = epoch;
   const user = await request<User>("/" + mode, "POST", { email, password });
   if (epoch === loginEpoch) await initialize(user);
+}
+export async function openProfile(id: string, password?: string) {
+  const at = epoch;
+  const user = await request<User>("/profiles/open", "POST", {
+    id,
+    ...(password === undefined ? {} : { password }),
+  });
+  if (at === epoch) await initialize(user);
+}
+export async function lockProfile(beforeLock?: () => Promise<void>) {
+  if (current.accessMode !== "workspace-profiles") return;
+  await sync();
+  if (current.box.dirty || current.conflict)
+    throw Error("Sync or export pending changes before switching profiles.");
+  const at = epoch;
+  await beforeLock?.();
+  if (at !== epoch) return;
+  if (current.box.dirty || current.conflict)
+    throw Error(
+      "New changes are still syncing. Try switching profiles again after sync finishes.",
+    );
+  await request("/profiles/lock", "POST", {});
+  await diskWrites;
+  if (at !== epoch) return;
+  if (current.box.dirty || current.conflict)
+    throw Error(
+      "New edits were preserved while locking. Reload and unlock this profile to finish syncing before switching.",
+    );
+  const owner = current.user!.id,
+    selectedVault = vault,
+    selectedQueue = mutationQueue,
+    writes = diskWrites;
+  invalidate();
+  localStorage.removeItem(identityKey);
+  localStorage.removeItem(key(owner));
+  localStorage.setItem(signedOutKey, "1");
+  publish({
+    user: null,
+    box: freshBox(),
+    ready: true,
+    status: "Choose profile",
+    error: "",
+    conflict: null,
+    accessMode: "workspace-profiles",
+  });
+  await writes;
+  await selectedVault?.clearOwner(owner, true);
+  await selectedQueue?.clearOwner(owner);
 }
 export async function logout() {
   if (current.accessMode === "public-workspace")

@@ -343,3 +343,8 @@ export async function disableRestAlerts() {
     message: "Rest notifications disabled on this device.",
   });
 }
+export async function cancelRestAlertForSwitch() {
+  desired = "profile-lock";
+  await queue.catch(() => {});
+  await operation("cancel");
+}

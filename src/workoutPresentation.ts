@@ -1,4 +1,28 @@
 import * as D from "./domain";
+export function sessionSetProgress(session: D.Session) {
+  const rows = session.exercises.flatMap((entry) => entry.sets);
+  return {
+    completed: rows.filter((set) => set.done).length,
+    total: rows.length,
+  };
+}
+export function changeSimpleSetType(
+  entry: D.Entry,
+  id: string,
+  kind: D.SetLog["kind"],
+) {
+  if (
+    (entry.technique && entry.technique !== "straight") ||
+    entry.techniqueGroup ||
+    entry.superset ||
+    entry.sets.some((s) => s.bout && s.bout !== "straight")
+  )
+    throw Error("Use the advanced editor for linked or advanced sequences.");
+  return {
+    ...entry,
+    sets: entry.sets.map((set) => (set.id === id ? { ...set, kind } : set)),
+  };
+}
 export function previousWorkingRows(
   sessions: D.Session[],
   entry: D.Entry,

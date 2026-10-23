@@ -18,7 +18,13 @@ if (browserMatch && !/^[a-z0-9-]+\.spec\.ts$/.test(browserMatch))
   throw Error("Invalid focused browser spec.");
 if (
   args.some(
-    (a) => !["--api-only", "--browser-only", "--public-only"].includes(a),
+    (a) =>
+      ![
+        "--api-only",
+        "--browser-only",
+        "--public-only",
+        "--profiles-only",
+      ].includes(a),
   ) ||
   args.length > 1
 )
@@ -155,8 +161,11 @@ try {
   const configuration = {
     name: db,
     vars: {
-      ...(args.includes("--public-only")
+      ...(args.includes("--public-only") || args.includes("--profiles-only")
         ? { PUBLIC_WORKSPACE: "enabled" }
+        : {}),
+      ...(args.includes("--profiles-only")
+        ? { WORKSPACE_PROFILES: "enabled" }
         : {}),
       REST_PUSH_VAPID_PUBLIC_KEY: qaPublicKey,
       REST_PUSH_VAPID_PRIVATE_KEY: qaPrivateKey,
@@ -201,6 +210,43 @@ try {
       ...common,
     ]),
   );
+  if (args.includes("--profiles-only")) {
+    // Synthetic credentials, generated exclusively inside the owned QA database.
+    const salt = "qa-profile-salt",
+      key = await crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode("QA-profile-pass"),
+        "PBKDF2",
+        false,
+        ["deriveBits"],
+      );
+    const hash = Buffer.from(
+      await crypto.subtle.deriveBits(
+        {
+          name: "PBKDF2",
+          hash: "SHA-512",
+          salt: new TextEncoder().encode(salt),
+          iterations: 100000,
+        },
+        key,
+        256,
+      ),
+    ).toString("hex");
+    await finish(
+      launch([
+        wrangler,
+        "d1",
+        "execute",
+        db,
+        "--local",
+        "--persist-to",
+        state,
+        ...common,
+        "--command",
+        `UPDATE workspace_profiles SET pass_hash='${hash}',salt='${salt}' WHERE id='sharma'`,
+      ]),
+    );
+  }
   const listenPort = await port();
   let inspectorPort = await port();
   while (inspectorPort === listenPort) inspectorPort = await port();
@@ -269,26 +315,32 @@ try {
     await access(process.env.NEOFORM_QA_BROWSER);
     env.NEOFORM_QA_BROWSER = process.env.NEOFORM_QA_BROWSER;
   }
-  env.NEOFORM_QA_MODE = args.includes("--public-only") ? "public" : "private";
+  env.NEOFORM_QA_MODE = args.includes("--profiles-only")
+    ? "profiles"
+    : args.includes("--public-only")
+      ? "public"
+      : "private";
   if (!args.includes("--browser-only"))
     await finish(
       launch([
         path.join(root, "node_modules/vitest/vitest.mjs"),
         "run",
         "--maxWorkers=1",
-        ...(args.includes("--public-only")
-          ? [
-              "tests/public-storage-api.test.ts",
-              "tests/rest-alerts-api.test.ts",
-            ]
-          : [
-              "tests/api.test.ts",
-              "tests/rest-alerts-api.test.ts",
-              "tests/training-api.test.ts",
-              "tests/release-api-identity.test.ts",
-              "tests/v2-api.test.ts",
-              "tests/storage-api.test.ts",
-            ]),
+        ...(args.includes("--profiles-only")
+          ? ["tests/workspace-profiles-api.test.ts"]
+          : args.includes("--public-only")
+            ? [
+                "tests/public-storage-api.test.ts",
+                "tests/rest-alerts-api.test.ts",
+              ]
+            : [
+                "tests/api.test.ts",
+                "tests/rest-alerts-api.test.ts",
+                "tests/training-api.test.ts",
+                "tests/release-api-identity.test.ts",
+                "tests/v2-api.test.ts",
+                "tests/storage-api.test.ts",
+              ]),
       ]),
     );
   if (!args.includes("--api-only"))

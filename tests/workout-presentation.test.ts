@@ -10,7 +10,39 @@ import {
   programPrescriptionRows,
   plannedMuscleCards,
   programSchedule,
+  sessionSetProgress,
+  changeSimpleSetType,
 } from "../src/workoutPresentation";
+it("counts actual rows across the whole workout, including warmups and advanced bouts", () => {
+  const s = D.startSession("Progress", [
+    D.createEntry(D.catalog[0]),
+    D.createEntry(D.catalog[1]),
+  ]);
+  s.exercises[0].sets[0].kind = "warmup";
+  s.exercises[0].sets[0].done = true;
+  s.exercises[1].sets[0].bout = "mini";
+  s.exercises[1].sets[0].done = true;
+  expect(sessionSetProgress(s)).toEqual({ completed: 2, total: 6 });
+  s.exercises[0].sets.splice(1, 1);
+  expect(sessionSetProgress(s)).toEqual({ completed: 2, total: 5 });
+  expect(sessionSetProgress(D.startSession("Empty", []))).toEqual({
+    completed: 0,
+    total: 0,
+  });
+});
+it("quick type changes preserve observations and prescriptions and reject linked sequences", () => {
+  const e = D.createEntry(D.catalog[0]),
+    original = structuredClone(e);
+  e.sets[0].done = true;
+  const next = changeSimpleSetType(e, e.sets[0].id, "warmup");
+  expect(next.sets[0]).toEqual({ ...e.sets[0], kind: "warmup" });
+  expect(next.plannedWorkingSets).toBe(original.plannedWorkingSets);
+  expect(e.sets[0].kind).toBe("working");
+  e.technique = "myoreps";
+  expect(() => changeSimpleSetType(e, e.sets[0].id, "working")).toThrow(
+    /advanced/i,
+  );
+});
 it("program schedule inserts rest days only for unambiguous saved weekday assignments", () => {
   const p = D.starterProgram("balanced");
   p.workouts = p.workouts.slice(0, 2);

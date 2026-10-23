@@ -64,6 +64,8 @@ jobs:
         run: npm run test:integration
       - name: Actual public workspace release gates
         run: npm run test:public
+      - name: Isolated profile access and switching gates
+        run: node scripts/qa.mjs --profiles-only
       - name: Write public nonsecret release marker
         run: node scripts/ci-production-config.mjs marker
       - name: Require existing database and encryption master

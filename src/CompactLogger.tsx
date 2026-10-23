@@ -13,6 +13,7 @@ import {
   previousWorkingRows,
   resumeExerciseId,
   nextExerciseId,
+  changeSimpleSetType,
 } from "./workoutPresentation";
 import { useRef, useState, useMemo } from "react";
 import {
@@ -58,6 +59,7 @@ export function SessionLogger({
     [sheet, setSheet] = useState<string | null>(null),
     [effort, setEffort] = useState<"RIR" | "RPE">("RIR");
   const data = useStore().box.data;
+  const [typeSet, setTypeSet] = useState<string | null>(null);
   const program = data.programs.find((p) => p.id === s.programId);
   const tabs = useRef<HTMLDivElement>(null);
   const current = s.exercises.find((x) => x.id === selected) || s.exercises[0];
@@ -316,21 +318,27 @@ export function SessionLogger({
                         next?.focus();
                       }}
                     >
-                      <span className="set-number">
-                        {set.kind === "warmup"
-                          ? "W"
-                          : set.bout === "activation"
-                            ? "A"
-                            : set.bout === "mini"
-                              ? "M"
-                              : set.bout === "giant"
-                                ? "G"
-                                : set.bout === "down"
-                                  ? "↓"
-                                  : set.kind === "drop"
-                                    ? "D"
-                                    : i + 1}
-                      </span>
+                      <button
+                        className="set-type-button"
+                        aria-label={`Change ${ex.name} set ${i + 1} type`}
+                        onClick={() => setTypeSet(set.id)}
+                      >
+                        <span className="set-number">
+                          {set.kind === "warmup"
+                            ? "W"
+                            : set.bout === "activation"
+                              ? "A"
+                              : set.bout === "mini"
+                                ? "M"
+                                : set.bout === "giant"
+                                  ? "G"
+                                  : set.bout === "down"
+                                    ? "↓"
+                                    : set.kind === "drop"
+                                      ? "D"
+                                      : i + 1}
+                        </span>
+                      </button>
                       <div className="previous-set">
                         {set.kind === "working" &&
                         priorRows[
@@ -628,6 +636,63 @@ export function SessionLogger({
                         ? "Add down set"
                         : "Add set"}
               </Button>
+              {typeSet && e.sets.some((set) => set.id === typeSet) && (
+                <Modal title="Set type" close={() => setTypeSet(null)}>
+                  {(!e.technique || e.technique === "straight") &&
+                  !e.techniqueGroup &&
+                  !e.superset &&
+                  e.sets.every(
+                    (set) => !set.bout || set.bout === "straight",
+                  ) ? (
+                    <div
+                      className="quick-set-types"
+                      role="group"
+                      aria-label="Choose set type"
+                    >
+                      {(
+                        [
+                          ["working", "Working set"],
+                          ["warmup", "Warm-up"],
+                          ["drop", "Drop set"],
+                        ] as const
+                      ).map(([kind, label]) => (
+                        <button
+                          key={kind}
+                          aria-pressed={
+                            e.sets.find((set) => set.id === typeSet)?.kind ===
+                            kind
+                          }
+                          onClick={() => {
+                            updateEntry(changeSimpleSetType(e, typeSet, kind));
+                            setTypeSet(null);
+                          }}
+                        >
+                          {label}
+                          <span>
+                            {e.sets.find((set) => set.id === typeSet)?.kind ===
+                            kind
+                              ? "✓"
+                              : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>
+                      This row belongs to a linked or advanced sequence. Edit
+                      the sequence together to preserve its structure.
+                    </p>
+                  )}
+                  <Button
+                    onClick={() => {
+                      setTypeSet(null);
+                      setSheet("Exercise options");
+                    }}
+                  >
+                    Advanced techniques
+                  </Button>
+                </Modal>
+              )}
               {sheet && (
                 <Modal
                   title={

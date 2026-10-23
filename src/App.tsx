@@ -1,7 +1,11 @@
 import { ProgramEditor as ProgramBuilder } from "./ProgramEditor";
 import { ExercisePicker } from "./ExercisePicker";
 import { WorkoutRecap } from "./WorkoutRecapScreen";
-import { useRestAlerts, claimRestTimer } from "./restAlerts";
+import {
+  useRestAlerts,
+  claimRestTimer,
+  cancelRestAlertForSwitch,
+} from "./restAlerts";
 import { feedbackTone, unlockFeedbackAudio } from "./feedbackAudio";
 import { WorkoutCelebration } from "./RewardProgress";
 import { rewards } from "./rewards";
@@ -71,6 +75,8 @@ import {
   X,
 } from "lucide-react";
 import * as D from "./domain";
+import { sessionSetProgress } from "./workoutPresentation";
+import { ProfileGate } from "./ProfileGate";
 import { exportHistoryBackup, importHistoryBackup } from "./historyBackup";
 import { TrainingExposure } from "./TrainingExposure";
 import {
@@ -85,6 +91,7 @@ import {
   sync,
   useStore,
   exportPendingCopies,
+  lockProfile,
 } from "./store";
 type Page =
   | "overview"
@@ -278,7 +285,11 @@ function PublicWorkspaceNotice() {
 }
 function Onboarding() {
   const store = useStore(),
-    [name, setName] = useState(""),
+    [name, setName] = useState(
+      store.user?.accessMode === "workspace-profiles"
+        ? store.user.profileName
+        : "",
+    ),
     [experience, setExperience] = useState<"New" | "Intermediate" | "Advanced">(
       "Intermediate",
     ),
@@ -296,10 +307,27 @@ function Onboarding() {
     [template, setTemplate] = useState<
       "balanced" | "upper-lower" | "minimal" | "none"
     >("balanced");
+  const [profileError, setProfileError] = useState("");
   return (
     <main className="onboarding">
       <Brand />
       {store.accessMode === "public-workspace" && <PublicWorkspaceNotice />}
+      {store.accessMode === "workspace-profiles" && (
+        <Button
+          onClick={() =>
+            void lockProfile(cancelRestAlertForSwitch).catch((e) =>
+              setProfileError(e.message),
+            )
+          }
+        >
+          Switch profile
+        </Button>
+      )}
+      {profileError && (
+        <p role="alert" className="error">
+          {profileError}
+        </p>
+      )}
       <p className="eyebrow">01 / A PLACE TO BEGIN</p>
       <h1>
         Make it <em>your training.</em>
@@ -439,6 +467,9 @@ export default function App() {
     xp: number;
   } | null>(null);
   const clockActive = !!(s.draft || s.timer);
+  const setProgress = s.draft
+    ? sessionSetProgress(s.draft)
+    : { completed: 0, total: 0 };
   const close = () => setModal(null);
   // Account-scoped dialogs must never survive shared-cookie account switching.
   useEffect(() => {
@@ -576,7 +607,9 @@ export default function App() {
       title: "Create",
       content: (
         <div className="create-menu">
-          {store.accessMode === "public-workspace" ? (
+          {["public-workspace", "workspace-profiles"].includes(
+            store.accessMode || "",
+          ) ? (
             <p>
               AI is unavailable in public mode. Private Gemini keys are never
               used. Create programs manually or use an editable starter
@@ -903,6 +936,8 @@ export default function App() {
         <Button onClick={() => void initialize()}>Retry local setup</Button>
       </main>
     );
+  if (!store.user && store.accessMode === "workspace-profiles")
+    return <ProfileGate />;
   if (!store.user) return <Auth />;
   if (!s.profile) return <Onboarding />;
   const thisWeek = new Date();
@@ -954,7 +989,9 @@ export default function App() {
             <span>
               {store.accessMode === "public-workspace"
                 ? "Public shared workspace"
-                : "Private by default"}
+                : store.accessMode === "workspace-profiles"
+                  ? "Separate training profiles"
+                  : "Private by default"}
               <small>Built around your training.</small>
             </span>
           </div>
@@ -1313,6 +1350,16 @@ export default function App() {
                     Finish session
                   </Button>
                 </header>
+                <div className="session-set-progress">
+                  <progress
+                    aria-label="Workout set progress"
+                    value={setProgress.completed}
+                    max={Math.max(1, setProgress.total)}
+                  />
+                  <span>
+                    {setProgress.completed} / {setProgress.total} sets
+                  </span>
+                </div>
                 <SessionLogger
                   session={s.draft}
                   exercises={exercises}
@@ -2816,6 +2863,7 @@ function Preferences({
   close: () => void;
 }) {
   const singleUser = useStore().user?.accessMode === "single-user-local";
+  const profileMode = useStore().accessMode === "workspace-profiles";
   const publicWorkspace = useStore().accessMode === "public-workspace";
   const exercises = [...D.catalog, ...s.customExercises];
   return (
@@ -3192,7 +3240,23 @@ function Preferences({
             </summary>
             <div className="preference-content">
               <p>{userEmail}</p>
-              {publicWorkspace ? (
+              {profileMode ? (
+                <>
+                  <p>
+                    Separate programs, history and progress for each profile.
+                    Locking clears this profile’s synced cache on this device.
+                  </p>
+                  <Button
+                    onClick={() =>
+                      void lockProfile(cancelRestAlertForSwitch).catch((e) =>
+                        setNotice(e.message),
+                      )
+                    }
+                  >
+                    Lock & switch profile
+                  </Button>
+                </>
+              ) : publicWorkspace ? (
                 <p>
                   No account or sign-in. This shared workspace is publicly
                   readable and writable. Existing private accounts remain

@@ -19,10 +19,11 @@ export function ciProductionConfig(env) {
   config.d1_databases = [{ binding: 'DB', database_name: env.NEOFORM_WORKER + '-data', database_id: env.NEOFORM_D1_ID, migrations_dir: 'migrations' }];
   assertAiDeployment(config);
   // Existing shared guard validates the closed cloud baseline; this one explicit
-  // public-workspace flag is independently allowlisted here, not arbitrary vars.
+  // workspace installation now uses the explicitly requested separate profiles.
+  // Both flags are pinned here; arbitrary vars and local auth bypasses stay out.
   if (env.PUBLIC_WORKSPACE !== undefined && env.PUBLIC_WORKSPACE !== '') {
     if (env.PUBLIC_WORKSPACE !== 'enabled') throw new Error('Invalid PUBLIC_WORKSPACE; only enabled is allowed.');
-    config.vars = { PUBLIC_WORKSPACE: 'enabled' };
+    config.vars = { PUBLIC_WORKSPACE: 'enabled', WORKSPACE_PROFILES: 'enabled' };
   }
   return config;
 }
@@ -82,7 +83,7 @@ async function run(command, env) {
     if (tracked.stdout.split('\0').some(name => /(^|\/)(\.dev\.vars(?:\..*)?|\.env(?:\..*)?|\.local-state|\.wrangler|ai-local\.ts)(\/|$)/.test(name)))
       throw new Error('Checkout contains forbidden local credential/state paths.');
     const migrations = (await readdir('migrations')).filter(name => name.endsWith('.sql')).sort();
-    if (JSON.stringify(migrations) !== JSON.stringify(['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql', '0005_coaching_events.sql']))
+    if (JSON.stringify(migrations) !== JSON.stringify(['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql', '0005_coaching_events.sql', '0006_workspace_profiles.sql']))
       throw new Error('Unexpected migrations: review and explicitly update the CI migration allowlist.');
     await writeFile('.ci-production.json', JSON.stringify(config, null, 2) + '\n', { flag: 'wx' });
   } else if (command === 'preflight') await checkExistingProduction(env);

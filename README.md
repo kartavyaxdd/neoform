@@ -2,7 +2,9 @@
 
 NEOFORM is a compact workout logger and optional mini coach built with React, TypeScript, Vite, a Cloudflare Worker and D1. The mobile logger shows one exercise at a time. Equipment setup, readiness, technique controls and coaching explanations stay in sheets.
 
-The existing public app is [NEOFORM](https://neoform-bca721354a.kartavya-neoform.workers.dev/). It deliberately uses **public-workspace mode**: anyone with the URL can view and change the shared workspace. Ordinary private-account authentication remains available in authenticated installations. Private accounts, provider keys and AI generation are blocked in public-workspace mode. Local no-login mode is a separate opt-in loopback-only configuration.
+The existing hosted app is [NEOFORM](https://neoform-bca721354a.kartavya-neoform.workers.dev/). Its workspace installation now uses **separate profiles**: Sharma keeps the original data behind a server-checked profile lock; Abhishek starts with an independent empty log and is open by choice. Profile names are public. Ordinary private-account authentication remains available in authenticated installations. Provider keys, private-account administration and AI generation remain blocked in workspace profiles. Local no-login mode is a separate opt-in loopback-only configuration. See [SECURITY.md](SECURITY.md) for profile-lock and offline-cache limits.
+
+Tap a set's number to choose Working, Warm-up or Drop in two taps. Linked and advanced sequences keep their dedicated editor. The top workout bar counts completed rows out of all actual set rows, including warmups and advanced bouts; it is completion progress, not a volume or growth estimate. More → Account & access → Lock & switch profile preserves pending work before switching.
 
 Training policy is governed by [TRAINING-PRINCIPLES.md](TRAINING-PRINCIPLES.md). Deterministic guidance requires confirmed comparable performance and current readiness; it explains uncertainty and never measures growth or personal volume landmarks. Available load selections constrain proposals. Applying a proposal is explicit and does not rewrite a program or historical workout. The full remaining scope is tracked in [docs/IMPROVEMENT-PLAN.md](docs/IMPROVEMENT-PLAN.md).
 
@@ -47,6 +49,8 @@ npm run test:integration
 API gates cover authentication, account isolation, revision conflicts, input boundaries and exact training metadata persistence against real D1. Browser gates cover readiness, equipment, explicit program saves/activation, offline journals, phase targets, accessibility and 360/390px layouts. Synthetic AI previews are intercepted fixtures, not provider calls. The selected gate does not run every historical browser/probe suite: encrypted-key integration, live-provider qualification, and local no-login/provider rehearsals need their own isolated setup. `npm run test:public` separately verifies the actual public-workspace Worker and browser, and runs in deployment CI. No ordinary test is evidence of a live upstream AI response. Never copy an owner's key, session or database into QA.
 
 CI installs the locked Playwright browser and runs these gates before any remote migration or deployment. A failed gate blocks release. The separate remote metadata preflight also requires the existing exact database and encryption-master metadata; it never creates an installation or rotates the master.
+
+`node scripts/qa.mjs --profiles-only` separately verifies profile access, original-owner history preservation, stale-tab fencing, lock revocation, throttling, isolated new-profile storage, quick set types and total-set progress at 360/390/1440px using a fresh Worker/D1 instance and synthetic credentials. It also runs in CI. The additive profile migration never embeds a password; initial provisioning is an explicit operator action through `scripts/provision-workspace-lock.mjs` using stdin, with no existing credential reads or replacement.
 
 ## Hosting and releases
 

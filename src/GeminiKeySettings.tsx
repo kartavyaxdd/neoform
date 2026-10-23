@@ -3,7 +3,9 @@ import { request, useStore } from "./store";
 import { Button, Field } from "./ui";
 import { GEMINI_MODEL } from "./aiProof";
 export function GeminiKeySettings() {
-  const publicWorkspace = useStore().accessMode === "public-workspace";
+  const publicWorkspace = ["public-workspace", "workspace-profiles"].includes(
+    useStore().accessMode || "",
+  );
   const account = useStore().user?.id;
   const [key, setKey] = useState(""),
     [configured, setConfigured] = useState(false),

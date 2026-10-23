@@ -5,9 +5,11 @@ import { emptyState, stateSchema, MAX_BACKUP } from "../src/domain";
 import { geminiRoute, type GeminiEnv } from "./geminiRoutes";
 import { GeminiFault } from "./gemini";
 import { HistoryStorage, HistoryFault } from "./historyStorage";
+import { workspaceProfilesRoute, ProfileFault } from "./workspaceProfiles";
 interface Env extends GeminiEnv, RestAlertEnv {
   ASSETS: Fetcher;
   PUBLIC_WORKSPACE?: string;
+  WORKSPACE_PROFILES?: string;
   SINGLE_USER_MODE?: string;
   SINGLE_USER_ID?: string;
   SINGLE_USER_GATEWAY_TOKEN?: string;
@@ -264,6 +266,14 @@ function localBoundary(req: Request, env: Env) {
     );
 }
 async function route(req: Request, env: Env) {
+  if (
+    env.WORKSPACE_PROFILES === "enabled" &&
+    env.PUBLIC_WORKSPACE !== "enabled"
+  )
+    throw new Fault(
+      503,
+      "Workspace profiles require the selected workspace installation.",
+    );
   if (env.PUBLIC_WORKSPACE === "enabled" && env.SINGLE_USER_MODE === "local")
     throw new Fault(
       503,
@@ -294,6 +304,12 @@ async function route(req: Request, env: Env) {
   )
     throw new Fault(403, "Same-origin requests required.");
   if (env.PUBLIC_WORKSPACE === "enabled") {
+    if (env.WORKSPACE_PROFILES === "enabled")
+      return workspaceProfilesRoute(req, env, {
+        body,
+        hash: passwordHash,
+        throttle: (key, n) => throttle(env, key, n),
+      });
     const expected = req.headers.get("X-Neoform-Account");
     if (expected !== null && expected !== "public-workspace")
       throw new Fault(
@@ -535,11 +551,15 @@ export default {
     } catch (e) {
       res =
         e instanceof Fault ||
+        e instanceof ProfileFault ||
         e instanceof GeminiFault ||
         e instanceof HistoryFault
           ? json(
               {
                 error: e.message,
+                ...(e instanceof ProfileFault
+                  ? { accessMode: e.accessMode }
+                  : {}),
                 ...(env.SINGLE_USER_MODE === "local"
                   ? { accessMode: "single-user-local" }
                   : {}),

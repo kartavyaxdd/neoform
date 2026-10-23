@@ -7,34 +7,36 @@ export default defineConfig({
   // Provider-independent end-to-end release gates. Live-provider and special
   // access-mode rehearsals require their separate isolated configurations.
   testMatch:
-    process.env.NEOFORM_QA_MODE === "public"
-      ? [
-          "public-storage.spec.ts",
-          "coaching.spec.ts",
-          "ui-redesign.spec.ts",
-          "adaptive-workout.spec.ts",
-          "gym-experience.spec.ts",
-          "workout-recap.spec.ts",
-          "reference-fidelity.spec.ts",
-          "program-layout.spec.ts",
-        ]
-      : [
-          "ui-redesign.spec.ts",
-          "adaptive-workout.spec.ts",
-          "gym-experience.spec.ts",
-          "workout-recap.spec.ts",
-          "reference-fidelity.spec.ts",
-          "program-layout.spec.ts",
-          "coaching.spec.ts",
-          "readiness.spec.ts",
-          "reliability.spec.ts",
-          "training-phase.spec.ts",
-          "v2-layout.spec.ts",
-          "v2-accessibility.spec.ts",
-          "mutation-queue.spec.ts",
-          "storage-release.spec.ts",
-          "store-races.spec.ts",
-        ],
+    process.env.NEOFORM_QA_MODE === "profiles"
+      ? ["workspace-profiles.spec.ts"]
+      : process.env.NEOFORM_QA_MODE === "public"
+        ? [
+            "public-storage.spec.ts",
+            "coaching.spec.ts",
+            "ui-redesign.spec.ts",
+            "adaptive-workout.spec.ts",
+            "gym-experience.spec.ts",
+            "workout-recap.spec.ts",
+            "reference-fidelity.spec.ts",
+            "program-layout.spec.ts",
+          ]
+        : [
+            "ui-redesign.spec.ts",
+            "adaptive-workout.spec.ts",
+            "gym-experience.spec.ts",
+            "workout-recap.spec.ts",
+            "reference-fidelity.spec.ts",
+            "program-layout.spec.ts",
+            "coaching.spec.ts",
+            "readiness.spec.ts",
+            "reliability.spec.ts",
+            "training-phase.spec.ts",
+            "v2-layout.spec.ts",
+            "v2-accessibility.spec.ts",
+            "mutation-queue.spec.ts",
+            "storage-release.spec.ts",
+            "store-races.spec.ts",
+          ],
   timeout: 90000,
   expect: { timeout: 12000 },
   fullyParallel: false,

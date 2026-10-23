@@ -31,7 +31,7 @@ describe('production CI configuration', () => {
   });
   it('allows only the explicitly authorized public workspace opt-in, never a single-user bypass', async () => {
     const { ciProductionConfig } = await import(helper);
-    expect(ciProductionConfig({ ...env, PUBLIC_WORKSPACE: 'enabled' }).vars).toEqual({ PUBLIC_WORKSPACE: 'enabled' });
+    expect(ciProductionConfig({ ...env, PUBLIC_WORKSPACE: 'enabled' }).vars).toEqual({ PUBLIC_WORKSPACE: 'enabled', WORKSPACE_PROFILES: 'enabled' });
     for (const value of ['true', 'disabled', 'enabled\n', ' enabled']) expect(() => ciProductionConfig({ ...env, PUBLIC_WORKSPACE: value })).toThrow('PUBLIC_WORKSPACE');
     expect(ciProductionConfig({ ...env, PUBLIC_WORKSPACE: '' }).vars).toBeUndefined();
   });
@@ -86,10 +86,10 @@ describe('production CI configuration', () => {
     try {
       expect(spawnSync('git', ['init', '--quiet'], { cwd: directory }).status).toBe(0);
       mkdirSync(path.join(directory, 'migrations'));
-      for (const name of ['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql', '0005_coaching_events.sql']) writeFileSync(path.join(directory, 'migrations', name), '-- synthetic fixture only\n');
+      for (const name of ['0001_private_accounts.sql', '0002_gemini_account_keys.sql', '0003_public_workspace.sql', '0004_normalized_history.sql', '0005_coaching_events.sql', '0006_workspace_profiles.sql']) writeFileSync(path.join(directory, 'migrations', name), '-- synthetic fixture only\n');
       mkdirSync(path.join(directory, 'dist'));
       expect(invoke('configure').status).toBe(0);
-      expect(JSON.parse(readFileSync(path.join(directory, '.ci-production.json'), 'utf8')).vars).toEqual({ PUBLIC_WORKSPACE: 'enabled' });
+      expect(JSON.parse(readFileSync(path.join(directory, '.ci-production.json'), 'utf8')).vars).toEqual({ PUBLIC_WORKSPACE: 'enabled', WORKSPACE_PROFILES: 'enabled' });
       expect(invoke('configure').status).toBe(1); // Never overwrite an unexpected config.
       expect(invoke('marker').status).toBe(0);
       expect(JSON.parse(readFileSync(path.join(directory, 'dist/__release.json'), 'utf8'))).toEqual({ sha: env.GITHUB_SHA });
