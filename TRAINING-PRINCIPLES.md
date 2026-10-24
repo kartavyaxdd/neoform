@@ -133,6 +133,8 @@ Historical pre-session pain and post-workout observations remain separate chrono
 
 `coach-v1` adds immutable per-set prescriptions, explicit execution/rest confirmation, preview-and-accept session or future-program choices, bounded progression trials, local dose/substitution and broad deload reviews, and a durable decision/outcome ledger. Exact original policy bounds and limits are in `docs/COACHING-ENGINE.md`; these supersede the older hold-only coarse-step policy where an explicitly reviewed trial or rep-range proposal qualifies. Pain vetoes, unknown observations and phase boundaries remain. This does not establish longitudinal growth prediction or algorithmic optimality.
 
+October 25 accepted-change review: `docs/ACCEPTED-CHANGE-REVIEWS.md` defines derived follow-up reviews and conservative response guards. Two confirmed target attainments support keeping an experiment; two misses prompt a reviewed prior-target option where a still-current isolated restoration is supported. Missing observations, changed context and stale/corrected outcomes cannot establish success. Volume needs distinct timely recovery follow-ups in addition to performance. These are original software heuristics, not measured growth, optimal targets or personal volume landmarks. All changes still require explicit scope and acceptance; no automatic escalation caps are raised.
+
 ## Sources
 
 [1] file:///C:/Users/spamk/OneDrive/Documents/Fitness/Mike%20Istraetel/Dr.%20Mike%20Israetel,%20Dr.%20James%20Hoffman,%20Dr.%20Melissa%20Davis,%20Jared%20Feather%20-%20Scientific%20Principles%20of%20Hypertrophy%20Training-Renaissance%20Periodisation%20(2020).pdf — Scientific Principles of Hypertrophy Training (2020), user-provided local PDF

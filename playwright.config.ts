@@ -13,6 +13,7 @@ export default defineConfig({
         ? [
             "public-storage.spec.ts",
             "preview-guidance.spec.ts",
+            "coaching-response.spec.ts",
             "coaching.spec.ts",
             "ui-redesign.spec.ts",
             "adaptive-workout.spec.ts",
@@ -23,6 +24,7 @@ export default defineConfig({
           ]
         : [
             "preview-guidance.spec.ts",
+            "coaching-response.spec.ts",
             "ui-redesign.spec.ts",
             "adaptive-workout.spec.ts",
             "gym-experience.spec.ts",

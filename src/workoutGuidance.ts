@@ -112,7 +112,10 @@ export function guidanceView(
       proposal,
       label:
         proposal.action === "reps"
-          ? "Add a rep"
+          ? proposal.rows.reduce((n, r) => n + r.reps, 0) <
+            proposal.beforeRows.reduce((n, r) => n + r.reps, 0)
+            ? "Review reps"
+            : "Add a rep"
           : ["load", "trial", "reduce-load"].includes(proposal.action)
             ? "Review load"
             : proposal.action === "recover"

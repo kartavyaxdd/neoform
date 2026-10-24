@@ -10,19 +10,18 @@ import {
   type CoachSettings,
 } from "./coachingTypes";
 
+import {
+  canonical,
+  coachContextKey,
+  eligible,
+  outcomeFingerprint,
+  validOutcome,
+} from "./coachingEvidence";
+export { canonical, coachContextKey, validOutcome } from "./coachingEvidence";
+import { reviewAcceptedChanges } from "./coachingResponse";
+
 export const COACH_VERSION = "coach-v1" as const;
 const DAY = 86400000;
-export function canonical(value: unknown): string {
-  return JSON.stringify(value, (_key, v) =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(
-          Object.keys(v)
-            .sort()
-            .map((k) => [k, v[k]]),
-        )
-      : v,
-  );
-}
 // IDs are only a UI identity. Acceptance also compares the full canonical basis.
 function identity(value: string) {
   let a = 2166136261,
@@ -74,80 +73,6 @@ function exposureIndex(sessions: D.Session[]) {
     }
   exposureIndexes.set(sessions, index);
   return index;
-}
-export function coachContextKey(
-  session: D.Session,
-  entry: D.Entry,
-  ex: D.Exercise,
-) {
-  const prefix = session.exercises
-    .slice(0, session.exercises.indexOf(entry))
-    .map((e) => [
-      e.exerciseId,
-      e.plannedWorkingSets,
-      e.target,
-      e.setup,
-      e.technique,
-    ]);
-  return canonical([
-    session.programId ?? null,
-    session.workoutId ?? null,
-    entry.sourceTargetId ?? null,
-    session.phase ?? null,
-    D.comparableKey(entry, ex),
-    entry.target,
-    entry.plannedWorkingSets,
-    prefix,
-  ]);
-}
-function eligible(e: D.Entry, at: number) {
-  if (e.coachingContext?.skipReason === "pain")
-    return "reported pain requires review";
-  const sets = working(e);
-  if (
-    !e.target ||
-    !e.plannedWorkingSets ||
-    sets.length !== e.plannedWorkingSets ||
-    sets.some((t) => !t.done)
-  )
-    return "planned dose incomplete or unknown";
-  if (sets.some((t) => t.effortReported !== true))
-    return "actual effort unconfirmed";
-  if (sets.some((t, i) => !t.prescription || t.prescription.ordinal !== i))
-    return "per-set prescription unknown";
-  if (
-    sets.some(
-      (t) =>
-        t.prescription!.weight !== t.weight ||
-        t.prescription!.min !== e.target!.min ||
-        t.prescription!.max !== e.target!.max ||
-        t.prescription!.rir !== e.target!.rir ||
-        t.prescription!.rest !== e.target!.rest,
-    )
-  )
-    return "recorded loads or prescription context changed";
-  if (
-    e.sets.some(
-      (t) =>
-        t.done &&
-        t.kind !== "warmup" &&
-        (t.kind !== "working" || (t.bout && t.bout !== "straight")),
-    )
-  )
-    return "advanced or mixed bouts";
-  if (e.technique && e.technique !== "straight") return "non-straight sequence";
-  if (e.tempo || e.superset) return "execution sequence differs";
-  if (
-    e.coachingContext?.execution !== "consistent" ||
-    e.coachingContext.rest !== "usual"
-  )
-    return "execution or rest not confirmed as planned";
-  if (
-    e.coachingContext.recordedAt < at ||
-    e.coachingContext.recordedAt > at + 2 * DAY
-  )
-    return "execution confirmation time does not describe this session";
-  return null;
 }
 export function evidenceFor(
   state: D.State,
@@ -248,6 +173,7 @@ export function evaluateCoaching(
   };
   const exercises = [...D.catalog, ...state.customExercises];
   const program = state.programs.find((p) => p.id === session.programId);
+  const responses = reviewAcceptedChanges(state, now, session);
   const proposals: CoachingProposal[] = [];
   for (const entry of session.exercises) {
     const ex = exercises.find((e) => e.id === entry.exerciseId);
@@ -261,6 +187,30 @@ export function evaluateCoaching(
         D.comparableKey(entry, ex)
         ? candidateTarget
         : undefined;
+    const experiments = responses
+      .filter((r) => {
+        const p = r.decision.proposal!;
+        return (
+          r.decision.scope === "session" &&
+          !r.edited &&
+          r.contextMatches &&
+          r.decision.at >= now - 56 * DAY &&
+          !!target &&
+          p.targetId === target.id &&
+          ["reps", "load", "trial"].includes(p.action) &&
+          p.rows.some(
+            (v, i) =>
+              v.weight > (p.beforeRows[i]?.weight ?? Infinity) ||
+              v.reps > (p.beforeRows[i]?.reps ?? Infinity),
+          )
+        );
+      })
+      .slice(0, 2);
+    const response = responses.find(
+      (r) =>
+        r.decision.proposalId === target?.coachingProposalId &&
+        r.contextMatches,
+    );
     const history = evidenceFor(state, session, entry, ex, now);
     const latest = history.valid.at(-1),
       latestSets = latest ? working(latest.entry) : [];
@@ -317,6 +267,14 @@ export function evaluateCoaching(
           ]
         : null,
       bodyweight: session.bodyweight,
+      responses: [...(response ? [response] : []), ...experiments].map((r) => ({
+        decision: r.decision.id,
+        status: r.status,
+        followups: r.followups.slice(-2),
+        count: r.followups.length,
+        contextMatches: r.contextMatches,
+        restore: r.restore,
+      })),
       recovery: context,
       support,
       events: (state.coachingEvents ?? [])
@@ -540,6 +498,51 @@ export function evaluateCoaching(
       continue;
     }
     const prior = history.valid.at(-2);
+    if (
+      experiments.length === 2 &&
+      experiments.every((r) => r.followups.at(-1)?.result === "miss")
+    ) {
+      const last = experiments[0],
+        p = last.decision.proposal!,
+        assessed = state.sessions.find(
+          (s) => s.id === last.followups.at(-1)?.sessionId,
+        );
+      const recovered = history.valid.filter(
+        (r) =>
+          assessed &&
+          recoveryTime(r.session) > recoveryTime(assessed) &&
+          working(r.entry).length === p.rows.length &&
+          working(r.entry).every(
+            (t, i) =>
+              t.weight === p.rows[i].weight &&
+              t.reps >= p.rows[i].reps &&
+              t.rir >= p.rows[i].rir,
+          ),
+      );
+      if (recovered.length < 2) {
+        hold(
+          "Two accepted one-workout increases missed their targets. Hold further suggested increases until two fresh comparable exposures meet the previously proposed rows and intended reserve; review rest, execution and recovery.",
+        );
+        continue;
+      }
+    }
+    if (response && response.status !== "keep") {
+      const restored = response.restore;
+      if (restored) {
+        make(
+          restored.action,
+          "Two confirmed follow-ups missed accepted targets. Review the exact prior targets before another increase; acceptance is explicit.",
+          {
+            rows: restored.rows,
+            ...(restored.target ? { afterTarget: restored.target } : {}),
+            sourceIds: response.followups.slice(-2).map((r) => r.sessionId),
+            review:
+              "Review two confirmed follow-ups to this restoration. No automatic return to the unsuccessful increase.",
+          },
+        );
+      } else hold(response.reason);
+      continue;
+    }
     const sameLoads =
       prior &&
       working(prior.entry).every((s, i) => s.weight === latestSets[i]?.weight);
@@ -1254,41 +1257,6 @@ export function classifyCoachingOutcomes(
     );
   }
   return result;
-}
-function outcomeFingerprint(session: D.Session, proposalId: string) {
-  return canonical({
-    feedback: session.feedback,
-    muscleFeedback: session.muscleFeedback,
-    bodyweight: session.bodyweight,
-    assignments: session.coachingAssignments,
-    entries: session.exercises
-      .filter((e) =>
-        e.sets.some((t) => t.prescription?.proposalId === proposalId),
-      )
-      .map((e) => ({
-        id: e.id,
-        target: e.target,
-        planned: e.plannedWorkingSets,
-        context: e.coachingContext,
-        sets: e.sets.map((t) => ({
-          id: t.id,
-          weight: t.weight,
-          reps: t.reps,
-          rir: t.rir,
-          done: t.done,
-          effortReported: t.effortReported,
-          prescription: t.prescription,
-        })),
-      })),
-  });
-}
-export function validOutcome(state: D.State, event: CoachingEvent) {
-  const session = state.sessions.find((s) => s.id === event.sessionId);
-  return (
-    event.kind === "outcome" &&
-    !!session &&
-    event.sessionFingerprint === outcomeFingerprint(session, event.proposalId)
-  );
 }
 export function asRecommendation(
   p: CoachingProposal | undefined,

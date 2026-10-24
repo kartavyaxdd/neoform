@@ -21,6 +21,8 @@ import {
   type GuidancePreview,
 } from "./workoutGuidance";
 import type { CoachingProposal } from "./coachingTypes";
+import { ChangeReviews } from "./ChangeReviews";
+import { reviewAcceptedChanges } from "./coachingResponse";
 export function WorkoutPreview({
   workout,
   program,
@@ -56,6 +58,10 @@ export function WorkoutPreview({
       return { session: preview.seed, advice: [], stale: (e as Error).message };
     }
   }, [live, preview]);
+  const responses = useMemo(
+    () => reviewAcceptedChanges(live, Date.now(), session),
+    [live, session],
+  );
   function setSession(next: D.Session) {
     // Queue changes invalidate staged advice; retain the original unaccepted rows.
     const seed = {
@@ -119,6 +125,7 @@ export function WorkoutPreview({
         <span>Next-workout guidance</span>
         <Button onClick={() => setReadiness(true)}>Readiness</Button>
       </div>
+      <ChangeReviews reviews={responses} state={live} />
       {stale && (
         <div role="alert" className="banner">
           <p>{stale}</p>

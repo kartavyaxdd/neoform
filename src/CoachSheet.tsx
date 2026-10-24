@@ -11,6 +11,8 @@ import { DEFAULT_COACH_SETTINGS, type CoachingProposal } from "./coachingTypes";
 import { ReadinessSheet } from "./ReadinessSheet";
 import { Button, Field, Num } from "./ui";
 import { applyProgramReview, pendingProgramTarget } from "./programReview";
+import { ChangeReviews } from "./ChangeReviews";
+import { reviewAcceptedChanges } from "./coachingResponse";
 
 export function CoachSheet({
   session: initial,
@@ -46,6 +48,16 @@ export function CoachSheet({
   const proposals = useMemo(
     () => evaluateCoaching(state, session, Date.now()),
     [state, session, clock],
+  );
+  const responses = useMemo(
+    () =>
+      reviewAcceptedChanges(state, Date.now(), session).filter(
+        (r) =>
+          !entryId ||
+          r.decision.proposal?.targetId ===
+            session.exercises.find((e) => e.id === entryId)?.sourceTargetId,
+      ),
+    [state, session, entryId, clock],
   );
   const muscles = [
     ...new Set(
@@ -174,6 +186,7 @@ export function CoachSheet({
     <div className="training-coaching coach-sheet">
       <h3>{session.name}</h3>
       <p>Review targets from confirmed performance. Coaching works offline.</p>
+      <ChangeReviews reviews={responses} state={state} />
       {proposals
         .filter((p) => !entryId || p.entryId === entryId)
         .map((p, index) => {

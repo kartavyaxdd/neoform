@@ -23,6 +23,8 @@ Preferences include a 75-minute planning budget, reported diet phase, early-tria
 
 These windows, tolerances and increment bounds are original conservative app policies, not experimentally established personal thresholds. Readiness, pump and soreness do not prove growth. This engine needs no live provider and does not enable public Gemini access.
 
+Accepted-change review now connects exact follow-up attainment to Keep / Review reversal / Observe longer / Reassess context, conservatively gates further increases and permits explicitly reviewed prior-target restoration. See [ACCEPTED-CHANGE-REVIEWS.md](ACCEPTED-CHANGE-REVIEWS.md) for its evidence, recovery and scope boundaries. The coach-v1 payload remains backward compatible; release-specific evaluation bases invalidate stale acceptances.
+
 ## Durable evidence
 
 Immutable decisions and outcomes use owner-scoped normalized storage and the same Worker/D1 compare-and-swap transaction as target changes. Pinned event pagination and transactional IndexedDB preserve consistency. Older clients that omit the ledger preserve it. Checksummed backup v3 carries events; v1/v2 imports remain supported.

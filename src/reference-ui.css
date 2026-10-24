@@ -1930,3 +1930,22 @@ h3 {
   grid-row: 1 / span 2;
   min-height: 44px;
 }
+.change-reviews {
+  margin: 12px 0;
+}
+.change-reviews > summary,
+.change-review details > summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+}
+.change-review {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.change-review h4 {
+  margin: 8px 0;
+}
+.change-review p {
+  overflow-wrap: anywhere;
+}

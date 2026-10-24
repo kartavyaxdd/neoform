@@ -3,6 +3,8 @@ import * as D from "./domain";
 import { useStore } from "./store";
 import { reviewProgram } from "./programReview";
 import { Button } from "./ui";
+import { ChangeReviews } from "./ChangeReviews";
+import { reviewAcceptedChanges } from "./coachingResponse";
 export function ProgramReviewSheet({
   programId,
   openTargets,
@@ -22,6 +24,13 @@ export function ProgramReviewSheet({
     recovery: "Recovery review",
     pending: "Targets approved",
   };
+  const responses = useMemo(
+    () =>
+      reviewAcceptedChanges(state).filter(
+        (r) => r.decision.proposal?.programId === programId,
+      ),
+    [state, programId],
+  );
   return (
     <div className="training-coaching">
       <p>
@@ -33,6 +42,7 @@ export function ProgramReviewSheet({
           Finish your active workout before applying future program changes.
         </p>
       )}
+      <ChangeReviews reviews={responses} state={state} />
       {rows.map((r) => (
         <section className="panel" key={r.entry.sourceTargetId}>
           <small>{r.workout.name}</small>
