@@ -1949,3 +1949,50 @@ h3 {
 .change-review p {
   overflow-wrap: anywhere;
 }
+.lift-progress select,
+.lift-progress .field {
+  max-width: 100%;
+  min-width: 0;
+}
+.lift-progress select {
+  min-height: 44px;
+  text-overflow: ellipsis;
+}
+.modal .lift-filters.form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.lift-match {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--surface2);
+}
+.lift-match h3 {
+  margin: 0;
+}
+.lift-match svg {
+  width: 100%;
+  max-height: 270px;
+  overflow: visible;
+}
+.lift-point-picks {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+.lift-point-picks .btn {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+.lift-point-picks [aria-pressed="true"] {
+  color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.lift-raw > summary,
+.lift-progress > details > summary {
+  min-height: 44px;
+  padding: 12px 0;
+}

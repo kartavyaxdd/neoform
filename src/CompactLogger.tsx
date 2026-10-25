@@ -33,6 +33,8 @@ import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
 import { ReadinessSheet } from "./ReadinessSheet";
 import { CoachSheet } from "./CoachSheet";
+import { LiftProgress } from "./LiftProgressScreen";
+import { NextSetSheet } from "./NextSetSheet";
 import { SubstitutionSheet } from "./SubstitutionSheet";
 import { giantProgress } from "./techniques";
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
@@ -247,7 +249,14 @@ export function SessionLogger({
                 {!history && (
                   <Button
                     title="Progression"
-                    onClick={() => setSheet("Next workout coach")}
+                    onClick={() =>
+                      setSheet(
+                        e.sets.some((t) => t.kind === "working" && t.done) &&
+                          e.sets.some((t) => t.kind === "working" && !t.done)
+                          ? "Next set advice"
+                          : "Next workout coach",
+                      )
+                    }
                   >
                     <Sparkles size={17} />
                   </Button>
@@ -709,6 +718,7 @@ export function SessionLogger({
                         : sheet
                   }
                   close={() => setSheet(null)}
+                  presentation={sheet === "Lift progress" ? "screen" : "sheet"}
                 >
                   {sheet === "Effort scale" ? (
                     <p>
@@ -718,12 +728,26 @@ export function SessionLogger({
                       changes your rewards.
                     </p>
                   ) : sheet === "Info" ? (
-                    <VideoInfo exercise={ex} />
+                    <>
+                      <VideoInfo exercise={ex} />
+                      <Button onClick={() => setSheet("Lift progress")}>
+                        Lift progress
+                      </Button>
+                    </>
+                  ) : sheet === "Lift progress" ? (
+                    <LiftProgress key={ex.id} exerciseId={ex.id} />
                   ) : sheet === "Next workout coach" ? (
                     <CoachSheet
                       session={s}
                       entryId={e.id}
                       onOpenWorkout={() => setSheet(null)}
+                    />
+                  ) : sheet === "Next set advice" ? (
+                    <NextSetSheet
+                      sessionId={s.id}
+                      entryId={e.id}
+                      reviewTargets={() => setSheet("Targets")}
+                      reviewWorkout={() => setSheet("Next workout coach")}
                     />
                   ) : sheet === "Substitute exercise" ? (
                     <SubstitutionSheet

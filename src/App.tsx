@@ -14,6 +14,7 @@ import { TimerSheet } from "./TimerSheet";
 import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
+import { LiftProgress } from "./LiftProgressScreen";
 import { commitGuidance, type GuidancePreview } from "./workoutGuidance";
 import { Levels } from "./Levels";
 import { Button, Field, Num, Modal } from "./ui";
@@ -2340,6 +2341,7 @@ function Insights({
 }) {
   const [selected, setSelected] = useState(""),
     [monthOffset, setMonthOffset] = useState(0);
+  const [liftProgress, showLiftProgress] = useState(false);
   const displayUnit = s.settings.unit;
   const loggedExercises = exercises.filter((ex) =>
     s.sessions.some((s) => s.exercises.some((e) => e.exerciseId === ex.id)),
@@ -2519,6 +2521,20 @@ function Insights({
                 ))}
               </select>
             </div>
+            {ex && (
+              <Button onClick={() => showLiftProgress(true)}>
+                Compare this lift
+              </Button>
+            )}
+            {ex && liftProgress && (
+              <Modal
+                title={`${ex.name} · Progress`}
+                close={() => showLiftProgress(false)}
+                presentation="screen"
+              >
+                <LiftProgress key={ex.id} exerciseId={ex.id} />
+              </Modal>
+            )}
             {ex && (
               <p className="caption">
                 Raw completed-bout timeline—not a comparable strength trend.
