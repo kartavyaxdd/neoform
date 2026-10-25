@@ -77,7 +77,11 @@ export function mergeThreeWay(base: State, remote: State, local: State): State {
     // Older snapshots omit this optional list. Independent additions have a
     // known empty ancestor, while competing links still require a choice.
     if (
-      ["account.exerciseVideos", "account.coachingEvents"].includes(path) &&
+      [
+        "account.exerciseVideos",
+        "account.coachingEvents",
+        "account.schedule",
+      ].includes(path) &&
       b === undefined &&
       Array.isArray(r) &&
       Array.isArray(l)

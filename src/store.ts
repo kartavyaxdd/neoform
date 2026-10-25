@@ -206,6 +206,7 @@ export async function request<T = unknown>(
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "X-Neoform-Client": "2",
         ...(expected ? { "X-Neoform-Account": expected } : {}),
         ...options?.headers,
       },

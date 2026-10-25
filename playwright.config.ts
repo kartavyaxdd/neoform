@@ -23,6 +23,7 @@ export default defineConfig({
             "workout-recap.spec.ts",
             "reference-fidelity.spec.ts",
             "program-layout.spec.ts",
+            "planning.spec.ts",
           ]
         : [
             "preview-guidance.spec.ts",
@@ -35,6 +36,7 @@ export default defineConfig({
             "workout-recap.spec.ts",
             "reference-fidelity.spec.ts",
             "program-layout.spec.ts",
+            "planning.spec.ts",
             "coaching.spec.ts",
             "readiness.spec.ts",
             "reliability.spec.ts",

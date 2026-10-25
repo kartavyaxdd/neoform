@@ -21,15 +21,30 @@ const legacyStartSchema = z
     count: z.number().int().min(0).max(50000),
   })
   .strict();
-const startSchema = z.union([
-  legacyStartSchema,
-  legacyStartSchema
-    .extend({
-      version: z.literal(3),
-      coachingCount: z.number().int().min(0).max(100000),
-    })
-    .strict(),
-]);
+const modernStartSchema = legacyStartSchema
+  .extend({
+    version: z.literal(4),
+    coachingCount: z.number().int().min(0).max(100000),
+  })
+  .strict();
+const startSchema = z
+  .union([
+    modernStartSchema,
+    legacyStartSchema,
+    legacyStartSchema
+      .extend({
+        version: z.literal(3),
+        coachingCount: z.number().int().min(0).max(100000),
+      })
+      .strict(),
+  ])
+  .refine(
+    (h) =>
+      h.version === 4
+        ? h.header.minimumClientVersion === 2
+        : h.header.minimumClientVersion === undefined,
+    "Planning backups require version 4",
+  );
 const coachingRecordSchema = z
   .object({
     type: z.literal("coaching"),
@@ -52,11 +67,12 @@ const endSchema = z
   .strict();
 export async function exportHistoryBackup(data: State): Promise<Blob> {
   const header = startSchema.parse({
-    version: data.coachingEvents?.length ? 3 : 2,
+    version:
+      data.minimumClientVersion === 2 ? 4 : data.coachingEvents?.length ? 3 : 2,
     header: headerOf(data),
     count: data.sessions.length,
-    ...(data.coachingEvents?.length
-      ? { coachingCount: data.coachingEvents.length }
+    ...(data.minimumClientVersion === 2 || data.coachingEvents?.length
+      ? { coachingCount: data.coachingEvents?.length ?? 0 }
       : {}),
   });
   const pieces: BlobPart[] = [JSON.stringify(header) + "\n"],
@@ -148,7 +164,7 @@ export async function importHistoryBackup(blob: Blob): Promise<State> {
       const end = endSchema.parse(raw);
       if (
         sessions.length !== header.count ||
-        events.length !== (header.version === 3 ? header.coachingCount : 0) ||
+        events.length !== (header.version !== 2 ? header.coachingCount : 0) ||
         end.checksum !== (await storageHash(hashes))
       )
         throw Error("Backup is incomplete or its checksum differs.");
@@ -156,7 +172,7 @@ export async function importHistoryBackup(blob: Blob): Promise<State> {
       continue;
     }
     if (raw.type === "coaching") {
-      if (header.version !== 3 || sessions.length !== header.count)
+      if (header.version === 2 || sessions.length !== header.count)
         throw Error(
           "Coaching records require version 3 and complete workout records",
         );

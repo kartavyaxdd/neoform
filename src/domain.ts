@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { plannedDateSchema, workoutScheduleSchema } from "./schedulingTypes";
 import { videoId } from "./videos";
 import {
   recoveryObservations,
@@ -529,6 +530,37 @@ export const sessionSchema = z
     date,
     startedAt: z.number().finite().min(0),
     duration: z.number().finite().min(0).max(86400),
+    scheduleOccurrenceId: id.optional(),
+    scheduledDate: plannedDateSchema.optional(),
+    shortPlan: z
+      .object({
+        minutes: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+        acceptedAt: z.number().finite().min(0),
+        originalEntries: z.array(entrySchema).min(1).max(60),
+        keptEntryIds: z.array(id).min(1).max(60),
+        estimatedLow: z.number().int().min(0).max(1440),
+        estimatedHigh: z.number().int().min(0).max(1440),
+        timingSourceIds: z.array(id).max(5),
+      })
+      .strict()
+      .superRefine((p, ctx) => {
+        const ids = p.originalEntries.map((e) => e.id);
+        const sets = p.originalEntries.flatMap((e) => e.sets);
+        if (
+          new Set(ids).size !== ids.length ||
+          new Set(sets.map((t) => t.id)).size !== sets.length ||
+          new Set(p.keptEntryIds).size !== p.keptEntryIds.length ||
+          p.keptEntryIds.some((v) => !ids.includes(v)) ||
+          sets.some((t) => t.done || t.effortReported === true) ||
+          p.estimatedHigh < p.estimatedLow ||
+          p.estimatedHigh > p.minutes
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Invalid reviewed shorter workout snapshot",
+          });
+      })
+      .optional(),
     sessionFeeling: z.enum(["good", "okay", "rough"]).optional(),
     notes: note,
     feedback: feedbackSchema,
@@ -561,7 +593,11 @@ export const sessionSchema = z
     phase: z.enum(phases).optional(),
     exercises: z.array(entrySchema).max(60),
   })
-  .strict();
+  .strict()
+  .refine(
+    (s) => !!s.scheduleOccurrenceId === !!s.scheduledDate,
+    "Scheduled workouts require their reviewed date",
+  );
 export type Session = z.infer<typeof sessionSchema>;
 export const targetSchema = z
   .object({
@@ -638,6 +674,8 @@ const profileSchema = z
   .strict();
 const rawState = z
   .object({
+    minimumClientVersion: z.literal(2).optional(),
+    schedule: workoutScheduleSchema.optional(),
     profile: profileSchema.nullable(),
     coaching: coachSettingsSchema.optional(),
     coachingEvents: z.array(coachingEventSchema).max(100000).optional(),
@@ -698,6 +736,17 @@ const rawState = z
   })
   .strict();
 function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
+  if (
+    (s.schedule !== undefined ||
+      [s.draft, ...s.sessions].some(
+        (v) => v?.shortPlan || v?.scheduleOccurrenceId,
+      )) &&
+    s.minimumClientVersion !== 2
+  )
+    ctx.addIssue({
+      code: "custom",
+      message: "Planning requires client version 2",
+    });
   const all = [...catalog, ...s.customExercises];
   const ids = new Set(all.map((e) => e.id));
   for (const link of s.exerciseVideos || [])
@@ -721,6 +770,14 @@ function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
   unique(all, "customExercises");
   unique(s.programs, "programs");
   unique(s.sessions, "sessions");
+  const assignments = [...s.sessions, ...(s.draft ? [s.draft] : [])].flatMap(
+    (v) => (v.scheduleOccurrenceId ? [v.scheduleOccurrenceId] : []),
+  );
+  if (new Set(assignments).size !== assignments.length)
+    ctx.addIssue({
+      code: "custom",
+      message: "A planned occurrence can link to only one workout",
+    });
   unique(s.coachingEvents ?? [], "coachingEvents");
   const ref = (eid: string) => {
     if (!ids.has(eid))
@@ -734,6 +791,28 @@ function stateReferences(s: z.infer<typeof rawState>, ctx: z.RefinementCtx) {
     }
   }
   for (const sess of [...s.sessions, ...(s.draft ? [s.draft] : [])]) {
+    const slot = s.schedule?.find((v) => v.id === sess.scheduleOccurrenceId);
+    if (
+      sess.scheduleOccurrenceId &&
+      ((sess === s.draft && !slot) ||
+        (slot &&
+          (slot.status !== "planned" ||
+            slot.date !== sess.scheduledDate ||
+            slot.programId !== sess.programId ||
+            slot.workoutId !== sess.workoutId)))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Scheduled workout assignment changed",
+      });
+    if (sess.shortPlan) {
+      unique(sess.shortPlan.originalEntries, "originalEntries");
+      unique(
+        sess.shortPlan.originalEntries.flatMap((e) => e.sets),
+        "originalSets",
+      );
+      sess.shortPlan.originalEntries.forEach((e) => ref(e.exerciseId));
+    }
     unique(sess.exercises, "entries");
     unique(
       sess.exercises.flatMap((e) => e.sets),
@@ -2052,6 +2131,8 @@ export function importBackup(text: string): State {
     throw new Error(
       "Invalid version 1 backup: " + parsed.error.issues[0]?.message,
     );
+  if (parsed.data.data.minimumClientVersion === 2)
+    throw Error("Planning backups require the version 4 format.");
   return parsed.data.data;
 }
 export function mergeStates(remote: State, local: State): State {

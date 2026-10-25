@@ -1,4 +1,6 @@
 import * as D from "./domain";
+import { estimateWorkout } from "./workoutTiming";
+import { ShortWorkoutReview } from "./ShortWorkoutReview";
 import { TargetMuscleCards, EntryPrescription } from "./ProgramPresentation";
 import { ExercisePicker } from "./ExercisePicker";
 import { VideoInfo } from "./VideoInfo";
@@ -29,7 +31,9 @@ export function WorkoutPreview({
   state,
   exercises,
   start,
+  scheduleOccurrenceId,
 }: {
+  scheduleOccurrenceId?: string;
   workout: D.Workout;
   program: D.Program;
   state: D.State;
@@ -43,8 +47,15 @@ export function WorkoutPreview({
     currentWorkout =
       currentProgram.workouts.find((w) => w.id === workout.id) ?? workout;
   const [starting, setStarting] = useState(false);
+  const [shortReview, setShortReview] = useState(false);
   const [preview, setPreview] = useState(() =>
-    createGuidancePreview(state, program.id, workout.id),
+    createGuidancePreview(
+      state,
+      program.id,
+      workout.id,
+      Date.now(),
+      scheduleOccurrenceId,
+    ),
   );
   const [review, setReview] = useState<CoachingProposal | null>(null),
     [reviewError, setReviewError] = useState(""),
@@ -66,12 +77,17 @@ export function WorkoutPreview({
     // Queue changes invalidate staged advice; retain the original unaccepted rows.
     const seed = {
       ...next,
+      shortPlan: undefined,
       exercises: next.exercises.map(
         (e) => preview.seed.exercises.find((old) => old.id === e.id) ?? e,
       ),
     };
     setPreview({ ...preview, seed, choices: [], records: [] });
-    if (preview.choices.length)
+    if (preview.seed.shortPlan)
+      setNotice(
+        "Queue changed. The reviewed time budget was cleared; review a shorter plan again if needed.",
+      );
+    else if (preview.choices.length)
       setNotice(
         "Exercises changed. Review the updated advice before applying targets.",
       );
@@ -83,16 +99,15 @@ export function WorkoutPreview({
       null,
     ),
     [notice, setNotice] = useState("");
-  const minutes = Math.round(
-    5 +
-      rows.reduce(
-        (n, e) =>
-          n +
-          1.5 +
-          (e.sets.length * (e.target?.max ?? 12) * 3) / 60 +
-          (Math.max(0, e.sets.length - 1) * (e.target?.rest ?? 120)) / 60,
-        0,
-      ),
+  const estimate = useMemo(
+    () =>
+      session.shortPlan
+        ? {
+            low: session.shortPlan.estimatedLow,
+            high: session.shortPlan.estimatedHigh,
+          }
+        : estimateWorkout(live, session),
+    [live, session],
   );
   return (
     <div className="workout-preview">
@@ -103,7 +118,9 @@ export function WorkoutPreview({
           <h3>
             {rows.length} {rows.length === 1 ? "Exercise" : "Exercises"}
           </h3>
-          <p className="caption">Estimated workout time is {minutes} min</p>
+          <p className="caption">
+            Estimated workout time is {estimate.low}–{estimate.high} min
+          </p>
         </div>
         <button
           className="icon-button preview-add"
@@ -121,6 +138,67 @@ export function WorkoutPreview({
         {currentProgram.name} · Week {currentProgram.currentWeek} ·{" "}
         {D.programPhase(currentProgram)}
       </p>
+      {session.scheduledDate && (
+        <p className="caption">
+          Planned for {session.scheduledDate}. Starting now records today’s
+          actual date.
+        </p>
+      )}
+      <div className="actions wrap">
+        <Button
+          disabled={!!stale || !!preview.choices.length || !rows.length}
+          onClick={() => setShortReview(true)}
+        >
+          Review shorter workout
+        </Button>
+        {session.shortPlan && (
+          <Button
+            onClick={() => {
+              setPreview({
+                ...preview,
+                seed: {
+                  ...preview.seed,
+                  exercises: session.shortPlan!.originalEntries,
+                  shortPlan: undefined,
+                },
+                choices: [],
+                records: [],
+              });
+              setNotice(
+                "Full workout restored. Nothing was added to another day.",
+              );
+            }}
+          >
+            Restore full workout
+          </Button>
+        )}
+      </div>
+      {session.shortPlan && (
+        <p role="status">
+          Reviewed {session.shortPlan.minutes}-minute plan · omitted work stays
+          omitted today.
+        </p>
+      )}
+      {!!preview.choices.length && (
+        <p className="caption">
+          Clear queued targets before reviewing a shorter workout.
+        </p>
+      )}
+      {shortReview && (
+        <Modal title="Shorter workout" close={() => setShortReview(false)}>
+          <ShortWorkoutReview
+            state={live}
+            session={session}
+            apply={(next) => {
+              setPreview({ ...preview, seed: next, choices: [], records: [] });
+              setShortReview(false);
+              setNotice(
+                "Shorter plan accepted for today. Your routine is unchanged.",
+              );
+            }}
+          />
+        </Modal>
+      )}
       <div className="preview-guidance-heading">
         <span>Next-workout guidance</span>
         <Button onClick={() => setReadiness(true)}>Readiness</Button>
@@ -136,7 +214,13 @@ export function WorkoutPreview({
               onClick={() => {
                 try {
                   setPreview(
-                    createGuidancePreview(live, program.id, workout.id),
+                    createGuidancePreview(
+                      live,
+                      program.id,
+                      workout.id,
+                      Date.now(),
+                      scheduleOccurrenceId,
+                    ),
                   );
                   setNotice("Preview refreshed. Review targets again.");
                 } catch (e) {
@@ -270,6 +354,8 @@ export function WorkoutPreview({
               setStarting(true);
               try {
                 await start(rows, preview);
+              } catch (e) {
+                setNotice((e as Error).message);
               } finally {
                 setStarting(false);
               }
@@ -316,7 +402,13 @@ export function WorkoutPreview({
                 onClick={() => {
                   try {
                     setPreview(
-                      createGuidancePreview(live, program.id, workout.id),
+                      createGuidancePreview(
+                        live,
+                        program.id,
+                        workout.id,
+                        Date.now(),
+                        scheduleOccurrenceId,
+                      ),
                     );
                     setReview(null);
                   } catch (e) {
@@ -412,11 +504,20 @@ export function WorkoutPreview({
                       choice: "accept",
                       scope,
                     });
-                    setPreview(staged.preview);
+                    if (staged.preview.seed.shortPlan) {
+                      setPreview({
+                        ...staged.preview,
+                        seed: { ...staged.preview.seed, shortPlan: undefined },
+                      });
+                      setNotice(
+                        "Targets queued. The reviewed time budget was cleared because targets changed.",
+                      );
+                    } else setPreview(staged.preview);
                     setReview(null);
-                    setNotice(
-                      "Targets queued. Start workout to save your choice.",
-                    );
+                    if (!staged.preview.seed.shortPlan)
+                      setNotice(
+                        "Targets queued. Start workout to save your choice.",
+                      );
                   } catch (e) {
                     setReviewError((e as Error).message);
                   }

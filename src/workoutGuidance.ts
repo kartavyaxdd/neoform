@@ -6,6 +6,7 @@ import {
   type CoachingChoice,
 } from "./coaching";
 import { coachingEventSchema, type CoachingEvent } from "./coachingTypes";
+import { shorterAlternative } from "./workoutTiming";
 
 export type GuidancePreview = {
   seed: D.Session;
@@ -32,6 +33,7 @@ export function createGuidancePreview(
   programId: string,
   workoutId: string,
   now = Date.now(),
+  scheduleOccurrenceId?: string,
 ): GuidancePreview {
   const program = state.programs.find((p) => p.id === programId),
     workout = program?.workouts.find((w) => w.id === workoutId);
@@ -50,6 +52,19 @@ export function createGuidancePreview(
   );
   seed.startedAt = now;
   seed.bodyweight = state.coaching?.bodyweight;
+  if (scheduleOccurrenceId) {
+    const slot = state.schedule?.find((v) => v.id === scheduleOccurrenceId);
+    if (
+      !slot ||
+      slot.status !== "planned" ||
+      slot.programId !== programId ||
+      slot.workoutId !== workoutId ||
+      state.sessions.some((s) => s.scheduleOccurrenceId === slot.id)
+    )
+      throw Error("This planned workout changed. Refresh the calendar.");
+    seed.scheduleOccurrenceId = slot.id;
+    seed.scheduledDate = slot.date;
+  }
   return {
     seed,
     basis: basis(state, seed),
@@ -69,7 +84,26 @@ export function replayGuidance(
     );
   if (basis(state, preview.seed) !== preview.basis)
     throw Error("The program changed. Open a fresh preview.");
-  let next = state;
+  if (preview.seed.scheduleOccurrenceId) {
+    const slot = state.schedule?.find(
+      (v) => v.id === preview.seed.scheduleOccurrenceId,
+    );
+    if (
+      !slot ||
+      slot.status !== "planned" ||
+      slot.date !== preview.seed.scheduledDate ||
+      slot.programId !== preview.seed.programId ||
+      slot.workoutId !== preview.seed.workoutId ||
+      state.sessions.some((s) => s.scheduleOccurrenceId === slot.id)
+    )
+      throw Error(
+        "This planned date changed or was already logged. Refresh the calendar.",
+      );
+  }
+  let next =
+    preview.seed.shortPlan && state.minimumClientVersion !== 2
+      ? { ...state, minimumClientVersion: 2 as const }
+      : state;
   for (const [index, choice] of preview.choices.entries()) {
     next = applyCoaching(next, preview.seed, [choice], now);
     const saved = preview.records[index];
@@ -159,6 +193,26 @@ export function commitGuidance(
 ): D.State {
   if (preview.seed.phase === "active-rest")
     throw Error("Review your program phase before starting a workout.");
+  if (preview.seed.shortPlan) {
+    const p = preview.seed.shortPlan;
+    const refreshed = shorterAlternative(
+      state,
+      { ...preview.seed, shortPlan: undefined, exercises: p.originalEntries },
+      p.minutes,
+      now,
+    );
+    if (
+      !refreshed.feasible ||
+      canonical(refreshed.session.exercises) !==
+        canonical(preview.seed.exercises) ||
+      refreshed.estimate.low !== p.estimatedLow ||
+      refreshed.estimate.high !== p.estimatedHigh ||
+      canonical(refreshed.estimate.sources) !== canonical(p.timingSourceIds)
+    )
+      throw Error(
+        "The shorter workout estimate changed. Review the plan again before starting.",
+      );
+  }
   const view = replayGuidance(state, preview, now),
     date = new Date(now);
   const draft = {
@@ -167,5 +221,12 @@ export function commitGuidance(
     date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
     duration: 0,
   };
-  return D.historyStateSchema.parse({ ...view.state, draft, timer: null });
+  return D.historyStateSchema.parse({
+    ...view.state,
+    ...(draft.scheduleOccurrenceId || draft.shortPlan
+      ? { minimumClientVersion: 2 }
+      : {}),
+    draft,
+    timer: null,
+  });
 }

@@ -13,6 +13,7 @@ function client(page: Page): HistoryRequest {
       method,
       headers: {
         Origin: new URL(page.url()).origin,
+        "X-Neoform-Client": "2",
         "X-Neoform-Account": identity.id,
       },
       ...(body === undefined ? {} : { data: body }),
@@ -38,7 +39,9 @@ export async function writeData(
       api,
       prepareHistoryMutation(
         base.data,
-        options.data.data,
+        base.data.minimumClientVersion === 2
+          ? { ...options.data.data, minimumClientVersion: 2 }
+          : options.data.data,
         options.data.revision,
       ),
     );

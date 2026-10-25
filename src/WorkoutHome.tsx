@@ -12,6 +12,9 @@ import {
 } from "lucide-react";
 import * as D from "./domain";
 import { change } from "./store";
+import { Modal, Button } from "./ui";
+import { WorkoutCalendar } from "./WorkoutCalendar";
+import { occurrenceStatus } from "./workoutSchedule";
 export function WorkoutHome({
   state: s,
   start,
@@ -24,7 +27,7 @@ export function WorkoutHome({
   reviewProgram,
 }: {
   state: D.State;
-  start: (w?: D.Workout, p?: D.Program) => void;
+  start: (w?: D.Workout, p?: D.Program, scheduleOccurrenceId?: string) => void;
   edit: (p: D.Program) => void;
   create: () => void;
   history: () => void;
@@ -33,6 +36,7 @@ export function WorkoutHome({
   coach?: (w: D.Workout, p: D.Program) => void;
   reviewProgram: (p: D.Program) => void;
 }) {
+  const [planner, setPlanner] = useState(false);
   const [date, setDate] = useState(D.today()),
     [templates, setTemplates] = useState(false);
   const monday = new Date();
@@ -243,7 +247,15 @@ export function WorkoutHome({
               <span>{d.getDate()}</span>
               <i
                 className={
-                  s.sessions.some((x) => x.date === value) ? "has-workout" : ""
+                  s.sessions.some((x) => x.date === value)
+                    ? "has-workout"
+                    : s.schedule?.some(
+                          (x) =>
+                            x.date === value &&
+                            occurrenceStatus(x, s.sessions) === "planned",
+                        )
+                      ? "has-plan"
+                      : ""
                 }
               />
             </button>
@@ -251,6 +263,17 @@ export function WorkoutHome({
         })}
       </div>
       <div className="home-groups">
+        <Button onClick={() => setPlanner(true)}>Plan workouts</Button>
+        {planner && (
+          <Modal title="Plan workouts" close={() => setPlanner(false)}>
+            <WorkoutCalendar
+              start={(w, p, id) => {
+                setPlanner(false);
+                start(w, p, id);
+              }}
+            />
+          </Modal>
+        )}
         {s.draft && (
           <button
             className="group-row resume-row"

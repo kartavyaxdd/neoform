@@ -1277,7 +1277,7 @@ export default function App() {
                   ),
                 })
               }
-              start={(w, p) => {
+              start={(w, p, scheduleOccurrenceId) => {
                 if (!w || !p) {
                   start(w, p);
                   return;
@@ -1293,6 +1293,7 @@ export default function App() {
                     <WorkoutPreview
                       workout={w}
                       program={p}
+                      scheduleOccurrenceId={scheduleOccurrenceId}
                       state={s}
                       exercises={exercises}
                       start={(rows, guidance) => {

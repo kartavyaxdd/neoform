@@ -138,3 +138,6 @@ October 25 accepted-change review: `docs/ACCEPTED-CHANGE-REVIEWS.md` defines der
 ## Sources
 
 [1] file:///C:/Users/spamk/OneDrive/Documents/Fitness/Mike%20Istraetel/Dr.%20Mike%20Israetel,%20Dr.%20James%20Hoffman,%20Dr.%20Melissa%20Davis,%20Jared%20Feather%20-%20Scientific%20Principles%20of%20Hypertrophy%20Training-Renaissance%20Periodisation%20(2020).pdf — Scientific Principles of Hypertrophy Training (2020), user-provided local PDF
+
+
+October 25 deliberate scheduling and shorter workouts: `docs/SCHEDULING-AND-SHORT-WORKOUTS.md` defines explicit calendar occurrences and reviewed 30/45/60-minute alternatives. Preserve at least one unplanned rest day in each affected seven-day window; this is an original app planning policy, not a recovery diagnosis. Duration assumptions and recent matching time calibration are estimates, never instructions to compress rest. Omitted work is not caught up automatically; original intended rows and accepted retained dose remain separate from actual logged observations. No program targets or volume are silently rewritten.

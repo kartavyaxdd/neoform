@@ -128,6 +128,22 @@ export function headerOf(state: State): StateHeader {
   return head;
 }
 export function validateHistoryRecord(session: Session, header: StateHeader) {
+  if (
+    (session.shortPlan || session.scheduleOccurrenceId) &&
+    header.minimumClientVersion !== 2
+  )
+    throw Error("Planning requires client version 2.");
+  const slot = header.schedule?.find(
+    (v) => v.id === session.scheduleOccurrenceId,
+  );
+  if (
+    slot &&
+    (slot.status !== "planned" ||
+      slot.date !== session.scheduledDate ||
+      slot.programId !== session.programId ||
+      slot.workoutId !== session.workoutId)
+  )
+    throw Error("Scheduled workout assignment changed.");
   const ids = new Set([...catalog, ...header.customExercises].map((x) => x.id));
   const entries = session.exercises.map((e) => e.id),
     sets = session.exercises.flatMap((e) => e.sets.map((s) => s.id));
@@ -138,6 +154,11 @@ export function validateHistoryRecord(session: Session, header: StateHeader) {
     throw Error("Duplicate entry or set IDs.");
   if (session.exercises.some((e) => !ids.has(e.exerciseId)))
     throw Error("Unknown exercise reference.");
+  if (session.shortPlan) {
+    const original = session.shortPlan.originalEntries;
+    if (original.some((e) => !ids.has(e.exerciseId)))
+      throw Error("Unknown original plan exercise.");
+  }
   if (textBytes(session) > MAX_STATE_BYTES)
     throw Error("A single workout exceeds the storage row limit.");
 }

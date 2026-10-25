@@ -319,6 +319,66 @@ export class HistoryStorage {
         "History count or ordering does not match the proposed changes.",
       );
     const old = JSON.parse(head.body) as StateHeader;
+    const linkedChange =
+      !!header.draft?.scheduleOccurrenceId ||
+      typeof part === "string" ||
+      part.upserts.some((v) => v.session.scheduleOccurrenceId);
+    if (linkedChange) {
+      const duplicatePlan = await this.query(
+        prefix +
+          `, links AS (
+          SELECT json_extract(body,'$.scheduleOccurrenceId') slot FROM changed WHERE action='upsert'
+          UNION ALL SELECT json_extract(h.body,'$.scheduleOccurrenceId') FROM storage_history h WHERE h.owner=? AND NOT EXISTS(SELECT 1 FROM changed c WHERE c.id=h.id)
+        ) SELECT slot FROM links WHERE slot IS NOT NULL GROUP BY slot HAVING COUNT(*)>1 LIMIT 1`,
+        ...s.args,
+        this.owner,
+      ).first();
+      const activeSlot = header.draft?.scheduleOccurrenceId;
+      const activeSaved = activeSlot
+        ? await this.query(
+            prefix +
+              `SELECT h.id FROM storage_history h WHERE h.owner=? AND json_extract(h.body,'$.scheduleOccurrenceId')=? AND NOT EXISTS(SELECT 1 FROM changed c WHERE c.id=h.id)
+        UNION ALL SELECT id FROM changed WHERE action='upsert' AND json_extract(body,'$.scheduleOccurrenceId')=? LIMIT 1`,
+            ...s.args,
+            this.owner,
+            activeSlot,
+            activeSlot,
+          ).first()
+        : null;
+      if (duplicatePlan || activeSaved)
+        throw new HistoryFault(
+          409,
+          "This planned occurrence already has a saved workout. Refresh before starting another.",
+        );
+    }
+    if (old.minimumClientVersion === 2 && header.minimumClientVersion !== 2)
+      throw new HistoryFault(
+        426,
+        "Update or reload NEOFORM before saving. Planning data must be preserved.",
+      );
+    if (
+      JSON.stringify(old.schedule) !== JSON.stringify(header.schedule) &&
+      header.schedule?.length
+    ) {
+      const danglingPlan = await this.query(
+        prefix +
+          `SELECT h.id FROM storage_history h JOIN json_each(?) p
+        ON json_extract(h.body,'$.scheduleOccurrenceId')=json_extract(p.value,'$.id')
+        WHERE h.owner=? AND NOT EXISTS(SELECT 1 FROM changed c WHERE c.id=h.id)
+        AND (json_extract(p.value,'$.status')<>'planned'
+          OR json_extract(p.value,'$.date')<>json_extract(h.body,'$.scheduledDate')
+          OR json_extract(p.value,'$.programId')<>json_extract(h.body,'$.programId')
+          OR json_extract(p.value,'$.workoutId')<>json_extract(h.body,'$.workoutId')) LIMIT 1`,
+        ...s.args,
+        JSON.stringify(header.schedule),
+        this.owner,
+      ).first();
+      if (danglingPlan)
+        throw new HistoryFault(
+          409,
+          "A saved workout already uses this planned date. Refresh the calendar.",
+        );
+    }
     const remaining = new Set(header.customExercises.map((e) => e.id));
     const removed = old.customExercises
       .filter((e) => !remaining.has(e.id))
@@ -326,7 +386,7 @@ export class HistoryStorage {
     if (removed.length) {
       const dangling = await this.query(
         prefix +
-          `SELECT h.id FROM storage_history h,json_each(h.body,'$.exercises') e
+          `SELECT h.id FROM storage_history h,json_each(json_array(json_extract(h.body,'$.exercises'),json_extract(h.body,'$.shortPlan.originalEntries'))) lists,json_each(lists.value) e
         WHERE h.owner=? AND json_extract(e.value,'$.exerciseId') IN (SELECT value FROM json_each(?))
         AND NOT EXISTS(SELECT 1 FROM changed c WHERE c.id=h.id) LIMIT 1`,
         ...s.args,
@@ -348,7 +408,9 @@ export class HistoryStorage {
     part: HistoryPart | string,
     hash: string,
     coachingCount?: number,
+    clientVersion = 1,
   ) {
+    this.requireClient(header, clientVersion);
     const prior = await this.receipt(id, hash);
     if (prior) return json({ revision: prior.revision });
     const head = await this.head();
@@ -441,6 +503,15 @@ export class HistoryStorage {
   async route(req: Request, readBody: (req: Request) => Promise<unknown>) {
     const url = new URL(req.url),
       path = url.pathname.replace("/api/storage", "");
+    const clientVersion = req.headers.get("X-Neoform-Client") === "2" ? 2 : 1;
+    if (clientVersion < 2) {
+      const existing = await this.query(
+        "SELECT body FROM storage_heads WHERE owner=?",
+        this.owner,
+      ).first<{ body: string }>();
+      if (existing)
+        this.requireClient(JSON.parse(existing.body), clientVersion);
+    }
     if (path === "/revision" && req.method === "GET") {
       await this.ensure();
       const row = await this.query(
@@ -536,6 +607,7 @@ export class HistoryStorage {
     }
     if (path === "/commit" && req.method === "POST") {
       const input: StorageCommit = parse(storageCommit, await readBody(req));
+      this.requireClient(input.header, clientVersion);
       this.checkRecords(input.changes, input.header);
       await this.ensure();
       return this.commit(
@@ -546,11 +618,13 @@ export class HistoryStorage {
         input.changes,
         await storageHash(input),
         input.coachingCount,
+        clientVersion,
       );
     }
     if (path === "/uploads" && req.method === "POST") {
       const input = parse(storageUpload, await readBody(req)),
         hash = await storageHash(input);
+      this.requireClient(input.header, clientVersion);
       await this.ensure();
       const receipt = await this.receipt(input.id, hash);
       if (receipt) return json({ revision: receipt.revision }, 200);
@@ -649,6 +723,7 @@ export class HistoryStorage {
       if (!stored)
         throw new HistoryFault(409, "Upload metadata is incomplete.");
       const header = JSON.parse(stored.body) as StateHeader;
+      this.requireClient(header, clientVersion);
       if (match[3] !== undefined && req.method === "PUT") {
         const index = Number(match[3]);
         if (
@@ -748,9 +823,17 @@ export class HistoryStorage {
           id,
           upload.hash,
           upload.coaching_count ?? undefined,
+          clientVersion,
         );
       }
     }
     throw new HistoryFault(404, "Storage route not found.");
+  }
+  private requireClient(header: StateHeader, version: number) {
+    if (header.minimumClientVersion === 2 && version < 2)
+      throw new HistoryFault(
+        426,
+        "Update or reload NEOFORM to use planning data. Pending changes are retained on this device.",
+      );
   }
 }

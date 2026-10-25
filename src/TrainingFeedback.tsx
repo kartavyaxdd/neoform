@@ -1,3 +1,4 @@
+import { WorkoutPlanDetails } from "./WorkoutPlanDetails";
 import { sessionRecords, rirColour } from "./rewards";
 import { useState } from "react";
 import * as D from "./domain";
@@ -417,6 +418,7 @@ export function FinishSessionFeedback({
       </div>
       <details>
         <summary>Review sets</summary>
+        <WorkoutPlanDetails session={draft} exercises={exercises} />
         <div className="workout-review-list">
           {draft.exercises
             .filter((e) => e.sets.some((t) => t.done))

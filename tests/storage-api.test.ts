@@ -109,7 +109,12 @@ async function account() {
   expect(r.status).toBe(201);
   const user = (await r.json()) as { id: string };
   const cookie = r.headers.get("set-cookie")!.split(";")[0];
-  const api = (path: string, method = "GET", data?: unknown) =>
+  const api = (
+    path: string,
+    method = "GET",
+    data?: unknown,
+    clientVersion?: number,
+  ) =>
     fetch(base + "/api" + path, {
       method,
       headers: {
@@ -117,6 +122,7 @@ async function account() {
         "Content-Type": "application/json",
         Cookie: cookie,
         "X-Neoform-Account": user.id,
+        ...(clientVersion ? { "X-Neoform-Client": String(clientVersion) } : {}),
       },
       body: data === undefined ? undefined : JSON.stringify(data),
     });
@@ -688,3 +694,228 @@ it("rejects stale transfers and reuses an operation receipt without replaying ov
   expect(final.data.sessions).toEqual([]);
   expect(final.data.settings.unit).toBe("lb");
 }, 30000);
+
+it("fences planning data from old clients and rejects moves of saved assignments on real D1", async () => {
+  const a = await account();
+  await a.api("/storage/head");
+  const original = D.emptyState(),
+    p = D.starterProgram("balanced"),
+    w = p.workouts[0];
+  const slot = {
+    id: "qa-plan",
+    programId: p.id,
+    workoutId: w.id,
+    programName: p.name,
+    workoutName: w.name,
+    date: "2026-10-26",
+    originalDate: "2026-10-26",
+    status: "planned" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const planned: D.State = {
+    ...original,
+    programs: [p],
+    minimumClientVersion: 2,
+    schedule: [slot],
+  };
+  const input = {
+    id: crypto.randomUUID(),
+    revision: 0,
+    header: headerOf(planned),
+    count: 0,
+    changes: { upserts: [], deletes: [] },
+  };
+  expect((await a.api("/storage/commit", "POST", input)).status).toBe(426);
+  expect((await a.api("/storage/commit", "POST", input, 2)).status).toBe(200);
+  for (const route of [
+    "/storage/head",
+    "/storage/history?revision=1",
+    "/storage/revision",
+  ])
+    expect((await a.api(route)).status).toBe(426);
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          ...input,
+          id: crypto.randomUUID(),
+          revision: 1,
+          header: headerOf(original),
+        },
+        2,
+      )
+    ).status,
+  ).toBe(426);
+  const session = D.startSession(
+    w.name,
+    D.prepareWorkout(w, p, D.catalog, []),
+    p,
+    w,
+  );
+  session.scheduleOccurrenceId = slot.id;
+  session.scheduledDate = slot.date;
+  const linked = { ...planned, sessions: [session] };
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 1,
+          header: headerOf(linked),
+          count: 1,
+          changes: historyDelta(planned, linked),
+        },
+        2,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 2,
+          header: headerOf({
+            ...linked,
+            draft: { ...session, id: "duplicate-active" },
+          }),
+          count: 1,
+          changes: { upserts: [], deletes: [] },
+        },
+        2,
+      )
+    ).status,
+  ).toBe(409);
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 2,
+          header: headerOf(linked),
+          count: 2,
+          changes: {
+            upserts: [
+              {
+                position: 1,
+                session: { ...session, id: "duplicate-completed" },
+              },
+            ],
+            deletes: [],
+          },
+        },
+        2,
+      )
+    ).status,
+  ).toBe(409);
+  const moved = {
+    ...linked,
+    schedule: [{ ...slot, date: "2026-10-27", updatedAt: 2 }],
+  };
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 2,
+          header: headerOf(moved),
+          count: 1,
+          changes: { upserts: [], deletes: [] },
+        },
+        2,
+      )
+    ).status,
+  ).toBe(409);
+  const head = (await (
+    await a.api("/storage/head", "GET", undefined, 2)
+  ).json()) as { revision: number; header: unknown };
+  expect(head.revision).toBe(2);
+  expect(head.header).toEqual(headerOf(linked));
+  const part = { upserts: [], deletes: [] };
+  const upload = {
+    id: crypto.randomUUID(),
+    revision: 2,
+    header: headerOf(linked),
+    count: 1,
+    parts: 1,
+    checksum: await storageHash([await storageHash(part)]),
+  };
+  expect((await a.api("/storage/uploads", "POST", upload, 2)).status).toBe(201);
+  expect(
+    (await a.api(`/storage/uploads/${upload.id}/parts/0`, "PUT", part)).status,
+  ).toBe(426);
+  expect(
+    (await a.api(`/storage/uploads/${upload.id}/parts/0`, "PUT", part, 2))
+      .status,
+  ).toBe(200);
+  expect(
+    (await a.api(`/storage/uploads/${upload.id}/commit`, "POST", undefined, 2))
+      .status,
+  ).toBe(200);
+  const custom = {
+    ...D.catalog[0],
+    id: "original-only-custom",
+    name: "Synthetic omitted original",
+  };
+  const withOriginal: D.State = {
+    ...linked,
+    customExercises: [custom],
+    sessions: [
+      {
+        ...session,
+        shortPlan: {
+          minutes: 30,
+          acceptedAt: 1,
+          originalEntries: [...session.exercises, D.createEntry(custom)],
+          keptEntryIds: session.exercises.map((e) => e.id),
+          estimatedLow: 1,
+          estimatedHigh: 2,
+          timingSourceIds: [],
+        },
+      },
+    ],
+  };
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 3,
+          header: headerOf(withOriginal),
+          count: 1,
+          changes: historyDelta(linked, withOriginal),
+        },
+        2,
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await a.api(
+        "/storage/commit",
+        "POST",
+        {
+          id: crypto.randomUUID(),
+          revision: 4,
+          header: headerOf({ ...withOriginal, customExercises: [] }),
+          count: 1,
+          changes: { upserts: [], deletes: [] },
+        },
+        2,
+      )
+    ).status,
+  ).toBe(400);
+}, 60000);

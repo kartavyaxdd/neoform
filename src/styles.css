@@ -2429,3 +2429,39 @@ summary {
 .skip-link:focus-visible {
   transform: translateY(0);
 }
+
+/* Optional planning stays outside the primary logger. */
+.workout-calendar {
+  display: grid;
+  gap: 14px;
+}
+.workout-calendar label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.workout-calendar input,
+.workout-calendar select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+.calendar-occurrences {
+  display: grid;
+  gap: 12px;
+}
+.calendar-occurrence {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.calendar-occurrence .actions {
+  gap: 8px;
+}
+.calendar-occurrence .btn {
+  min-height: 44px;
+}
+.date-strip i.has-plan {
+  background: var(--accent, #3478ed);
+  opacity: 0.5;
+}

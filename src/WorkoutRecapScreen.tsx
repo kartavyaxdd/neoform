@@ -1,3 +1,4 @@
+import { WorkoutPlanDetails } from "./WorkoutPlanDetails";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Award,
@@ -142,6 +143,7 @@ export function WorkoutRecap({
           </p>
         )}
       </section>
+      <WorkoutPlanDetails session={session} exercises={exercises} />
       <section className="recap-overview">
         <h3>Workout Details</h3>
         <h2>{session.name}</h2>
