@@ -4,6 +4,7 @@ import {
   coachContextKey,
   eligible,
   outcomeFingerprint,
+  precedingDoseIssue,
 } from "./coachingEvidence";
 import { recoveryTime, readinessFresh } from "./readiness";
 import type { CoachingEvent, CoachingProposal } from "./coachingTypes";
@@ -155,6 +156,7 @@ export function reviewAcceptedChanges(
         const outcome = outcomes.get(canonical([p.id, s.id]));
         const reason =
           eligible(entry, s.startedAt) ||
+          precedingDoseIssue(s, entry, now) ||
           ((entry.coachingContext?.recordedAt ?? 0) > now
             ? "future confirmation"
             : null) ||

@@ -1,5 +1,9 @@
 import * as D from "./domain";
-import { canonical, coachContextKey } from "./coachingEvidence";
+import {
+  canonical,
+  coachContextKey,
+  precedingDoseIssue,
+} from "./coachingEvidence";
 import { recoveryTime } from "./readiness";
 
 export type LiftObservation = {
@@ -136,30 +140,33 @@ export function liftSegments(
             [exercise.muscle, ...exercise.secondary].includes(m.muscle) &&
             m.pain === true,
         );
+      const precedingIssue = precedingDoseIssue(s, e, now);
       const exclusion = pain
         ? "Reported pain: review this saved observation separately."
-        : advanced
-          ? "Advanced method: inspect the raw bouts separately."
-          : !unambiguous
-            ? "Repeated exercise instance is ambiguous."
-            : !s.phase
-              ? "Training phase was not recorded."
-              : !e.target ||
-                  !e.plannedWorkingSets ||
-                  working.length !== e.plannedWorkingSets ||
-                  working.some((t) => !t.done)
-                ? "Planned working dose incomplete or unknown."
-                : confirmation?.execution !== "consistent" ||
-                    confirmation.rest !== "usual"
-                  ? "Execution or rest unconfirmed/changed."
-                  : confirmation.recordedAt < s.startedAt ||
-                      confirmation.recordedAt > s.startedAt + 2 * 86400000 ||
-                      confirmation.recordedAt > now
-                    ? "Execution confirmation does not describe this completed workout."
-                    : (e.convention ?? exercise.convention) ===
-                          "added-bodyweight" && bodyweight === null
-                      ? "Bodyweight reference unreported or stale."
-                      : null;
+        : precedingIssue
+          ? precedingIssue
+          : advanced
+            ? "Advanced method: inspect the raw bouts separately."
+            : !unambiguous
+              ? "Repeated exercise instance is ambiguous."
+              : !s.phase
+                ? "Training phase was not recorded."
+                : !e.target ||
+                    !e.plannedWorkingSets ||
+                    working.length !== e.plannedWorkingSets ||
+                    working.some((t) => !t.done)
+                  ? "Planned working dose incomplete or unknown."
+                  : confirmation?.execution !== "consistent" ||
+                      confirmation.rest !== "usual"
+                    ? "Execution or rest unconfirmed/changed."
+                    : confirmation.recordedAt < s.startedAt ||
+                        confirmation.recordedAt > s.startedAt + 2 * 86400000 ||
+                        confirmation.recordedAt > now
+                      ? "Execution confirmation does not describe this completed workout."
+                      : (e.convention ?? exercise.convention) ===
+                            "added-bodyweight" && bodyweight === null
+                        ? "Bodyweight reference unreported or stale."
+                        : null;
       const comparable = exclusion === null;
       const note =
         exclusion ??

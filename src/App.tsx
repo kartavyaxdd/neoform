@@ -1248,7 +1248,25 @@ export default function App() {
                 })
               }
               review={() =>
-                setModal({ title: "Weekly review", content: <WeeklyReview /> })
+                setModal({
+                  title: "Weekly review",
+                  content: (
+                    <WeeklyReview
+                      openTargets={(session, entryId) =>
+                        setModal({
+                          title: "Program targets",
+                          content: (
+                            <CoachSheet
+                              session={session}
+                              entryId={entryId}
+                              programOnly
+                            />
+                          ),
+                        })
+                      }
+                    />
+                  ),
+                })
               }
             />
           )}

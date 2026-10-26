@@ -16,6 +16,7 @@ import {
   eligible,
   outcomeFingerprint,
   validOutcome,
+  precedingDoseIssue,
 } from "./coachingEvidence";
 export { canonical, coachContextKey, validOutcome } from "./coachingEvidence";
 import { reviewAcceptedChanges } from "./coachingResponse";
@@ -98,6 +99,7 @@ export function evidenceFor(
   const excluded: string[] = [];
   const reasonFor = (r: Exposure) =>
     eligible(r.entry, r.session.startedAt) ||
+    precedingDoseIssue(r.session, r.entry, now) ||
     ((r.entry.coachingContext?.recordedAt ?? 0) > now
       ? "future execution confirmation"
       : null) ||
@@ -449,6 +451,8 @@ export function evaluateCoaching(
     }
     if (
       (entry.technique && entry.technique !== "straight") ||
+      entry.techniqueGroup ||
+      entry.repGoal ||
       entry.tempo ||
       entry.superset ||
       entry.sets.some((t) => t.done && t.kind === "drop")

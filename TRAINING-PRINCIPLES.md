@@ -141,3 +141,6 @@ October 25 accepted-change review: `docs/ACCEPTED-CHANGE-REVIEWS.md` defines der
 
 
 October 25 deliberate scheduling and shorter workouts: `docs/SCHEDULING-AND-SHORT-WORKOUTS.md` defines explicit calendar occurrences and reviewed 30/45/60-minute alternatives. Preserve at least one unplanned rest day in each affected seven-day window; this is an original app planning policy, not a recovery diagnosis. Duration assumptions and recent matching time calibration are estimates, never instructions to compress rest. Omitted work is not caught up automatically; original intended rows and accepted retained dose remain separate from actual logged observations. No program targets or volume are silently rewritten.
+
+
+Training-block evaluation and weekly muscle review: `docs/WEEKLY-MUSCLES-AND-COACHING-EVALUATION.md` defines derived assigned/completed/indirect/advanced/effort-qualified reporting and scripted eight-week behavioral evaluations. No physiological response model or optimal personal volume is claimed. Unknown phase, reported pain, unclassified sequence metadata, and incomplete/unconfirmed preceding working dose cannot establish a comparable straight-set progression baseline. Historical views exclude later observations and do not reconstruct old prescriptions from current routines. All future changes still require explicit review and acceptance.

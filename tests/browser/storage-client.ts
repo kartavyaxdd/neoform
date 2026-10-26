@@ -25,8 +25,17 @@ function client(page: Page): HistoryRequest {
   };
 }
 export async function readData(page: Page) {
-  const value = await readHistory(client(page));
-  return { json: async (): Promise<any> => value, status: () => 200 };
+  // A background UI save can correctly invalidate a revision-pinned page read.
+  // Restart only the complete read; stale writes still fail without retrying.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const value = await readHistory(client(page));
+      return { json: async (): Promise<any> => value, status: () => 200 };
+    } catch (error) {
+      if (attempt >= 2 || (error as { status?: number }).status !== 409)
+        throw error;
+    }
+  }
 }
 export async function writeData(
   page: Page,

@@ -24,6 +24,7 @@ export default defineConfig({
             "reference-fidelity.spec.ts",
             "program-layout.spec.ts",
             "planning.spec.ts",
+            "weekly-muscles.spec.ts",
           ]
         : [
             "preview-guidance.spec.ts",
@@ -37,6 +38,7 @@ export default defineConfig({
             "reference-fidelity.spec.ts",
             "program-layout.spec.ts",
             "planning.spec.ts",
+            "weekly-muscles.spec.ts",
             "coaching.spec.ts",
             "readiness.spec.ts",
             "reliability.spec.ts",

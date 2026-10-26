@@ -13,6 +13,36 @@ export function canonical(value: unknown): string {
       : v,
   );
 }
+export function precedingDoseIssue(
+  session: D.Session,
+  entry: D.Entry,
+  asOf = Infinity,
+) {
+  for (const prior of session.exercises.slice(
+    0,
+    session.exercises.indexOf(entry),
+  )) {
+    if (prior.sets.length && prior.sets.every((t) => t.kind === "warmup"))
+      continue;
+    const rows = prior.sets.filter((t) => t.kind === "working"),
+      c = prior.coachingContext;
+    if (
+      !prior.plannedWorkingSets ||
+      rows.length !== prior.plannedWorkingSets ||
+      prior.sets.some((t) => t.kind !== "warmup" && !t.done)
+    )
+      return "preceding working dose incomplete or unknown";
+    if (
+      c?.execution !== "consistent" ||
+      c.rest !== "usual" ||
+      c.recordedAt < session.startedAt ||
+      c.recordedAt > session.startedAt + 2 * 86400000 ||
+      c.recordedAt > asOf
+    )
+      return "preceding execution or rest unconfirmed/changed";
+  }
+  return null;
+}
 export function coachContextKey(
   session: D.Session,
   entry: D.Entry,
@@ -74,7 +104,8 @@ export function eligible(e: D.Entry, at: number) {
   )
     return "advanced or mixed bouts";
   if (e.technique && e.technique !== "straight") return "non-straight sequence";
-  if (e.tempo || e.superset) return "execution sequence differs";
+  if (e.tempo || e.superset || e.techniqueGroup || e.repGoal)
+    return "execution sequence differs";
   if (
     e.coachingContext?.execution !== "consistent" ||
     e.coachingContext.rest !== "usual"

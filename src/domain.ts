@@ -1229,6 +1229,10 @@ export type MuscleExposure = {
   assumptions: string[];
   policyVersion: string;
 };
+export const advancedVolumeBout = (entry: Entry, s: SetLog) =>
+  s.kind === "drop" ||
+  (s.bout !== undefined && !["straight", "down"].includes(s.bout)) ||
+  ["myoreps", "drop-set", "giant-set"].includes(entry.technique ?? "");
 export function muscleExposure(
   sessions: Session[],
   exercises: Exercise[],
@@ -1241,10 +1245,6 @@ export function muscleExposure(
       if (!x) continue;
       const completed = entry.sets.filter((s) => s.done && s.kind !== "warmup");
       if (!completed.length) continue;
-      const advanced = (s: SetLog) =>
-        s.kind === "drop" ||
-        (s.bout !== undefined && !["straight", "down"].includes(s.bout)) ||
-        ["myoreps", "drop-set", "giant-set"].includes(entry.technique ?? "");
       for (const muscle of new Set([x.muscle, ...x.secondary])) {
         const row = (result[muscle] ??= {
           directHardSets: 0,
@@ -1261,9 +1261,11 @@ export function muscleExposure(
           policyVersion: trainingPolicyVersion,
         });
         row.rawBouts += completed.length;
-        row.advancedBouts += completed.filter(advanced).length;
+        row.advancedBouts += completed.filter((t) =>
+          advancedVolumeBout(entry, t),
+        ).length;
         const hardCount = completed.filter(
-          (s) => !advanced(s) && hard(s),
+          (s) => !advancedVolumeBout(entry, s) && hard(s),
         ).length;
         if (muscle === x.muscle) row.directHardSets += hardCount;
         else row.indirectHardSets += hardCount;
