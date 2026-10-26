@@ -8,7 +8,7 @@ export default defineConfig({
   // access-mode rehearsals require their separate isolated configurations.
   testMatch:
     process.env.NEOFORM_QA_MODE === "profiles"
-      ? ["workspace-profiles.spec.ts"]
+      ? ["workspace-profiles.spec.ts", "profile-gemini.spec.ts"]
       : process.env.NEOFORM_QA_MODE === "public"
         ? [
             "public-storage.spec.ts",

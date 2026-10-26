@@ -24,6 +24,7 @@ import {
   recoverHistoryMutation,
   type HistoryMutation,
 } from "./historyTransport";
+import { canUseGemini } from "./aiCoach";
 type User =
   | {
       id: string;
@@ -38,6 +39,7 @@ type User =
       accessMode: "workspace-profiles";
       profileId: string;
       profileName: string;
+      aiAccess?: boolean;
       email?: never;
       storageFormat: 2;
     }
@@ -164,7 +166,7 @@ export async function request<T = unknown>(
     ["public-workspace", "workspace-profiles"].includes(
       current.accessMode || "",
     ) &&
-    (path.startsWith("/ai/") ||
+    ((path.startsWith("/ai/") && !canUseGemini(current.user)) ||
       ["/login", "/register", "/logout", "/password", "/account"].includes(
         path,
       ))

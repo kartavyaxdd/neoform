@@ -25,6 +25,8 @@ import {
 import type { CoachingProposal } from "./coachingTypes";
 import { ChangeReviews } from "./ChangeReviews";
 import { reviewAcceptedChanges } from "./coachingResponse";
+import { GeminiCoach } from "./GeminiCoach";
+import { canUseGemini, type CoachFocus } from "./aiCoach";
 export function WorkoutPreview({
   workout,
   program,
@@ -47,6 +49,7 @@ export function WorkoutPreview({
     currentWorkout =
       currentProgram.workouts.find((w) => w.id === workout.id) ?? workout;
   const [starting, setStarting] = useState(false);
+  const [geminiFocus, setGeminiFocus] = useState<CoachFocus | null>(null);
   const [shortReview, setShortReview] = useState(false);
   const [preview, setPreview] = useState(() =>
     createGuidancePreview(
@@ -416,6 +419,33 @@ export function WorkoutPreview({
             </div>
           )}
           <p>{review.reason}</p>
+          {canUseGemini(snapshot.user) && (
+            <Button
+              onClick={() =>
+                setGeminiFocus({
+                  title:
+                    exercises.find((e) => e.id === review.exerciseId)?.name ??
+                    "Recommendation",
+                  action: review.action,
+                  reason: review.reason.slice(0, 1000),
+                  sourceIds: review.sourceIds,
+                  evidence: review.evidence.slice(0, 8),
+                  excluded: review.excluded.slice(0, 8),
+                  targets: review.rows,
+                })
+              }
+            >
+              Explain with Gemini
+            </Button>
+          )}
+          {geminiFocus && (
+            <Modal
+              title="Explain with Gemini"
+              close={() => setGeminiFocus(null)}
+            >
+              <GeminiCoach focus={geminiFocus} />
+            </Modal>
+          )}
           {!["hold", "recover"].includes(review.action) && (
             <>
               <div className="table-wrap">

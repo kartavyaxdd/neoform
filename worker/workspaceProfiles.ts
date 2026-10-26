@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HistoryStorage } from "./historyStorage";
 import { restAlertsRoute, type RestAlertEnv } from "./restAlerts";
+import { geminiRoute, type GeminiEnv } from "./geminiRoutes";
 export class ProfileFault extends Error {
   readonly accessMode = "workspace-profiles";
   constructor(
@@ -40,6 +41,7 @@ const identity = (p: Profile) => ({
   kind: "workspace",
   accessMode: "workspace-profiles",
   storageFormat: 2,
+  aiAccess: p.id === "sharma" && p.locked === 1,
 });
 const tokenOf = (req: Request) =>
   req.headers
@@ -49,7 +51,7 @@ const cookie = (req: Request, token: string, age = 604800) =>
   `neoform_profile=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
 export async function workspaceProfilesRoute(
   req: Request,
-  env: RestAlertEnv & { DB: D1Database },
+  env: RestAlertEnv & GeminiEnv,
   helpers: Helpers,
 ) {
   const path = new URL(req.url).pathname,
@@ -141,6 +143,21 @@ export async function workspaceProfilesRoute(
     );
   }
   if (path === "/api/me" && method === "GET") return Response.json(user);
+  if (path.startsWith("/api/ai/")) {
+    if (!user.aiAccess || expected !== user.id)
+      throw new ProfileFault(
+        403,
+        "Gemini is available only inside the locked Sharma profile.",
+      );
+    return geminiRoute(
+      req,
+      env,
+      "workspace-profile:sharma",
+      helpers.body,
+      helpers.throttle,
+      "sharma",
+    );
+  }
   if (path.startsWith("/api/storage/"))
     return new HistoryStorage(env.DB, null, p.owner).route(req, helpers.body);
   if (path.startsWith("/api/rest-alerts/"))

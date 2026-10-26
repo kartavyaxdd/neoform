@@ -28,15 +28,17 @@
   --hero: #dce9fa;
   --danger: #b12644;
   --gold: #936000;
-  --glass: #f8fbffb8;
-  --glass-strong: #f8fbffe8;
+  --glass: #f8fbff99;
+  --glass-strong: #f8fbffdb;
   --glass-edge: #ffffffde;
   --shadow: 0 12px 36px #29476c12;
   --glass-shadow:
-    inset 0 1px 0 #ffffffed, inset 0 -1px 0 #6182ae1a, 0 8px 28px #203e6610;
+    inset 0 1px 0 #fff, inset 1px 0 0 #ffffffa8, inset 0 -1px 0 #6182ae30,
+    0 12px 36px #203e6624;
   --ambient:
-    radial-gradient(ellipse at 8% 4%, #cadfff 0, transparent 46%),
-    radial-gradient(ellipse at 100% 48%, #d8d4f53d 0, transparent 50%);
+    radial-gradient(ellipse at 8% 4%, #b5d4ff 0, transparent 46%),
+    radial-gradient(ellipse at 100% 48%, #c7b9f580 0, transparent 50%),
+    radial-gradient(ellipse at 15% 96%, #bce8e570 0, transparent 45%);
   --radius: 22px;
 }
 :root[data-theme="dark"] {
@@ -56,15 +58,17 @@
   --hero: #1d3454;
   --danger: #ffa7b8;
   --gold: #ffd17b;
-  --glass: #1b2b43b8;
-  --glass-strong: #17263de8;
+  --glass: #1b2b439e;
+  --glass-strong: #17263ddc;
   --glass-edge: #d2e3ff36;
   --shadow: 0 12px 36px #0003;
   --glass-shadow:
-    inset 0 1px 0 #d8e9ff24, inset 0 -1px 0 #0b1220a8, 0 8px 28px #0003;
+    inset 0 1px 0 #d8e9ff50, inset 1px 0 0 #d8e9ff18, inset 0 -1px 0 #0b1220a8,
+    0 12px 36px #0005;
   --ambient:
-    radial-gradient(ellipse at 5% 0%, #204a7980 0, transparent 48%),
-    radial-gradient(ellipse at 100% 50%, #4b376a30 0, transparent 52%);
+    radial-gradient(ellipse at 5% 0%, #2864a5a0 0, transparent 48%),
+    radial-gradient(ellipse at 100% 50%, #674e9b60 0, transparent 52%),
+    radial-gradient(ellipse at 15% 96%, #1c666750 0, transparent 45%);
 }
 @font-face {
   font-family: "DM Sans";
@@ -2831,6 +2835,65 @@ textarea:focus {
     -webkit-backdrop-filter: blur(20px);
     backdrop-filter: blur(20px);
   }
+}
+.gemini-entry {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  color: var(--ink);
+  margin-bottom: 16px;
+  min-height: 68px;
+  border: 1px solid var(--glass-edge);
+  cursor: pointer;
+}
+.gemini-entry small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.gemini-coach {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.gemini-coach .panel {
+  margin: 0;
+}
+.gemini-intro {
+  border-bottom: 1px solid var(--glass-edge);
+  padding-bottom: 12px;
+}
+.gemini-intro h3 {
+  font-size: 23px;
+  line-height: 1.2;
+  margin: 10px 0;
+}
+.gemini-coach textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 88px;
+}
+.gemini-message {
+  border: 1px solid var(--glass-edge);
+  border-radius: 20px;
+  padding: 16px;
+  background: var(--glass);
+  box-shadow: var(--glass-shadow);
+  overflow-wrap: anywhere;
+}
+.gemini-message.user {
+  margin-left: 24px;
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+.gemini-message p {
+  white-space: pre-wrap;
+}
+.gemini-messages {
+  display: grid;
+  gap: 12px;
 }
 @media (prefers-reduced-motion: no-preference) {
   .glass-card,

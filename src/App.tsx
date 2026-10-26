@@ -30,6 +30,8 @@ import {
 import { VideoInfo } from "./VideoInfo";
 import { HevyImport } from "./HevyImport.jsx";
 import { GeminiKeySettings } from "./GeminiKeySettings";
+import { GeminiCoach } from "./GeminiCoach";
+import { canUseGemini } from "./aiCoach";
 import { AiWizard } from "./AiWizard";
 import { SessionLogger } from "./CompactLogger";
 import {
@@ -610,9 +612,7 @@ export default function App() {
       title: "Create",
       content: (
         <div className="create-menu">
-          {["public-workspace", "workspace-profiles"].includes(
-            store.accessMode || "",
-          ) ? (
+          {!canUseGemini(store.user) ? (
             <p>
               AI is unavailable in public mode. Private Gemini keys are never
               used. Create programs manually or use an editable starter
@@ -1237,6 +1237,15 @@ export default function App() {
           )}
           {page === "overview" && (
             <WorkoutDashboard
+              coach={
+                canUseGemini(store.user)
+                  ? () =>
+                      setModal({
+                        title: "Gemini coach",
+                        content: <GeminiCoach />,
+                      })
+                  : undefined
+              }
               state={s}
               exercises={exercises}
               history={() => go("history")}
@@ -2938,6 +2947,7 @@ function Preferences({
   const singleUser = useStore().user?.accessMode === "single-user-local";
   const profileMode = useStore().accessMode === "workspace-profiles";
   const publicWorkspace = useStore().accessMode === "public-workspace";
+  const geminiAllowed = canUseGemini(useStore().user);
   const exercises = [...D.catalog, ...s.customExercises];
   return (
     <>
@@ -3149,7 +3159,7 @@ function Preferences({
               </p>
             </div>
           </details>
-          {publicWorkspace ? (
+          {!geminiAllowed ? (
             <details className="panel preference-group">
               <summary>AI is unavailable in public mode</summary>
               <div className="preference-content">
@@ -3162,7 +3172,16 @@ function Preferences({
             </details>
           ) : (
             <details className="panel preference-group">
-              <summary>AI provider</summary>
+              <summary>Gemini coach &amp; connection</summary>
+              <div className="preference-content">
+                <Button
+                  onClick={() =>
+                    open({ title: "Gemini coach", content: <GeminiCoach /> })
+                  }
+                >
+                  Open Gemini coach
+                </Button>
+              </div>
               <GeminiKeySettings />
             </details>
           )}
@@ -3446,7 +3465,8 @@ function Preferences({
                   <p>
                     Only your authenticated account can read its data.
                     Demonstrations use third-party YouTube content. AI sends
-                    only bounded training preferences to Google Gemini using
+                    bounded training preferences, and for Sharma’s coach a
+                    recent training/program snapshot, to Google Gemini using
                     your account's encrypted API key; Google charges and quotas
                     may apply. Data is stored in D1; offline cache is
                     unencrypted on your device. Exports are private files.

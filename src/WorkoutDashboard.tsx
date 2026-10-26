@@ -18,6 +18,7 @@ export function WorkoutDashboard({
   progress,
   review,
   weight,
+  coach,
 }: {
   state: D.State;
   exercises: D.Exercise[];
@@ -26,6 +27,7 @@ export function WorkoutDashboard({
   progress: () => void;
   review: () => void;
   weight: () => void;
+  coach?: () => void;
 }) {
   const [scope, setScope] = useState<DashboardScope>("all"),
     [weeks, setWeeks] = useState<TrendWeeks>(8);
@@ -87,6 +89,15 @@ export function WorkoutDashboard({
           <CalendarDays size={22} />
         </button>
       </header>
+      {coach && (
+        <button className="gemini-entry glass-card" onClick={coach}>
+          <span>
+            <b>Gemini coach</b>
+            <small>Ask, understand, review.</small>
+          </span>
+          <ArrowUpRight size={20} />
+        </button>
+      )}
       <section className="activity-card glass-card" aria-label="This week">
         <div className="glass-section-heading">
           <div>

@@ -144,10 +144,67 @@ it("profiles require server authorization, keep original owner, isolate data, fe
     ).status,
   ).toBe(412);
   expect((await readHistory(sharma)).data).toEqual(next);
-  for (const route of ["/login", "/register", "/password", "/ai/generate"])
+  for (const route of ["/login", "/register", "/password"])
     expect(
       (await call(route, "POST", {}, cookie, "public-workspace")).status,
     ).toBe(403);
+  expect(
+    (await call("/ai/generate", "POST", {}, cookie, "public-workspace")).status,
+  ).toBe(400);
+  expect(
+    (await call("/ai/key", "GET", undefined, cookie, "public-workspace"))
+      .status,
+  ).toBe(200);
+  const aiKey = "AQ.synthetic.profile-only-fixture-123456";
+  expect(
+    (await call("/ai/test", "POST", {}, cookie, "public-workspace")).status,
+  ).toBe(428);
+  expect(
+    (
+      await call(
+        "/ai/key",
+        "PUT",
+        { key: aiKey },
+        cookie,
+        "public-workspace",
+        "https://evil.example",
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (await call("/ai/key", "PUT", { key: aiKey }, cookie, "public-workspace"))
+      .status,
+  ).toBe(200);
+  const keyStatus = await call(
+    "/ai/key",
+    "GET",
+    undefined,
+    cookie,
+    "public-workspace",
+  );
+  expect(await keyStatus.json()).toEqual({ configured: true });
+  expect(JSON.stringify((await readHistory(sharma)).data)).not.toContain(aiKey);
+  expect((await call("/ai/key", "GET", undefined, cookie)).status).toBe(403);
+  for (const endpoint of ["key", "test", "chat", "generate", "cancel"])
+    expect(
+      (
+        await call(
+          "/ai/" + endpoint,
+          endpoint === "key" ? "GET" : "POST",
+          endpoint === "key" ? undefined : {},
+          secondCookie,
+          "workspace-profile:abhishek",
+        )
+      ).status,
+    ).toBe(403);
+  expect(
+    (await call("/ai/key", "DELETE", {}, cookie, "public-workspace")).status,
+  ).toBe(200);
+  expect(
+    await (
+      await call("/ai/key", "GET", undefined, cookie, "public-workspace")
+    ).json(),
+  ).toEqual({ configured: false });
   expect(
     (await call("/profiles/lock", "POST", {}, cookie, "public-workspace"))
       .status,

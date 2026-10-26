@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { request, useStore } from "./store";
 import { Button, Field } from "./ui";
 import { GEMINI_MODEL } from "./aiProof";
+import { canUseGemini } from "./aiCoach";
 export function GeminiKeySettings() {
-  const publicWorkspace = ["public-workspace", "workspace-profiles"].includes(
-    useStore().accessMode || "",
-  );
+  const publicWorkspace = !canUseGemini(useStore().user);
   const account = useStore().user?.id;
   const [key, setKey] = useState(""),
     [configured, setConfigured] = useState(false),
@@ -80,6 +79,29 @@ export function GeminiKeySettings() {
       if (epoch.current === id) setBusy(false);
     }
   }
+  async function test() {
+    const id = ++epoch.current;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await request<{ connected: boolean; model: string }>(
+        "/ai/test",
+        "POST",
+        {},
+      );
+      if (epoch.current === id)
+        setNotice(
+          result.connected
+            ? `Key accepted · ${result.model} available. Ask your coach to test a reply.`
+            : "Connection not confirmed.",
+        );
+    } catch (e) {
+      if (epoch.current === id) setError((e as Error).message);
+    } finally {
+      if (epoch.current === id) setBusy(false);
+    }
+  }
   if (publicWorkspace) return null;
   return (
     <section className="panel">
@@ -119,6 +141,9 @@ export function GeminiKeySettings() {
         </Button>
         <Button disabled={busy || !configured} onClick={() => void remove()}>
           Remove Gemini key
+        </Button>
+        <Button disabled={busy || !configured} onClick={() => void test()}>
+          Test connection
         </Button>
       </div>
       {notice && <p role="status">{notice}</p>}

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer, createConnection } from "node:net";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import {
   mkdir,
   writeFile,
@@ -169,6 +169,7 @@ try {
         : {}),
       REST_PUSH_VAPID_PUBLIC_KEY: qaPublicKey,
       REST_PUSH_VAPID_PRIVATE_KEY: qaPrivateKey,
+      GEMINI_KEY_MASTER: randomBytes(32).toString("hex"),
     },
     durable_objects: {
       bindings: [{ name: "REST_ALERTS", class_name: "RestAlertDevice" }],
@@ -340,10 +341,28 @@ try {
                 "tests/release-api-identity.test.ts",
                 "tests/v2-api.test.ts",
                 "tests/storage-api.test.ts",
+                "tests/gemini-api.test.ts",
               ]),
       ]),
     );
-  if (!args.includes("--api-only"))
+  if (!args.includes("--api-only")) {
+    if (args.includes("--profiles-only"))
+      // API auth/rate-limit assertions must not consume the browser fixture's
+      // login budget. This command targets only this run's owned local D1.
+      await finish(
+        launch([
+          wrangler,
+          "d1",
+          "execute",
+          db,
+          "--local",
+          "--persist-to",
+          state,
+          ...common,
+          "--command",
+          "DELETE FROM rate_limits WHERE key LIKE 'profile-%'",
+        ]),
+      );
     await finish(
       launch([
         path.join(root, "node_modules/@playwright/test/cli.js"),
@@ -351,6 +370,7 @@ try {
         ...(browserMatch ? [browserMatch] : []),
       ]),
     );
+  }
 } finally {
   await stopChildren();
   await unlink(path.join(runDir, "run.json")).catch(() => {});

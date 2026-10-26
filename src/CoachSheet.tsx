@@ -13,6 +13,9 @@ import { Button, Field, Num } from "./ui";
 import { applyProgramReview, pendingProgramTarget } from "./programReview";
 import { ChangeReviews } from "./ChangeReviews";
 import { reviewAcceptedChanges } from "./coachingResponse";
+import { GeminiCoach } from "./GeminiCoach";
+import { canUseGemini, type CoachFocus } from "./aiCoach";
+import { Modal } from "./ui";
 
 export function CoachSheet({
   session: initial,
@@ -26,6 +29,8 @@ export function CoachSheet({
   programOnly?: boolean;
 }) {
   const state = useStore().box.data;
+  const geminiAllowed = canUseGemini(useStore().user);
+  const [geminiFocus, setGeminiFocus] = useState<CoachFocus | null>(null);
   const [preview, setPreview] = useState({
       ...initial,
       bodyweight: initial.bodyweight ?? state.coaching?.bodyweight,
@@ -184,6 +189,11 @@ export function CoachSheet({
   });
   return (
     <div className="training-coaching coach-sheet">
+      {geminiFocus && (
+        <Modal title="Explain with Gemini" close={() => setGeminiFocus(null)}>
+          <GeminiCoach focus={geminiFocus} />
+        </Modal>
+      )}
       <h3>{session.name}</h3>
       <p>Review targets from confirmed performance. Coaching works offline.</p>
       <ChangeReviews reviews={responses} state={state} />
@@ -216,6 +226,23 @@ export function CoachSheet({
                 {p.reason.split(". ")[0]}
                 {p.reason.includes(". ") ? "." : ""}
               </p>
+              {geminiAllowed && (
+                <Button
+                  onClick={() =>
+                    setGeminiFocus({
+                      title: x.name,
+                      action: p.action,
+                      reason: p.reason.slice(0, 1000),
+                      sourceIds: p.sourceIds,
+                      evidence: p.evidence.slice(0, 8),
+                      excluded: p.excluded.slice(0, 8),
+                      targets: p.rows,
+                    })
+                  }
+                >
+                  Explain with Gemini
+                </Button>
+              )}
               {canApply && p.rows.length > 0 && (
                 <div className="table-wrap">
                   <table aria-label={`${x.name} proposed working sets`}>

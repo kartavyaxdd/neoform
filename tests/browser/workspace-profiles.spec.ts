@@ -28,6 +28,7 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("heading", { name: "Who’s training?" }),
     ).toHaveCount(0);
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
     const before = await (await readData(page)).json(),
       data = D.emptyState();
     data.profile = {

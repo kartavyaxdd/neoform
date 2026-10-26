@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { generationInput } from "../src/generation";
+import { coachContextSchema, coachInputSchema } from "../src/aiCoach";
 import {
   GeminiFault,
   encryptAccountKey,
   decryptAccountKey,
   generateGemini,
+  coachGemini,
+  testGemini,
 } from "./gemini";
 export interface GeminiEnv {
   DB: D1Database;
@@ -44,14 +47,18 @@ export async function geminiRoute(
   account: string,
   body: (r: Request, max?: number) => Promise<unknown>,
   throttle: (key: string, limit: number) => Promise<void>,
+  profileId?: "sharma",
 ) {
   const path = new URL(req.url).pathname;
+  const table = profileId ? "profile_ai_keys" : "account_ai_keys";
+  const column = profileId ? "profile_id" : "user_id";
+  const keyOwner = profileId || account;
   if (path === "/api/ai/key") {
     if (req.method === "GET") {
       const row = await env.DB.prepare(
-        "SELECT 1 AS configured FROM account_ai_keys WHERE user_id=?",
+        `SELECT 1 AS configured FROM ${table} WHERE ${column}=?`,
       )
-        .bind(account)
+        .bind(keyOwner)
         .first();
       return Response.json({ configured: !!row });
     }
@@ -64,9 +71,9 @@ export async function geminiRoute(
         env.GEMINI_KEY_MASTER,
       );
       await env.DB.prepare(
-        "INSERT INTO account_ai_keys(user_id,encrypted,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET encrypted=excluded.encrypted,updated_at=excluded.updated_at",
+        `INSERT INTO ${table}(${column},encrypted,updated_at) VALUES (?,?,?) ON CONFLICT(${column}) DO UPDATE SET encrypted=excluded.encrypted,updated_at=excluded.updated_at${profileId ? ",verified_at=NULL" : ""}`,
       )
-        .bind(account, JSON.stringify(encrypted), Date.now())
+        .bind(keyOwner, JSON.stringify(encrypted), Date.now())
         .run();
       await cancelAccount(env, account);
       return Response.json({ configured: true });
@@ -74,8 +81,8 @@ export async function geminiRoute(
     if (req.method === "DELETE") {
       parse(z.object({}).strict(), await body(req, 1024));
       await throttle("gemini-key:" + account, 10);
-      await env.DB.prepare("DELETE FROM account_ai_keys WHERE user_id=?")
-        .bind(account)
+      await env.DB.prepare(`DELETE FROM ${table} WHERE ${column}=?`)
+        .bind(keyOwner)
         .run();
       await cancelAccount(env, account);
       return Response.json({ configured: false });
@@ -99,23 +106,33 @@ export async function geminiRoute(
       .run();
     return Response.json({ ok: true });
   }
-  if (path !== "/api/ai/generate" || req.method !== "POST")
+  const chat = path === "/api/ai/chat",
+    test = path === "/api/ai/test";
+  if ((!chat && !test && path !== "/api/ai/generate") || req.method !== "POST")
     throw new GeminiFault(404, "Route not found.");
-  const input = parse(generationInput, await body(req, 4096));
+  const generationSchema = generationInput.extend({
+    trainingContext: coachContextSchema.optional(),
+  });
+  const raw = await body(req, chat || !test ? 131072 : 1024);
+  const input = chat
+    ? parse(coachInputSchema, raw)
+    : test
+      ? parse(z.object({}).strict(), raw)
+      : parse(generationSchema, raw);
   const requestId =
     req.headers.get("X-Neoform-Generation") || crypto.randomUUID();
   if (!z.string().uuid().safeParse(requestId).success)
     throw new GeminiFault(400, "Invalid generation ID.");
   if (req.signal.aborted) throw new GeminiFault(499, "Generation cancelled.");
   const stored = await env.DB.prepare(
-    "SELECT encrypted FROM account_ai_keys WHERE user_id=?",
+    `SELECT encrypted FROM ${table} WHERE ${column}=?`,
   )
-    .bind(account)
+    .bind(keyOwner)
     .first<{ encrypted: string }>();
   if (!stored)
     throw new GeminiFault(
       428,
-      "Add your Gemini API key in More settings before generating a program.",
+      "Add your Gemini API key in More settings before using Gemini.",
     );
   let key: string;
   try {
@@ -131,7 +148,44 @@ export async function geminiRoute(
       "Stored Gemini key cannot be opened. Replace it in More settings.",
     );
   }
-  await throttle("ai:" + account, 3);
+  await throttle(
+    (test ? "gemini-test:" : chat ? "ai-chat:" : "ai:") + account,
+    chat ? 10 : 3,
+  );
+  const keyCurrent = async () => {
+    const current = await env.DB.prepare(
+      `SELECT encrypted FROM ${table} WHERE ${column}=?`,
+    )
+      .bind(keyOwner)
+      .first<{ encrypted: string }>();
+    if (current?.encrypted !== stored.encrypted)
+      throw new GeminiFault(
+        409,
+        "Gemini key changed. Try again with the current connection.",
+      );
+  };
+  if (test) {
+    const signal = AbortSignal.any([req.signal, AbortSignal.timeout(15000)]);
+    try {
+      const result = await testGemini({ key, signal });
+      await keyCurrent();
+      if (profileId)
+        await env.DB.prepare(
+          "UPDATE profile_ai_keys SET verified_at=? WHERE profile_id=? AND encrypted=?",
+        )
+          .bind(Date.now(), profileId, stored.encrypted)
+          .run();
+      return Response.json(result);
+    } catch (e) {
+      if (e instanceof GeminiFault) throw e;
+      throw new GeminiFault(
+        signal.aborted ? 504 : 503,
+        signal.aborted
+          ? "Gemini connection test timed out. Try again."
+          : "Gemini connection unavailable. Try again later.",
+      );
+    }
+  }
   const dailyLimit = Number(env.GEMINI_DAILY_LIMIT || 10);
   if (!Number.isSafeInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 100)
     throw new GeminiFault(503, "Invalid server generation allowance.");
@@ -172,11 +226,16 @@ export async function geminiRoute(
       .first<{ cancelled: number }>();
     if (!active || active.cancelled || controller.signal.aborted)
       throw new GeminiFault(499, "Generation cancelled.");
-    const generated = await generateGemini({
-      key,
-      input,
-      signal: controller.signal,
-    });
+    await keyCurrent();
+    const generated = chat
+      ? await coachGemini({ key, input, signal: controller.signal })
+      : await generateGemini({
+          key,
+          input: generationInput.parse(input),
+          trainingContext: (input as z.infer<typeof generationSchema>)
+            .trainingContext,
+          signal: controller.signal,
+        });
     const finished = await env.DB.prepare(
       "SELECT cancelled FROM ai_generation_lock WHERE owner=?",
     )
@@ -184,6 +243,7 @@ export async function geminiRoute(
       .first<{ cancelled: number }>();
     if (!finished || finished.cancelled || controller.signal.aborted)
       throw new GeminiFault(499, "Generation cancelled.");
+    await keyCurrent();
     return Response.json(generated);
   } catch (e) {
     if (req.signal.aborted) throw new GeminiFault(499, "Generation cancelled.");

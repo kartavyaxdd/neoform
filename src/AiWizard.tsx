@@ -13,6 +13,7 @@ import {
 } from "./generation";
 import { geminiProofSchema, type GeminiProof } from "./aiProof";
 import { Button, Field, Num } from "./ui";
+import { buildCoachContext } from "./aiCoach";
 export function AiWizard({ close }: { close: () => void }) {
   const store = useStore(),
     profile = store.box.data.profile;
@@ -75,10 +76,20 @@ export function AiWizard({ close }: { close: () => void }) {
       const response = await request<{
         program: unknown;
         proof: GeminiProof;
-      }>("/ai/generate", "POST", validated, {
-        signal: controller.signal,
-        headers: { "X-Neoform-Generation": id },
-      });
+      }>(
+        "/ai/generate",
+        "POST",
+        {
+          ...validated,
+          ...(store.user?.accessMode === "workspace-profiles"
+            ? { trainingContext: buildCoachContext(store.box.data) }
+            : {}),
+        },
+        {
+          signal: controller.signal,
+          headers: { "X-Neoform-Generation": id },
+        },
+      );
       if (pending.current?.id !== id || !mounted.current) return;
       const p = validateGenerated(response.program, validated);
       const evidence = geminiProofSchema.safeParse(response.proof);
@@ -666,9 +677,13 @@ export function AiWizard({ close }: { close: () => void }) {
       )}
       {step !== 3 && (
         <p className="caption ai-host-note">
-          Requires your account's Gemini API key in More settings. Only bounded
-          training preferences are sent to Google; API charges and quota limits
-          may apply. Review the preview before saving.
+          Requires your account's Gemini API key in More settings. Bounded
+          training preferences
+          {store.user?.accessMode === "workspace-profiles"
+            ? " and a recent training/program snapshot"
+            : ""}{" "}
+          are sent to Google; API charges and quota limits may apply. Review the
+          preview before saving.
         </p>
       )}
     </div>
