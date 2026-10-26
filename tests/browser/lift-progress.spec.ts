@@ -52,6 +52,9 @@ for (const width of [360, 390, 1440])
     await expect(page.getByRole("status")).toContainText(
       "50 kg × 8 · Reported 2 RIR",
     );
+    await page
+      .getByText("Compare set, load and effort", { exact: true })
+      .click();
     await page.getByLabel("Compared set", { exact: true }).selectOption("1");
     await expect(
       page.getByRole("region", { name: "Matching lift observations" }),

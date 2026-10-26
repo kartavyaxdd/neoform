@@ -1,3 +1,71 @@
+/* Authoritative shared theme: light/dark surfaces, controls and glass. */
+:root,
+:root[data-theme="light"] {
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--bg);
+  --bg: #eaf0f8;
+  --surface: #f8fbff;
+  --surface2: #e8eef7;
+  --surface3: #dce6f3;
+  --ink: #15253c;
+  --muted: #4e6079;
+  --subtle: #526782;
+  --line: #263e5c24;
+  --accent: #125bd5;
+  --accent-soft: #dce9ff;
+  --mint: #125bd5;
+  --mint-ink: #fff;
+  --hero: #dce9fa;
+  --danger: #b12644;
+  --gold: #936000;
+  --glass: #f8fbffb8;
+  --glass-strong: #f8fbffe8;
+  --glass-edge: #ffffffde;
+  --shadow: 0 12px 36px #29476c12;
+  --glass-shadow:
+    inset 0 1px 0 #ffffffed, inset 0 -1px 0 #6182ae1a, 0 8px 28px #203e6610;
+  --ambient:
+    radial-gradient(ellipse at 8% 4%, #cadfff 0, transparent 46%),
+    radial-gradient(ellipse at 100% 48%, #d8d4f53d 0, transparent 50%);
+  --radius: 22px;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1625;
+  --surface: #152237;
+  --surface2: #23324a;
+  --surface3: #30415c;
+  --ink: #f3f7ff;
+  --muted: #b9c9df;
+  --subtle: #a9bdd8;
+  --line: #c7ddff26;
+  --accent: #99bfff;
+  --accent-soft: #24416b;
+  --mint: #99bfff;
+  --mint-ink: #10223f;
+  --hero: #1d3454;
+  --danger: #ffa7b8;
+  --gold: #ffd17b;
+  --glass: #1b2b43b8;
+  --glass-strong: #17263de8;
+  --glass-edge: #d2e3ff36;
+  --shadow: 0 12px 36px #0003;
+  --glass-shadow:
+    inset 0 1px 0 #d8e9ff24, inset 0 -1px 0 #0b1220a8, 0 8px 28px #0003;
+  --ambient:
+    radial-gradient(ellipse at 5% 0%, #204a7980 0, transparent 48%),
+    radial-gradient(ellipse at 100% 50%, #4b376a30 0, transparent 52%);
+}
 @font-face {
   font-family: "DM Sans";
   src: url("./assets/fonts/dm-sans.ttf") format("truetype");
@@ -5,59 +73,10 @@
   font-style: normal;
   font-display: swap;
 }
-@font-face {
-  font-family: "Michroma";
-  src: url("./assets/fonts/michroma.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-:root,
-:root[data-theme="light"],
-:root[data-theme="dark"] {
-  font-family:
-    "DM Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-}
+
 /* Screen geometry follows the official Workouts quick-start screenshots.
    NEOFORM retains its own data, anatomy schematic and training semantics. */
-:root,
-:root[data-theme="light"] {
-  --bg: #f6f6f6;
-  --surface: #fff;
-  --surface2: #ededee;
-  --surface3: #e3e3e5;
-  --ink: #111;
-  --muted: #616161;
-  --subtle: #757575;
-  --line: #e6e6e7;
-  --accent: #236bfe;
-  --accent-soft: #edf3ff;
-  --mint: #111;
-  --mint-ink: #fff;
-  --hero: #eee;
-  --shadow: 0 12px 40px #00000012;
-  color: var(--ink);
-  background: var(--bg);
-}
-:root[data-theme="dark"] {
-  --bg: #111;
-  --surface: #191919;
-  --surface2: #28282a;
-  --surface3: #353537;
-  --ink: #f5f5f5;
-  --muted: #b3b3b7;
-  --subtle: #99999e;
-  --line: #303033;
-  --accent: #79a4ff;
-  --accent-soft: #20304d;
-  --mint: #f5f5f5;
-  --mint-ink: #111;
-  --hero: #28282a;
-}
+
 h1,
 h2,
 h3 {
@@ -373,7 +392,7 @@ h3 {
   margin: 0 0 22px;
 }
 .simple-dashboard .screen-heading h1 {
-  font-family: "Michroma", sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: clamp(22px, 6.1vw, 28px);
   font-weight: 400;
   -webkit-text-stroke: 0.6px currentColor;
@@ -382,7 +401,7 @@ h3 {
   line-height: 1.4;
 }
 .dashboard-date {
-  font-family: "Michroma", sans-serif;
+  font-family: "DM Sans", sans-serif;
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: -0.2px;
@@ -1995,4 +2014,914 @@ h3 {
 .lift-progress > details > summary {
   min-height: 44px;
   padding: 12px 0;
+}
+
+/* Shared surfaces. Nested sections use tint/highlights without nested blurs. */
+body {
+  background: var(--ambient), var(--bg);
+  background-attachment: fixed;
+  color: var(--ink);
+}
+.app-shell,
+.workspace,
+.content,
+.topbar {
+  background: transparent;
+}
+:where(
+  .glass-card,
+  .activity-card,
+  .grouped,
+  .body-card,
+  .muscle-list,
+  .muscle-detail,
+  .more-profile,
+  .preference-group,
+  .reward-progress,
+  .muscle-week-card,
+  .recap-overview,
+  .recap-records,
+  .log-exercise,
+  .modal,
+  .rest-timer,
+  .bottom-nav
+) {
+  background: linear-gradient(135deg, #ffffff0d, transparent 60%), var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  backdrop-filter: blur(20px) saturate(135%);
+}
+.glass-card,
+.activity-card,
+.body-card,
+.muscle-detail,
+.reward-progress,
+.muscle-week-card,
+.recap-overview,
+.recap-records {
+  padding: 20px;
+}
+.grouped,
+.body-card,
+.more-profile,
+.preference-group,
+.reward-progress,
+.muscle-week-card,
+.recap-overview,
+.recap-records,
+.compact-logger .log-exercise,
+.activity-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+}
+.modal
+  :where(
+    .glass-card,
+    .grouped,
+    .body-card,
+    .muscle-week-card,
+    .recap-overview,
+    .recap-records,
+    .preference-group
+  ),
+.glass-card :where(.grouped, .metric-chart),
+.activity-card .weekly-scope,
+.grouped .grouped,
+.preference-group .panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.group-row,
+.workout-row {
+  background: transparent;
+  border-color: var(--line);
+}
+.group-row:hover,
+.workout-row:hover {
+  background: var(--accent-soft);
+}
+h1,
+.screen-heading h1,
+.simple-dashboard h1,
+.workout-title h1 {
+  font-family: "DM Sans", sans-serif;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -1px;
+}
+h2 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.screen-heading {
+  margin-bottom: 22px;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+.glass-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.glass-section-heading h2,
+.chart-heading h3 {
+  margin: 0;
+}
+.glass-dashboard {
+  display: grid;
+  gap: 22px;
+}
+.glass-dashboard .activity-card {
+  margin: 0;
+}
+.goal-count {
+  text-align: right;
+  font-size: 18px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.goal-count b {
+  font-size: 34px;
+  line-height: 1;
+  color: var(--ink);
+}
+.goal-count small {
+  display: block;
+  font-size: 11px;
+}
+.weekly-goal {
+  width: 100%;
+  height: 7px;
+  margin: 4px 0 18px;
+}
+progress {
+  accent-color: var(--accent);
+  border-radius: 10px;
+}
+progress::-webkit-progress-bar {
+  background: var(--surface3);
+  border-radius: 10px;
+}
+progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 10px;
+}
+progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 10px;
+}
+.simple-dashboard .screen-heading h1 {
+  text-transform: none;
+  -webkit-text-stroke: 0;
+  font-weight: 650;
+}
+.workout-title {
+  background: transparent;
+}
+.session-bar .slim-rest > .countdown-arc {
+  width: 24px;
+  height: 24px;
+}
+.bottom-nav .create-tab svg {
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.week-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 0 8px;
+}
+.week-stat-row div {
+  display: grid;
+  gap: 3px;
+}
+.week-stat-row b {
+  font-size: 27px;
+  font-weight: 600;
+}
+.week-stat-row span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.weekly-scope,
+.trend-range {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface2);
+}
+.weekly-scope button,
+.trend-range button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  border-radius: 11px;
+  color: var(--muted);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.weekly-scope button[aria-pressed="true"],
+.trend-range button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 2px 8px #203a5c13;
+}
+.weekly-scope button {
+  flex: 1;
+}
+.trend-range {
+  flex-shrink: 0;
+}
+.trend-range button {
+  min-width: 44px;
+  padding-inline: 8px;
+}
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.glass-card > .text-button,
+.activity-card > .text-button {
+  margin-top: 8px;
+}
+.dashboard-chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dashboard-record-page {
+  min-height: 0;
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.dashboard-record {
+  width: 100%;
+  min-height: 72px;
+  background: transparent;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dashboard-record > span {
+  flex: 1;
+  min-width: 0;
+}
+.dashboard-record small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.dashboard-record > svg:first-child,
+.gold-icon {
+  color: var(--gold);
+}
+.btn,
+.icon-button {
+  border-radius: 13px;
+  min-height: 44px;
+}
+.btn {
+  border: 1px solid var(--line);
+  background: var(--surface2);
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--mint-ink);
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 #ffffff40,
+    0 4px 14px #16498320;
+}
+.icon-button {
+  background: var(--glass-strong);
+  color: var(--ink);
+  border: 1px solid var(--glass-edge);
+  min-width: 44px;
+}
+input,
+select,
+textarea {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 11px;
+  font-size: 16px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.modal {
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-edge);
+  border-radius: 28px 28px 0 0;
+}
+.modal-head,
+.modal-foot,
+.modal-sticky {
+  background: var(--glass-strong);
+}
+.modal-head {
+  border-radius: 28px 28px 0 0;
+}
+.modal::backdrop {
+  background: #0d1e393d;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.modal-body {
+  scrollbar-width: thin;
+}
+.screen-modal {
+  border-radius: 0;
+}
+.page-session .content {
+  padding-bottom: 140px;
+}
+.compact-logger .log-exercise {
+  padding: 16px;
+}
+.compact-logger .set-row,
+.compact-logger .set-header {
+  background: transparent;
+  border-color: var(--line);
+}
+.compact-logger .set-row input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.compact-logger .set-row input:focus {
+  outline: 2px solid var(--accent);
+}
+.compact-logger .set-row.completed > input {
+  opacity: 1;
+}
+.compact-logger .set-row,
+.compact-logger .set-row input {
+  transform: none;
+}
+.logger-actions .btn {
+  background: var(--surface2);
+  box-shadow: none;
+}
+.exercise-nav button {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+}
+.exercise-nav button[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.exercise-prescription {
+  color: var(--muted);
+}
+.home-groups {
+  gap: 24px;
+}
+.program-days .workout-row {
+  border-radius: 0;
+}
+.program-days .workout-row:last-child {
+  border-radius: 0 0 18px 18px;
+}
+.program-muscle-tags small {
+  background: var(--surface2);
+}
+.date-strip {
+  padding: 8px;
+  gap: 4px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 20px;
+}
+.date-strip button {
+  border-radius: 14px;
+}
+.date-strip button.selected {
+  background: var(--accent);
+  color: var(--mint-ink);
+}
+.workout-tools > summary {
+  padding: 14px 0;
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.workout-tools .grouped {
+  margin-top: 10px;
+}
+.plan-workouts-link {
+  justify-self: end;
+  margin-top: -16px;
+}
+.target-muscles > details > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  font-size: 13px;
+}
+.target-muscle-rail {
+  padding-top: 12px;
+}
+.target-muscles {
+  margin-bottom: 18px;
+}
+.more-profile {
+  margin-bottom: 24px;
+}
+.settings-section-title {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 10px 0;
+  text-transform: none;
+}
+.preference-group > summary {
+  min-height: 56px;
+  font-weight: 550;
+}
+.rest-timer {
+  background: var(--glass-strong);
+  border-radius: 22px;
+  padding: 12px;
+  gap: 10px;
+}
+.rest-timer > .countdown-arc {
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  color: var(--accent);
+}
+.countdown-arc {
+  width: 96px;
+  height: 96px;
+  color: var(--accent);
+}
+.countdown-arc circle {
+  fill: none;
+  stroke-width: 3;
+}
+.arc-track {
+  stroke: var(--line);
+}
+.arc-value {
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+.timer-sheet > .countdown-arc {
+  display: block;
+  margin: 0 auto 8px;
+}
+.timer-sheet .timer-value {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.metric-chart,
+.comparison-bars {
+  min-width: 0;
+}
+.chart-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chart-heading span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.chart-plot {
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.chart-plot svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-height: 230px;
+  user-select: none;
+}
+.chart-plot text {
+  font-family: inherit;
+  font-size: 10px;
+  fill: var(--muted);
+}
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.chart-point,
+.chart-bar {
+  fill: var(--accent);
+}
+.chart-bar {
+  opacity: 0.65;
+}
+.chart-selected .chart-bar {
+  opacity: 1;
+}
+.chart-inspect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+}
+.chart-inspect button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 24px;
+}
+.chart-inspect .chart-value {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.chart-inspect b {
+  color: var(--ink);
+}
+.chart-data > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.chart-empty {
+  min-height: 140px;
+  display: grid;
+  place-content: center;
+  font-size: 13px;
+  text-align: center;
+}
+.comparison-bars h3 {
+  margin-bottom: 14px;
+}
+.comparison-item {
+  margin-bottom: 14px;
+}
+.comparison-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.comparison-label b {
+  font-variant-numeric: tabular-nums;
+}
+.comparison-label.secondary {
+  color: var(--muted);
+  margin-top: 7px;
+}
+.comparison-track {
+  height: 7px;
+  border-radius: 7px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.comparison-track i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+.comparison-track.secondary i {
+  background: var(--subtle);
+}
+.comparison-track.unknown {
+  background: repeating-linear-gradient(
+    120deg,
+    var(--surface2) 0 5px,
+    var(--line) 5px 7px
+  );
+}
+.chart-scale {
+  margin-top: 8px;
+}
+.muscle-week-card {
+  margin-bottom: 8px;
+}
+.muscle-week-card > .comparison-bars {
+  margin-top: 12px;
+}
+.muscle-week-card > .comparison-bars > h3 {
+  display: none;
+}
+.muscle-week-action {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.preferences-grid > .stack {
+  background: transparent;
+  overflow: visible;
+  gap: 8px;
+}
+.preferences-grid .preference-group {
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  background: var(--glass);
+}
+.muscle-week-totals {
+  margin: 12px 0;
+}
+.muscle-list {
+  padding: 8px;
+}
+.muscle-list button {
+  border-radius: 14px;
+}
+.muscle-meter {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.muscle-meter i {
+  background: var(--accent);
+}
+.levels-screen > .glass-card {
+  margin: 20px 0;
+}
+.lift-observed-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.lift-filter-details > summary {
+  min-height: 44px;
+  padding: 12px 0;
+}
+.lift-match {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 20px;
+}
+.recap-records li {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  padding: 16px;
+  min-width: 0;
+}
+.recap-records li > .comparison-bars {
+  grid-column: 1/-1;
+  width: 100%;
+  margin-top: 12px;
+}
+.recap-records ul {
+  grid-template-columns: 1fr;
+}
+.recap-body {
+  background: transparent;
+}
+.recap-body > summary {
+  min-height: 44px;
+  padding: 12px 0;
+}
+.workout-recap > .comparison-bars {
+  padding: 18px;
+  border-radius: 20px;
+  background: var(--glass);
+}
+.workspace-footer {
+  opacity: 0.7;
+}
+.bottom-nav {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  width: calc(100% - 24px);
+  max-width: 550px;
+  padding: 6px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 26px;
+  background: var(--glass-strong);
+  box-shadow: var(--glass-shadow);
+}
+.bottom-nav button {
+  min-height: 54px;
+  border-radius: 19px;
+}
+.bottom-nav button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.bottom-nav button span {
+  font-size: 10px;
+}
+.bottom-nav button.create-tab {
+  background: var(--accent);
+  color: var(--mint-ink);
+  border-radius: 20px;
+  margin-inline: 3px;
+}
+@media (max-width: 767px) {
+  .app-shell {
+    background: transparent;
+  }
+  .content {
+    padding-bottom: 120px;
+  }
+  .rest-timer {
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 24px);
+  }
+  .page-session .rest-timer {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .glass-card,
+  .activity-card,
+  .body-card,
+  .muscle-detail,
+  .reward-progress,
+  .muscle-week-card,
+  .recap-overview,
+  .recap-records {
+    padding: 16px;
+  }
+  .dashboard-chart-grid,
+  .lift-observed-charts {
+    grid-template-columns: 1fr;
+  }
+  .compact-logger .log-exercise {
+    padding: 12px 6px;
+    border-radius: 18px;
+  }
+  .modal .compact-logger .log-exercise {
+    padding: 12px 0;
+    border: 0;
+    background: transparent;
+  }
+  .glass-section-heading {
+    gap: 8px;
+  }
+  .glass-section-heading:has(.trend-range) h2 {
+    font-size: 17px;
+  }
+}
+@media (min-width: 768px) {
+  .glass-dashboard {
+    max-width: 900px;
+    margin: auto;
+  }
+  .modal {
+    border-radius: 28px;
+  }
+  .screen-modal {
+    border-radius: 0;
+  }
+  .sidebar {
+    background: var(--glass);
+    border-right: 1px solid var(--glass-edge);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .glass-card,
+  .metric-chart {
+    animation: neo-fade-in 220ms ease both;
+  }
+  .btn:active,
+  .icon-button:active {
+    filter: brightness(0.96);
+  }
+  .chart-bar {
+    transition: opacity 160ms ease;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  :root,
+  :root[data-theme] {
+    --glass: var(--surface);
+    --glass-strong: var(--surface);
+    --glass-edge: var(--line);
+  }
+  :where(
+    .glass-card,
+    .activity-card,
+    .grouped,
+    .body-card,
+    .muscle-list,
+    .muscle-detail,
+    .more-profile,
+    .preference-group,
+    .reward-progress,
+    .muscle-week-card,
+    .recap-overview,
+    .recap-records,
+    .log-exercise,
+    .modal,
+    .rest-timer,
+    .bottom-nav,
+    .sidebar
+  ) {
+    background: var(--surface);
+  }
+}
+@media (prefers-reduced-transparency: reduce),
+  (prefers-contrast: more),
+  (forced-colors: active) {
+  :root,
+  :root[data-theme] {
+    --glass: var(--surface);
+    --glass-strong: var(--surface);
+    --glass-edge: var(--line);
+  }
+  *,
+  *::before,
+  *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  body {
+    background: var(--bg);
+  }
+  .chart-bar {
+    opacity: 1;
+  }
+}
+@media (forced-colors: active) {
+  .chart-line,
+  .arc-value {
+    stroke: CanvasText;
+  }
+  .chart-bar,
+  .chart-point {
+    fill: CanvasText;
+  }
+  .comparison-track i,
+  .muscle-meter i {
+    background: Highlight;
+  }
+  .comparison-track,
+  .muscle-meter {
+    border: 1px solid CanvasText;
+  }
 }

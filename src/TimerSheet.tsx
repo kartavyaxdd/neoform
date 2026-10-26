@@ -15,6 +15,7 @@ import { uid } from "./domain";
 import { useEffect, useState } from "react";
 import { useStore, change } from "./store";
 import { Button } from "./ui";
+import { CountdownArc } from "./CountdownArc";
 export function TimerSheet() {
   const alerts = useRestAlertState(),
     [error, setError] = useLocalState("");
@@ -55,6 +56,7 @@ export function TimerSheet() {
   }
   return (
     <div className="timer-sheet">
+      <CountdownArc seconds={seconds} total={timer?.remaining ?? 0} />
       <p className="timer-value" role="timer" aria-label="Rest remaining">
         {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
       </p>

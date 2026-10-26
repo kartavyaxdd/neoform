@@ -48,6 +48,8 @@ for (const width of [360, 390, 1440])
       const at = new Date();
       at.setDate(at.getDate() - days);
       at.setHours(12, 0, 0, 0);
+      // Today's completed observation must not be dated at a future noon.
+      if (days === 0) at.setTime(Date.now() - 1000);
       s.startedAt = at.getTime();
       s.date = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
       s.phase = "accumulation";
@@ -60,53 +62,39 @@ for (const width of [360, 390, 1440])
     ).toBe(200);
     await page.reload();
     await page.getByRole("button", { name: "Dashboard", exact: true }).click();
-    await expect(page.locator(".weekly-ring")).toHaveCount(3);
-    const rings = await page
-      .locator(".weekly-ring")
-      .evaluateAll((nodes) =>
-        nodes.map((n) => n.getBoundingClientRect().width),
-      );
-    expect(rings[1] / rings[0]).toBeCloseTo(1.82, 1);
+    await expect(
+      page.getByRole("progressbar", {
+        name: "Weekly training-day goal",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator(".week-stat-row")).toContainText("6");
     await expect(
       page.getByRole("button", { name: "All Workouts", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     await page
       .getByRole("button", { name: "Active Program", exact: true })
       .click();
+    await expect(page.locator(".week-stat-row")).toContainText("3");
     await expect(
-      page.getByRole("img", {
-        name: "3 sets completed; 3 planned",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(page.locator(".ring-value").nth(1)).toHaveAttribute(
-      "stroke-dasharray",
-      "100 100",
-    );
-    await expect(page.locator(".weight-sparkline circle")).toHaveCount(2);
-    await expect(page.locator(".analytics-tile").nth(1)).toContainText(
-      "60.0 kg",
-    );
-    await page.locator(".analytics-tile").nth(1).click();
+      page.getByRole("region", { name: "Bodyweight", exact: true }),
+    ).toContainText("60 kg");
+    await page
+      .getByRole("button", { name: "Log bodyweight", exact: false })
+      .click();
     await expect(
       page.getByLabel("Optional reported bodyweight (kg)", { exact: true }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
-    await page
-      .getByRole("button", { name: "Recent records", exact: true })
-      .click();
     await expect(page.locator(".dashboard-record")).toHaveCount(1);
     await expect(page.locator(".dashboard-record")).toContainText("10 → 11");
-    await page
-      .getByRole("button", { name: "Weekly workouts", exact: true })
-      .click();
     await page
       .getByRole("button", { name: "All Workouts", exact: true })
       .click();
     await page.evaluate(() => document.fonts.ready);
     await expect(page.locator(".simple-dashboard h1")).toHaveCSS(
       "font-family",
-      "Michroma, sans-serif",
+      '"DM Sans", sans-serif',
     );
     expect(
       await page.evaluate(
@@ -167,13 +155,9 @@ for (const width of [360, 390, 1440])
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     await context.setOffline(true);
     await page.reload();
-    await expect(page.locator(".weekly-ring")).toHaveCount(3);
+    await expect(page.locator(".week-stat-row")).toBeVisible();
     expect(
-      await page.evaluate(
-        () =>
-          document.fonts.check('16px "DM Sans"') &&
-          document.fonts.check('16px "Michroma"'),
-      ),
+      await page.evaluate(() => document.fonts.check('16px "DM Sans"')),
     ).toBe(true);
     await context.setOffline(false);
     await page

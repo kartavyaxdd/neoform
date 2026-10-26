@@ -11,6 +11,7 @@ import { WorkoutCelebration } from "./RewardProgress";
 import { rewards } from "./rewards";
 import { weekMonday } from "./workoutPresentation";
 import { TimerSheet } from "./TimerSheet";
+import { CountdownArc } from "./CountdownArc";
 import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
@@ -508,7 +509,7 @@ export default function App() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
         "content",
-        s.settings.theme === "dark" ? "#141518" : "#f5f5f7",
+        s.settings.theme === "dark" ? "#0d1625" : "#eaf0f8",
       );
   }, [s.settings.theme]);
   useEffect(() => {
@@ -1390,7 +1391,14 @@ export default function App() {
                       setModal({ title: "Rest timer", content: <TimerSheet /> })
                     }
                   >
-                    <Clock size={16} />
+                    {s.timer ? (
+                      <CountdownArc
+                        seconds={seconds}
+                        total={s.timer.remaining}
+                      />
+                    ) : (
+                      <Clock size={16} />
+                    )}
                     {s.timer && !s.timer.paused && seconds === 0
                       ? "Rest done"
                       : duration(seconds)}
@@ -1699,7 +1707,7 @@ export default function App() {
       </nav>
       {s.timer && (
         <div className="rest-timer" role="region" aria-label="Rest timer">
-          <Clock size={18} />
+          <CountdownArc seconds={seconds} total={s.timer.remaining} />
           <div>
             <small>
               {seconds <= 0
@@ -2947,7 +2955,7 @@ function Preferences({
           </small>
         </span>
       </div>
-      <h2 className="settings-section-title">Feature Settings</h2>
+      <h2 className="settings-section-title">Profile & shortcuts</h2>
       <div className="more-links grouped">
         <button className="group-row" onClick={onLibrary}>
           <Layers size={20} />
@@ -2962,6 +2970,7 @@ function Preferences({
       </div>
       <div className="preferences-grid">
         <div className="stack">
+          <h2 className="settings-section-title">Training</h2>
           <details className="panel preference-group">
             <summary>Training preferences</summary>
             <div className="preference-content">
@@ -3163,6 +3172,7 @@ function Preferences({
               <CoachSettingsPanel />
             </div>
           </details>
+          <h2 className="settings-section-title">App &amp; data</h2>
           <details className="panel preference-group">
             <summary>Your data, portable.</summary>
             <div className="preference-content">

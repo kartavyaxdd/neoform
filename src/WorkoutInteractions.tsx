@@ -126,9 +126,11 @@ export function ExerciseQueue({
   onChange: (s: D.Session) => void;
   onRemove?: (id: string) => void;
   onSelect?: (id: string) => void;
-  onSaveOrder?: () => void;
+  onSaveOrder?: () => Promise<boolean>;
   renderDetail?: (group: D.Entry[]) => ReactNode;
 }) {
+  const [savingOrder, setSavingOrder] = useState(false),
+    [orderMessage, setOrderMessage] = useState("");
   const groups = exerciseGroups(session),
     drag = useRef<{
       id: string;
@@ -284,9 +286,34 @@ export function ExerciseQueue({
         );
       })}
       {onSaveOrder && (
-        <button type="button" className="btn wide" onClick={onSaveOrder}>
+        <button
+          type="button"
+          className="btn wide"
+          disabled={savingOrder}
+          aria-busy={savingOrder}
+          onClick={async () => {
+            setSavingOrder(true);
+            setOrderMessage("");
+            try {
+              setOrderMessage(
+                (await onSaveOrder())
+                  ? "Order saved for future workouts."
+                  : "Order was not saved. Check the sync or account warning and try again.",
+              );
+            } catch (e) {
+              setOrderMessage((e as Error).message);
+            } finally {
+              setSavingOrder(false);
+            }
+          }}
+        >
           <ListOrdered size={17} /> Save order for future workouts
         </button>
+      )}
+      {orderMessage && (
+        <p role="status" className="caption">
+          {orderMessage}
+        </p>
       )}
     </div>
   );

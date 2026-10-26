@@ -126,8 +126,9 @@ for (const width of [360, 390, 1440])
         name: "Drag Barbell bench press",
         exact: true,
       }),
-      target = page.locator(".queue-row").nth(1),
-      a = await handle.boundingBox(),
+      target = page.locator(".queue-row").nth(1);
+    await target.scrollIntoViewIfNeeded();
+    const a = await handle.boundingBox(),
       b = await target.boundingBox();
     await page.mouse.move(a!.x + a!.width / 2, a!.y + a!.height / 2);
     await page.mouse.down();
@@ -151,10 +152,25 @@ for (const width of [360, 390, 1440])
       .click();
     await page
       .getByRole("button", {
+        name: "Move Barbell bench press down",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", {
         name: "Save order for future workouts",
         exact: true,
       })
       .click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Order saved for future workouts.",
+    );
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
+    const reordered = (await (await readData(page)).json()).data;
+    expect(
+      reordered.programs[0].workouts[0].exercises.map((e: any) => e.exerciseId),
+    ).toEqual(["db-row", "bench"]);
+    expect(reordered.sessions).toEqual(state.sessions);
     await page
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
@@ -351,6 +367,12 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("tab", { name: "Barbell bench press", exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("tab", { name: "Single-arm dumbbell row", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+    await page
+      .getByRole("tab", { name: "Barbell bench press", exact: true })
+      .click();
     await page
       .getByRole("button", {
         name: "Complete Barbell bench press set 2",
@@ -388,7 +410,7 @@ for (const width of [360, 390, 1440])
     );
     expect(saved.draft).toBeNull();
     expect(saved.programs[0].workouts[0].exercises.map((e) => e.id)).toEqual(
-      workout.exercises.map((e) => e.id),
+      [...workout.exercises].reverse().map((e) => e.id),
     );
     await page.reload();
     await expect(page.locator(".workout-celebration")).toHaveCount(0);

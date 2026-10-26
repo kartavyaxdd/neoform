@@ -1,19 +1,6 @@
 /* Shared workout-first presentation. All colors follow the existing theme. */
-:root,
-:root[data-theme="light"] {
-  --accent: #356cf0;
-  --accent-soft: #eaf0ff;
-  --bg: #f6f6f8;
-  --surface2: #f0f1f4;
-  --mint: #356cf0;
-  --mint-ink: #fff;
-}
-:root[data-theme="dark"] {
-  --accent: #8baeff;
-  --accent-soft: #273756;
-  --mint: #8baeff;
-  --mint-ink: #14213b;
-}
+/* Shared theme tokens are owned by reference-ui.css. */
+/* Shared theme tokens are owned by reference-ui.css. */
 .app-shell {
   max-width: 760px;
 }

@@ -3,6 +3,8 @@ import * as D from "./domain";
 import { useStore } from "./store";
 import { Field } from "./ui";
 import { liftSegments, liftPoints, type LiftSegment } from "./liftProgress";
+import { MetricChart, TrendRange } from "./MetricChart";
+import type { TrendWeeks } from "./visualData";
 
 export function LiftProgress({ exerciseId }: { exerciseId: string }) {
   const state = useStore().box.data;
@@ -54,6 +56,7 @@ function SegmentView({
   segment: LiftSegment;
   unit: D.State["settings"]["unit"];
 }) {
+  const [weeks, setWeeks] = useState<TrendWeeks>(8);
   const all = segment.exposures.flatMap((e) => e.rows);
   const ordinals = [...new Set(all.map((r) => r.ordinal))].sort(
     (a, b) => a - b,
@@ -85,7 +88,10 @@ function SegmentView({
       : efforts.includes(Number(effortChoice))
         ? Number(effortChoice)
         : (latestEffort ?? null);
-  const points = liftPoints(segment, ordinal, load, effort).slice(-12);
+  const cutoff = Date.now() - weeks * 7 * 86400000;
+  const points = liftPoints(segment, ordinal, load, effort)
+    .filter((p) => p.at >= cutoff)
+    .slice(-12);
   const [chosenPoint, setPoint] = useState("");
   const selected =
     points.find((p) => `${p.sessionId}:${p.entryId}` === chosenPoint) ??
@@ -119,44 +125,84 @@ function SegmentView({
           {segment.preceding.join(" → ") || "None; this exercise was first."}
         </p>
       </details>
-      <div className="form-grid lift-filters">
-        <Field label="Compared set">
-          <select
-            value={ordinal}
-            onChange={(e) => setRow(Number(e.target.value))}
-          >
-            {ordinals.map((n) => (
-              <option value={n} key={n}>
-                Set {n + 1}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Compared load">
-          <select
-            value={load}
-            onChange={(e) => setLoad(Number(e.target.value))}
-          >
-            {loads.map((n) => (
-              <option value={n} key={n}>
-                {loadText(n)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Reported RIR">
-          <select
-            value={effort === null ? "unknown" : effort}
-            onChange={(e) => setEffort(e.target.value)}
-          >
-            <option value="unknown">Unreported —</option>
-            {efforts.map((n) => (
-              <option value={n} key={n}>
-                {n} RIR
-              </option>
-            ))}
-          </select>
-        </Field>
+      <details className="lift-filter-details">
+        <summary>Compare set, load and effort</summary>
+        <div className="form-grid lift-filters">
+          <Field label="Compared set">
+            <select
+              value={ordinal}
+              onChange={(e) => setRow(Number(e.target.value))}
+            >
+              {ordinals.map((n) => (
+                <option value={n} key={n}>
+                  Set {n + 1}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Compared load">
+            <select
+              value={load}
+              onChange={(e) => setLoad(Number(e.target.value))}
+            >
+              {loads.map((n) => (
+                <option value={n} key={n}>
+                  {loadText(n)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Reported RIR">
+            <select
+              value={effort === null ? "unknown" : effort}
+              onChange={(e) => setEffort(e.target.value)}
+            >
+              <option value="unknown">Unreported —</option>
+              {efforts.map((n) => (
+                <option value={n} key={n}>
+                  {n} RIR
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </details>
+      <TrendRange value={weeks} onChange={setWeeks} />
+      <div className="lift-observed-charts">
+        <MetricChart
+          title="Observed load"
+          unit={segment.convention === "machine-label" ? "label" : unit}
+          kind="line"
+          points={segment.exposures
+            .filter((e) => e.at >= cutoff)
+            .map((e) => ({
+              id: e.sessionId + e.entryId,
+              label: e.date,
+              value: e.rows.find((r) => r.ordinal === ordinal)
+                ? D.displayLoad(
+                    e.rows.find((r) => r.ordinal === ordinal)!.weight,
+                    segment.convention,
+                    unit,
+                  )
+                : null,
+              group: e.comparable ? "confirmed" : e.sessionId + e.entryId,
+            }))}
+          caption="Actual saved load at this set position, within this context. It is not a strength estimate."
+        />
+        <MetricChart
+          title="Reported effort"
+          unit="RIR"
+          kind="line"
+          points={segment.exposures
+            .filter((e) => e.at >= cutoff)
+            .map((e) => ({
+              id: e.sessionId + e.entryId,
+              label: e.date,
+              value: e.rows.find((r) => r.ordinal === ordinal)?.rir ?? null,
+              group: e.comparable ? "confirmed" : e.sessionId + e.entryId,
+            }))}
+          caption="Unreported effort stays —. Lines stop across excluded observations."
+        />
       </div>
       {points.length ? (
         <section className="lift-match" aria-label="Matching lift observations">

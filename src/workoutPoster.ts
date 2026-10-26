@@ -9,7 +9,11 @@ export function drawWorkoutPoster(
   canvas.height = 1920;
   const c = canvas.getContext("2d");
   if (!c) throw Error("Image preview is unavailable on this device.");
-  c.fillStyle = "#f6f6f6";
+  const background = c.createLinearGradient(0, 0, 1080, 1920);
+  background.addColorStop(0, "#d4e5ff");
+  background.addColorStop(0.5, "#edf3fa");
+  background.addColorStop(1, "#dddff3");
+  c.fillStyle = background;
   c.fillRect(0, 0, 1080, 1920);
   const text = (
     s: string,
@@ -38,10 +42,13 @@ export function drawWorkoutPoster(
     text(v === s ? s : v.slice(0, -1) + "…", x, y, size, color, weight);
   };
   const panel = (x: number, y: number, w: number, h: number) => {
-    c.fillStyle = "#fff";
+    c.fillStyle = "#f8fbffbf";
     c.beginPath();
-    c.roundRect(x, y, w, h, 24);
+    c.roundRect(x, y, w, h, 36);
     c.fill();
+    c.strokeStyle = "#ffffffdd";
+    c.lineWidth = 2;
+    c.stroke();
   };
   text("NEOFORM", 64, 100, 32, "#111", 700);
   text(r.date, 800, 100, 25, "#666");

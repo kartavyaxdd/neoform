@@ -3,6 +3,8 @@ import { sessionRecords, rirColour } from "./rewards";
 import { useState } from "react";
 import * as D from "./domain";
 import { Button, Field, Num } from "./ui";
+import { ComparisonBars } from "./MetricChart";
+import { primaryWork } from "./visualData";
 
 type Feedback = D.Session["feedback"];
 type MuscleFeedback = NonNullable<D.Session["muscleFeedback"]>[number];
@@ -348,6 +350,12 @@ export function FinishSessionFeedback({
       <p className="caption">
         {Math.max(1, Math.round((Date.now() - draft.startedAt) / 60000))} min
       </p>
+      <ComparisonBars
+        title="Completed primary work"
+        rows={D.muscles
+          .map((m) => ({ label: m, value: primaryWork([draft], exercises, m) }))
+          .filter((r) => r.value > 0)}
+      />
       {sessionRecords(draft, history, exercises)
         .filter((r) => r.kind !== "baseline")
         .slice(0, 3)

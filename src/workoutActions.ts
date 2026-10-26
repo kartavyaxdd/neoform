@@ -108,8 +108,7 @@ export function restoreRemoval(s: D.Session, undo: Removal) {
   };
 }
 export function saveSessionOrder(state: D.State, session: D.Session) {
-  const next = structuredClone(state),
-    program = next.programs.find(
+  const program = state.programs.find(
       (p) => p.id === session.programId && !p.archived,
     ),
     workout = program?.workouts.find((w) => w.id === session.workoutId);
@@ -123,8 +122,20 @@ export function saveSessionOrder(state: D.State, session: D.Session) {
     throw Error(
       "Save order only when the session contains every original program target exactly once.",
     );
-  workout.exercises = ids.map((id) =>
+  const exercises = ids.map((id) =>
     workout.exercises.find((t) => t.id === id)!,
   );
-  return next;
+  return {
+    ...state,
+    programs: state.programs.map((p) =>
+      p.id === program!.id
+        ? {
+            ...p,
+            workouts: p.workouts.map((w) =>
+              w.id === workout.id ? { ...w, exercises } : w,
+            ),
+          }
+        : p,
+    ),
+  };
 }

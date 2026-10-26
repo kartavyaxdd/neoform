@@ -240,6 +240,9 @@ for (const width of [360, 390, 1440])
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toContainText("Review workout");
+    await expect(
+      page.getByRole("region", { name: "Completed primary work", exact: true }),
+    ).toBeVisible();
     await page.getByText("Review sets", { exact: true }).click();
     await page
       .locator(".review-exercise")

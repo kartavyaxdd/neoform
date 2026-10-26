@@ -88,10 +88,7 @@ export function weeklyPrimarySets(
       const x = index.get(e.exerciseId);
       if (x)
         counts[x.muscle] += e.sets.filter(
-          (t) =>
-            t.done &&
-            t.kind === "working" &&
-            (!t.bout || ["straight", "down"].includes(t.bout)),
+          (t) => t.done && t.kind === "working" && !D.advancedVolumeBout(e, t),
         ).length;
     }
   return counts;

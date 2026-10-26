@@ -5,7 +5,9 @@ import {
   removeEntry,
   removeSet,
   restoreRemoval,
+  saveSessionOrder,
 } from "../src/workoutActions";
+import { editState } from "../src/stateEdit";
 function fixture() {
   return D.startSession(
     "Synthetic",
@@ -45,4 +47,31 @@ it("preserves planned dose on removal and restores only the removed row", () => 
   const restored = restoreRemoval(result.session, result.undo);
   expect(restored.exercises[0].sets[1].weight).toBe(75);
   expect(restored.exercises[0].sets[0]).toEqual(e.sets[0]);
+});
+it("saves an explicit future order through the actual Immer edit boundary without cloning a draft proxy", () => {
+  const state = D.emptyState(),
+    p = D.starterProgram("balanced"),
+    w = p.workouts[0];
+  p.workouts = [w];
+  w.exercises = [D.target("bench"), D.target("row")];
+  state.programs = [p];
+  const s = D.startSession(w.name, D.prepareWorkout(w, p, D.catalog, []), p, w);
+  state.draft = s;
+  const before = structuredClone(state),
+    ordered = { ...s, exercises: [...s.exercises].reverse() };
+  const next = editState(state, (draft) => saveSessionOrder(draft, ordered));
+  expect(next.programs[0].workouts[0].exercises.map((t) => t.id)).toEqual(
+    ordered.exercises.map((e) => e.sourceTargetId),
+  );
+  expect(next.draft).toEqual(state.draft);
+  expect(next.sessions).toBe(state.sessions);
+  expect(state).toEqual(before);
+  expect(() =>
+    editState(state, (draft) =>
+      saveSessionOrder(draft, {
+        ...ordered,
+        exercises: ordered.exercises.slice(1),
+      }),
+    ),
+  ).toThrow("every original program target");
 });

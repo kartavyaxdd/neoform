@@ -15,6 +15,8 @@ import { TrainingBodyMap } from "./TrainingBodyMap";
 import { weeklyPrimarySets, weekMonday } from "./workoutPresentation";
 import { rirColour } from "./rewards";
 import { drawWorkoutPoster } from "./workoutPoster";
+import { ComparisonBars } from "./MetricChart";
+import { primaryWork } from "./visualData";
 export function WorkoutRecap({
   session: suppliedSession,
   exercises,
@@ -95,7 +97,17 @@ export function WorkoutRecap({
   }
   return (
     <section className="workout-recap" aria-label="Workout recap">
-      <div className="recap-body">
+      <ComparisonBars
+        title="Completed primary work"
+        rows={D.muscles
+          .map((m) => ({
+            label: m,
+            value: primaryWork([session], exercises, m),
+          }))
+          .filter((r) => r.value > 0)}
+      />
+      <details className="recap-body">
+        <summary>Muscle map</summary>
         <TrainingBodyMap
           counts={weeklyPrimarySets(
             [session],
@@ -106,7 +118,7 @@ export function WorkoutRecap({
         <p className="recap-muscle-caption">
           {model.muscles.join(" · ") || "No completed primary-muscle work"}
         </p>
-      </div>
+      </details>
       <section className="recap-records" aria-label="Personal records">
         <h3>
           Personal records <span>{model.records.length}</span>
@@ -132,6 +144,32 @@ export function WorkoutRecap({
                 </div>
                 <b>{r.name}</b>
                 <span>{r.label}</span>
+                <ComparisonBars
+                  title={`${r.name} ${r.kind} PR`}
+                  unit={
+                    r.kind === "reps"
+                      ? "reps"
+                      : r.convention === "machine-label"
+                        ? "label"
+                        : unit
+                  }
+                  rows={[
+                    {
+                      label: "Previous",
+                      value:
+                        r.kind === "reps"
+                          ? r.before
+                          : D.displayLoad(r.before, r.convention, unit),
+                    },
+                    {
+                      label: "New record",
+                      value:
+                        r.kind === "reps"
+                          ? r.after
+                          : D.displayLoad(r.after, r.convention, unit),
+                    },
+                  ]}
+                />
               </li>
             ))}
           </ul>

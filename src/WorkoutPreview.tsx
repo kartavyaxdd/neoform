@@ -14,7 +14,7 @@ import {
   saveSessionOrder,
   type Removal,
 } from "./workoutActions";
-import { change, useStore } from "./store";
+import { saveChange, useStore } from "./store";
 import { ReadinessSheet } from "./ReadinessSheet";
 import {
   createGuidancePreview,
@@ -322,14 +322,9 @@ export function WorkoutPreview({
           setSession(r.session);
           setUndo({ item: r.undo, until: Date.now() + 10000 });
         }}
-        onSaveOrder={() => {
-          try {
-            change((state) => saveSessionOrder(state, session));
-            setNotice("Order saved for future workouts.");
-          } catch (e) {
-            setNotice((e as Error).message);
-          }
-        }}
+        onSaveOrder={() =>
+          saveChange((state) => saveSessionOrder(state, session))
+        }
       />
       <UndoRemoval
         undo={undo}

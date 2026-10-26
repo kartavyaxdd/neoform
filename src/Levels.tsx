@@ -9,6 +9,8 @@ import {
 import { TrainingBodyMap } from "./TrainingBodyMap";
 import { TrainingExposure } from "./TrainingExposure";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { MetricChart, TrendRange } from "./MetricChart";
+import { muscleTrend, type TrendWeeks } from "./visualData";
 type Muscle = D.Exercise["muscle"];
 export function Levels({
   state,
@@ -21,6 +23,11 @@ export function Levels({
 }) {
   const [monday, setMonday] = useState(() => weekMonday()),
     [selected, setSelected] = useState<Muscle>("Chest");
+  const [weeks, setWeeks] = useState<TrendWeeks>(8);
+  const trend = useMemo(
+    () => muscleTrend(state.sessions, exercises, selected, weeks, monday),
+    [state.sessions, exercises, selected, weeks, monday],
+  );
   const week = useMemo(
     () => weekSessions(state.sessions, monday),
     [state.sessions, monday],
@@ -29,6 +36,7 @@ export function Levels({
     () => weeklyPrimarySets(state.sessions, exercises, monday),
     [state.sessions, exercises, monday],
   );
+  const maxSets = Math.max(1, ...Object.values(counts));
   function move(n: number) {
     const d = new Date(monday + "T12:00:00");
     d.setDate(d.getDate() + n * 7);
@@ -73,6 +81,18 @@ export function Levels({
           Completed primary-muscle working sets. Tap a muscle to explore.
         </p>
       </section>
+      <section className="glass-card">
+        <div className="glass-section-heading">
+          <h2>{selected} over time</h2>
+          <TrendRange value={weeks} onChange={setWeeks} />
+        </div>
+        <MetricChart
+          title={`${selected} weekly work`}
+          unit="sets"
+          points={trend}
+          caption="Completed primary straight/down working sets. Advanced bouts and indirect involvement stay separate."
+        />
+      </section>
       <div className="muscle-list" aria-label="Muscle working sets">
         {D.muscles.map((m) => (
           <button
@@ -83,12 +103,13 @@ export function Levels({
           >
             <span>{m}</span>
             <span className="muscle-meter">
-              <i style={{ width: `${Math.min(100, counts[m] * 5)}%` }} />
+              <i style={{ width: `${(counts[m] / maxSets) * 100}%` }} />
             </span>
             <b>{counts[m]} sets</b>
           </button>
         ))}
       </div>
+      <p className="caption">Shared scale · 0–{maxSets} primary working sets</p>
       <section className="panel muscle-detail">
         <h2>{selected}</h2>
         <p>{counts[selected]} working sets this week</p>

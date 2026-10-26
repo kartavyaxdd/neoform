@@ -1,50 +1,6 @@
 @import url("/base.css");
-:root {
-  font-family:
-    Inter,
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  color: #eeeede;
-  background: #141817;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  --bg: #141817;
-  --surface: #1b201f;
-  --surface2: #212725;
-  --surface3: #29312d;
-  --ink: #eeeede;
-  --muted: #a4aaa3;
-  --subtle: #8d968e;
-  --line: #343c36;
-  --mint: #bddac0;
-  --mint-ink: #1e3326;
-  --hero: #243129;
-  --danger: #ecb1a6;
-  --shadow: 0 20px 80px #0005;
-  color-scheme: dark;
-}
-:root[data-theme="light"] {
-  --bg: #eeeee7;
-  --surface: #f8f8f2;
-  --surface2: #e8ebe3;
-  --surface3: #dce4d9;
-  --ink: #232b26;
-  --muted: #5c685e;
-  --subtle: #6d7a70;
-  --line: #cdd5ca;
-  --mint: #3e694c;
-  --mint-ink: #fff;
-  --hero: #dbe8d7;
-  --danger: #a14032;
-  --shadow: 0 20px 80px #20302020;
-  color-scheme: light;
-  color: var(--ink);
-  background: var(--bg);
-}
+/* Shared theme tokens are owned by reference-ui.css. */
+/* Shared theme tokens are owned by reference-ui.css. */
 * {
   box-sizing: border-box;
 }

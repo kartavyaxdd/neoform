@@ -3,6 +3,7 @@ import * as D from "./domain";
 import { back, front, bodySilhouette } from "./TrainingBodyMap";
 import { plannedMuscleCards } from "./workoutPresentation";
 import { rirColour } from "./rewards";
+import { ComparisonBars } from "./MetricChart";
 
 const crop: Partial<Record<D.Exercise["muscle"], string>> = {
   Chest: "48 40 104 90",
@@ -55,36 +56,42 @@ export function TargetMuscleCards({
   const cards = plannedMuscleCards(entries, exercises);
   return (
     <section className="target-muscles">
-      <h3>Target Muscles</h3>
-      <div
-        className="target-muscle-rail"
-        tabIndex={0}
-        role="group"
-        aria-label="Planned primary muscles"
-      >
-        {cards.map((c) => (
-          <div className="target-muscle-card" key={c.muscle}>
-            <MuscleArtwork muscle={c.muscle} />
-            <span>
-              <b>{c.muscle}</b>
-              <small>
-                {c.exercises} {c.exercises === 1 ? "exercise" : "exercises"}
-              </small>
-              {c.sets > 0 && (
+      <ComparisonBars
+        title="Assigned primary work"
+        rows={cards.map((c) => ({ label: c.muscle, value: c.sets }))}
+      />
+      <details>
+        <summary>Target Muscles · exercise and advanced details</summary>
+        <div
+          className="target-muscle-rail"
+          tabIndex={0}
+          role="group"
+          aria-label="Planned primary muscles"
+        >
+          {cards.map((c) => (
+            <div className="target-muscle-card" key={c.muscle}>
+              <MuscleArtwork muscle={c.muscle} />
+              <span>
+                <b>{c.muscle}</b>
                 <small>
-                  {c.sets} {c.sets === 1 ? "set" : "sets"}
+                  {c.exercises} {c.exercises === 1 ? "exercise" : "exercises"}
                 </small>
-              )}
-              {c.advancedRows > 0 && (
-                <small>{c.advancedRows} advanced rows</small>
-              )}
-            </span>
-          </div>
-        ))}
-        {!cards.length && (
-          <p className="empty-caption">No working sets scheduled.</p>
-        )}
-      </div>
+                {c.sets > 0 && (
+                  <small>
+                    {c.sets} {c.sets === 1 ? "set" : "sets"}
+                  </small>
+                )}
+                {c.advancedRows > 0 && (
+                  <small>{c.advancedRows} advanced rows</small>
+                )}
+              </span>
+            </div>
+          ))}
+          {!cards.length && (
+            <p className="empty-caption">No working sets scheduled.</p>
+          )}
+        </div>
+      </details>
     </section>
   );
 }

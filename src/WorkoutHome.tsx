@@ -263,7 +263,12 @@ export function WorkoutHome({
         })}
       </div>
       <div className="home-groups">
-        <Button onClick={() => setPlanner(true)}>Plan workouts</Button>
+        <button
+          className="text-button plan-workouts-link"
+          onClick={() => setPlanner(true)}
+        >
+          Plan workouts
+        </button>
         {planner && (
           <Modal title="Plan workouts" close={() => setPlanner(false)}>
             <WorkoutCalendar
@@ -369,33 +374,35 @@ export function WorkoutHome({
           )}
         </section>
         <section>
-          <h2>More</h2>
-          <div className="grouped">
-            <button className="group-row" onClick={() => start()}>
-              <Plus size={20} />
-              Empty Workout
-              <ArrowRight size={18} />
-            </button>
-            <button className="group-row" onClick={history}>
-              <BookOpen size={20} />
-              Workout History
-              <ArrowRight size={18} />
-            </button>
-            <details className="archive-group">
-              <summary>
-                <Archive size={20} />
-                <span>
-                  Archive
-                  <small>
-                    {s.programs.filter((p) => p.archived).length || "No"}{" "}
-                    archived programs
-                  </small>
-                </span>
-                <ChevronDown size={18} />
-              </summary>
-              {s.programs.filter((p) => p.archived).map((p) => program(p))}
-            </details>
-          </div>
+          <details className="workout-tools">
+            <summary>More workout tools</summary>
+            <div className="grouped">
+              <button className="group-row" onClick={() => start()}>
+                <Plus size={20} />
+                Empty Workout
+                <ArrowRight size={18} />
+              </button>
+              <button className="group-row" onClick={history}>
+                <BookOpen size={20} />
+                Workout History
+                <ArrowRight size={18} />
+              </button>
+              <details className="archive-group">
+                <summary>
+                  <Archive size={20} />
+                  <span>
+                    Archive
+                    <small>
+                      {s.programs.filter((p) => p.archived).length || "No"}{" "}
+                      archived programs
+                    </small>
+                  </span>
+                  <ChevronDown size={18} />
+                </summary>
+                {s.programs.filter((p) => p.archived).map((p) => program(p))}
+              </details>
+            </div>
+          </details>
         </section>
       </div>
     </div>

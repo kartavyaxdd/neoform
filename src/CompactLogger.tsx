@@ -26,7 +26,7 @@ import {
   Dumbbell,
 } from "lucide-react";
 import * as D from "./domain";
-import { useStore, change } from "./store";
+import { useStore, change, saveChange } from "./store";
 import { Button, Field, Num, Modal } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
@@ -768,14 +768,9 @@ export function SessionLogger({
                         setSelected(id);
                         setSheet(null);
                       }}
-                      onSaveOrder={() => {
-                        try {
-                          change((state) => saveSessionOrder(state, s));
-                          setActionError("Order saved for future workouts.");
-                        } catch (err) {
-                          setActionError((err as Error).message);
-                        }
-                      }}
+                      onSaveOrder={() =>
+                        saveChange((state) => saveSessionOrder(state, s))
+                      }
                     />
                   ) : sheet === "Exercise options" ? (
                     <>

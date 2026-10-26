@@ -35,11 +35,11 @@ for (const width of [360, 390, 1440])
         name: "Back weekly review",
         exact: true,
       });
-    await expect(chest.locator(".muscle-week-totals")).toContainText(
-      "Assigned3",
+    await expect(chest.locator(".comparison-bars")).toContainText(
+      "Assigned3 sets",
     );
-    await expect(chest.locator(".muscle-week-totals")).toContainText(
-      "Completed2",
+    await expect(chest.locator(".comparison-bars")).toContainText(
+      "Completed2 sets",
     );
     await expect(chest).toContainText("Record missing context");
     await chest

@@ -1,6 +1,7 @@
 import * as D from "./domain";
 import type { weeklyMuscles } from "./weeklyMuscles";
 import { Button } from "./ui";
+import { ComparisonBars } from "./MetricChart";
 export function WeeklyMuscleCards({
   review,
   active,
@@ -15,8 +16,8 @@ export function WeeklyMuscleCards({
     <section aria-label="Weekly muscle coaching" className="weekly-muscles">
       <h3>Muscle-by-muscle</h3>
       <p className="caption">
-        Assigned versus completed primary work in saved workouts. Indirect
-        involvement and advanced bouts stay separate.
+        Assigned and completed primary work. Indirect involvement and advanced
+        bouts stay separate.
       </p>
       {!!(
         calendar.planned +
@@ -61,20 +62,22 @@ export function WeeklyMuscleCards({
             <h4>{r.muscle}</h4>
             <span>{r.action.label}</span>
           </div>
-          <dl className="muscle-week-totals">
-            <div>
-              <dt>Assigned</dt>
-              <dd>
-                {r.assigned === null
-                  ? `${r.knownAssigned} + unknown`
-                  : r.assigned}
-              </dd>
-            </div>
-            <div>
-              <dt>Completed</dt>
-              <dd>{r.completed}</dd>
-            </div>
-          </dl>
+          <ComparisonBars
+            title={`${r.muscle} work`}
+            rows={[
+              {
+                label: "Completed",
+                value: r.completed,
+                secondary: r.assigned,
+                secondaryLabel: "Assigned",
+              },
+            ]}
+          />
+          {r.assigned === null && (
+            <p className="caption">
+              {r.knownAssigned} known assigned sets + unknown dose.
+            </p>
+          )}
           {!!r.indirect && (
             <p className="caption">
               Secondary involvement in {r.indirect} completed working sets, kept
@@ -108,6 +111,7 @@ export function WeeklyMuscleCards({
           <p className="muscle-week-action">{r.action.reason}</p>
           <details>
             <summary>Performance, recovery and evidence</summary>
+            <p className="caption">{r.action.reason}</p>
             <dl className="muscle-evidence">
               <div>
                 <dt>Effort-qualified primary work</dt>

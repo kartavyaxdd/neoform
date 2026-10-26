@@ -34,7 +34,15 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
               (await nav.boundingBox())!.y + (await nav.boundingBox())!.height,
             ),
           )
-          .toBe(height);
+          .toBe(height - 10);
+        const box = await nav.boundingBox();
+        expect(box!.x).toBeGreaterThan(0);
+        expect(box!.x + box!.width).toBeLessThan(width);
+        for (const button of await nav.getByRole("button").all()) {
+          const hit = await button.boundingBox();
+          expect(hit!.width).toBeGreaterThanOrEqual(44);
+          expect(hit!.height).toBeGreaterThanOrEqual(44);
+        }
       }
       if (sheet) {
         // Measure the settled sheet, while ui-redesign separately checks motion.
