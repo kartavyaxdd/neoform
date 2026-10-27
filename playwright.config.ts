@@ -26,6 +26,7 @@ export default defineConfig({
             "planning.spec.ts",
             "weekly-muscles.spec.ts",
             "glass-ui.spec.ts",
+            "exercise-swap.spec.ts",
           ]
         : [
             "preview-guidance.spec.ts",
@@ -41,6 +42,7 @@ export default defineConfig({
             "planning.spec.ts",
             "weekly-muscles.spec.ts",
             "glass-ui.spec.ts",
+            "exercise-swap.spec.ts",
             "coaching.spec.ts",
             "readiness.spec.ts",
             "reliability.spec.ts",

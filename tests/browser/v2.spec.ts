@@ -105,23 +105,25 @@ test("compact light Workout home, one selected exercise, refresh/undo and lazy v
   await page.getByRole("button", { name: "Info", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator("iframe")).toHaveCount(0);
-  await expect(dialog.getByText("Jeff Nippard", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText("Renaissance Periodization", { exact: true }),
+  ).toBeVisible();
   await dialog
     .getByRole("button", { name: "Play demonstration", exact: true })
     .click();
   await expect(dialog.locator("iframe")).toHaveAttribute(
     "src",
-    /https:\/\/www.youtube-nocookie.com\/embed\/vcBig73ojpE/,
+    /https:\/\/www.youtube-nocookie.com\/embed\/gMgvBspQ9lk/,
   );
   await expect(
     dialog.getByRole("link", { name: "Watch on YouTube", exact: true }),
-  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=vcBig73ojpE");
+  ).toHaveAttribute("href", "https://www.youtube.com/watch?v=gMgvBspQ9lk");
   const popupPromise = page.waitForEvent("popup");
   await dialog
     .getByRole("link", { name: "Watch on YouTube", exact: true })
     .click();
   const popup = await popupPromise;
-  await expect(popup).toHaveURL("https://www.youtube.com/watch?v=vcBig73ojpE");
+  await expect(popup).toHaveURL("https://www.youtube.com/watch?v=gMgvBspQ9lk");
   await popup.close();
   await page.getByRole("button", { name: "Close dialog", exact: true }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
@@ -373,7 +375,7 @@ test("REAL model generation -> editable preview -> explicit save/activate -> rel
     .getByRole("link", { name: "Watch on YouTube", exact: true })
     .click();
   const direct = await directPromise;
-  await expect(direct).toHaveURL("https://www.youtube.com/watch?v=bEv6CCg2BC8");
+  await expect(direct).toHaveURL("https://www.youtube.com/watch?v=i7J5h7BJ07g");
   await direct
     .waitForLoadState("domcontentloaded", { timeout: 10000 })
     .catch(() => {});

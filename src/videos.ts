@@ -1,3 +1,4 @@
+import { rpVideos } from "./rpVideos";
 export function videoId(raw: string): string | null {
   try {
     if (raw.length > 300) return null;
@@ -20,46 +21,53 @@ export function videoId(raw: string): string | null {
   }
 }
 export const watchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
-export const demonstrations: Record<
-  string,
-  { id: string; title: string; creator: string; verified: string }
-> = {
-  squat: {
-    id: "bEv6CCg2BC8",
-    title: "How To Get A Huge Squat With Perfect Technique (Fix Mistakes)",
-    creator: "Jeff Nippard",
-    verified: "2026-10-10",
-  },
-  bench: {
-    id: "vcBig73ojpE",
-    title: "How To Get A Huge Bench Press with Perfect Technique",
-    creator: "Jeff Nippard",
-    verified: "2026-10-10",
-  },
-  rdl: {
-    id: "_oyxCn2iSjU",
-    title:
-      "HOW TO DO ROMANIAN DEADLIFTS (RDLs): Build Beefy Hamstrings With Perfect Technique",
-    creator: "Jeff Nippard",
-    verified: "2026-10-10",
-  },
-  "db-row": {
-    id: "k2kVniB5eQI",
-    title: "RP 1-Arm Dumbbell Row",
-    creator: "Renaissance Periodization",
-    verified: "2026-10-10",
-  },
-  lateral: {
-    id: "4hTUCDUQaNA",
-    title:
-      "The Only Dumbbell Lateral Raise Guide You Need (For Side Delt Growth)",
-    creator: "Renaissance Periodization",
-    verified: "2026-10-10",
-  },
-  pulldown: {
-    id: "sRcA-68KOAA",
-    title: "Lat Pulldown Flaws and Better Back Exercises to Consider",
-    creator: "Renaissance Periodization",
-    verified: "2026-10-10",
-  },
+export type Demonstration = {
+  id: string;
+  title: string;
+  creator: string;
+  verified: string;
+  source?: string;
+  personal?: boolean;
 };
+export const demonstrations: Record<string, Demonstration> = Object.fromEntries(
+  rpVideos.flatMap((v) =>
+    v.exerciseIds.map((id) => [
+      id,
+      { ...v, creator: "Renaissance Periodization" },
+    ]),
+  ),
+);
+const normalise = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/\bflyes?\b/g, "fly")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+const aliasIndex = new Map(
+  rpVideos.flatMap((v) =>
+    v.equipment.flatMap((equipment) =>
+      v.names.map((name) => [equipment + ":" + normalise(name), v] as const),
+    ),
+  ),
+);
+export function demonstrationFor(
+  exercise: { id: string; name: string; equipment: string },
+  personalLinks: { exerciseId: string; url: string }[] = [],
+): Demonstration | undefined {
+  const personal = personalLinks.find((v) => v.exerciseId === exercise.id),
+    ownId = personal && videoId(personal.url);
+  if (ownId)
+    return {
+      id: ownId,
+      title: "Personal demonstration",
+      creator: "Your saved video",
+      verified: "",
+      personal: true,
+    };
+  const builtIn = demonstrations[exercise.id];
+  if (builtIn) return builtIn;
+  const match = aliasIndex.get(
+    exercise.equipment + ":" + normalise(exercise.name),
+  );
+  return match ? { ...match, creator: "Renaissance Periodization" } : undefined;
+}

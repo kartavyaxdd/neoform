@@ -3,15 +3,15 @@ import { Play, ExternalLink } from "lucide-react";
 import type { Exercise } from "./domain";
 import { conventionLabels } from "./domain";
 import { change, useStore } from "./store";
-import { demonstrations, videoId, watchUrl } from "./videos";
+import { demonstrationFor, videoId, watchUrl } from "./videos";
 import * as D from "./domain";
 import { rirColour } from "./rewards";
 export function VideoInfo({ exercise: e }: { exercise: Exercise }) {
   const state = useStore().box.data;
   const links = state.exerciseVideos || [],
     personal = links.find((x) => x.exerciseId === e.id);
-  const demo = demonstrations[e.id],
-    id = personal ? videoId(personal.url) : demo?.id;
+  const demo = demonstrationFor(e, links),
+    id = demo?.id;
   const [playing, setPlaying] = useState(false),
     [url, setUrl] = useState(personal?.url || ""),
     [error, setError] = useState(""),
@@ -115,8 +115,8 @@ export function VideoInfo({ exercise: e }: { exercise: Exercise }) {
               )}
             </div>
             <div className="video-credit">
-              <b>{personal ? "Personal demonstration" : demo.title}</b>
-              <span>{personal ? "Your saved video" : demo.creator}</span>
+              <b>{demo?.title}</b>
+              <span>{demo?.creator}</span>
               <a href={watchUrl(id)} target="_blank" rel="noopener noreferrer">
                 Watch on YouTube <ExternalLink size={15} />
               </a>

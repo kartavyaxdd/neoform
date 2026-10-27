@@ -1,7 +1,35 @@
 import { it, expect } from "vitest";
-import { videoId } from "../src/videos";
+import { videoId, demonstrationFor } from "../src/videos";
 import { emptyState, stateSchema, catalog, mergeStates } from "../src/domain";
 import { mergeThreeWay } from "../src/syncPolicy";
+import { rpVideos } from "../src/rpVideos";
+it("curates RP sources with valid video IDs without claiming every custom movement has a match", () => {
+  expect(rpVideos).toHaveLength(65);
+  expect(new Set(rpVideos.map((v) => v.id)).size).toBe(rpVideos.length);
+  for (const v of rpVideos) {
+    expect(videoId("https://youtu.be/" + v.id)).toBe(v.id);
+    expect(new URL(v.source).hostname).toMatch(
+      /^(rpstrength.com|www.youtube.com)$/,
+    );
+    expect(v.names.length).toBeGreaterThan(0);
+  }
+});
+it("uses verified RP defaults for native and exact imported movement aliases, with personal links taking priority", () => {
+  const e = catalog.find((e) => e.id === "bench")!;
+  expect(demonstrationFor(e)?.creator).toBe("Renaissance Periodization");
+  expect(
+    demonstrationFor({ ...e, id: "imported", name: "Bench Press (Barbell)" })
+      ?.id,
+  ).toBe(demonstrationFor(e)?.id);
+  expect(
+    demonstrationFor({ ...e, id: "unmapped", name: "My unusual press" }),
+  ).toBeUndefined();
+  const own = demonstrationFor(e, [
+    { exerciseId: e.id, url: "https://youtu.be/vcBig73ojpE" },
+  ]);
+  expect(own?.id).toBe("vcBig73ojpE");
+  expect(own?.personal).toBe(true);
+});
 it("allows specific HTTPS YouTube videos, strips tracking, rejects spoofed URLs and executable schemes", () => {
   expect(videoId("https://youtu.be/vcBig73ojpE?si=abc")).toBe("vcBig73ojpE");
   expect(videoId("https://www.youtube.com/watch?v=vcBig73ojpE")).toBe(

@@ -9,6 +9,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import * as D from "./domain";
+import { ExerciseThumbnail } from "./ExerciseThumbnail";
 import { useStore } from "./store";
 import { workoutRecap } from "./workoutRecap";
 import { TrainingBodyMap } from "./TrainingBodyMap";
@@ -223,9 +224,13 @@ export function WorkoutRecap({
           return (
             <details key={e.id}>
               <summary>
-                <span className="exercise-thumbnail">
-                  <Dumbbell size={24} />
-                </span>
+                {x ? (
+                  <ExerciseThumbnail exercise={x} />
+                ) : (
+                  <span className="exercise-thumbnail">
+                    <Dumbbell size={24} />
+                  </span>
+                )}
                 <span>
                   <b>{x?.name ?? "Exercise"}</b>
                   <small>

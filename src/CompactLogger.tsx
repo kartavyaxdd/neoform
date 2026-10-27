@@ -23,7 +23,6 @@ import {
   TrendingUp,
   Sparkles,
   ChevronRight,
-  Dumbbell,
 } from "lucide-react";
 import * as D from "./domain";
 import { useStore, change, saveChange } from "./store";
@@ -36,6 +35,7 @@ import { CoachSheet } from "./CoachSheet";
 import { LiftProgress } from "./LiftProgressScreen";
 import { NextSetSheet } from "./NextSetSheet";
 import { SubstitutionSheet } from "./SubstitutionSheet";
+import { ExerciseThumbnail } from "./ExerciseThumbnail";
 import { giantProgress } from "./techniques";
 const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString();
 export function SessionLogger({
@@ -155,7 +155,7 @@ export function SessionLogger({
                 tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
               }}
             >
-              <Dumbbell size={22} />
+              <ExerciseThumbnail exercise={x} />
               <small>{i + 1}</small>
               <span>{x.name}</span>
               <i
@@ -212,6 +212,14 @@ export function SessionLogger({
               aria-labelledby={"tab-" + e.id}
             >
               <div className="compact-exercise-title">
+                <button
+                  className="tutorial-open"
+                  type="button"
+                  aria-label={`Watch tutorial for ${ex.name}`}
+                  onClick={() => setSheet("Info")}
+                >
+                  <ExerciseThumbnail exercise={ex} />
+                </button>
                 <h2>{ex.name}</h2>
                 {!history && (
                   <button
@@ -262,6 +270,11 @@ export function SessionLogger({
                   </Button>
                 )}
                 <Button onClick={() => setSheet("Info")}>Info</Button>
+                {!history && (
+                  <Button onClick={() => setSheet("Substitute exercise")}>
+                    Swap exercise
+                  </Button>
+                )}
                 <Button onClick={() => setSheet("Warm Up")}>Warm Up</Button>
                 <Button onClick={() => setSheet("Targets")}>Targets</Button>
                 <Button
@@ -751,8 +764,10 @@ export function SessionLogger({
                     />
                   ) : sheet === "Substitute exercise" ? (
                     <SubstitutionSheet
+                      key={e.id}
                       session={s}
                       entry={e}
+                      onEditAdvanced={() => setSheet("Exercise options")}
                       onDone={(id) => {
                         setSelected(id);
                         setSheet(null);

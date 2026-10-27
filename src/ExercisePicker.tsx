@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Search, ChevronRight, Plus } from "lucide-react";
 import * as D from "./domain";
+import { ExerciseThumbnail } from "./ExerciseThumbnail";
 export function ExercisePicker({
   exercises,
   onPick,
@@ -83,9 +84,7 @@ export function ExercisePicker({
             disabled={disabled}
             onClick={() => onPick(e)}
           >
-            <span className="muscle-icon">
-              {e.muscle.slice(0, 2).toUpperCase()}
-            </span>
+            <ExerciseThumbnail exercise={e} />
             <span>
               <b>{e.name}</b>
               <small>

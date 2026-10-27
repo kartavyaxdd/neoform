@@ -4,11 +4,28 @@ import { recoveryTime } from "./readiness";
 
 export const substitutionFingerprint = (session: D.Session) =>
   canonical(session);
+export const defaultSwapEquipment = (state: D.State, entry?: D.Entry) => {
+  const current =
+    entry &&
+    (entry.equipment ??
+      [...D.catalog, ...state.customExercises].find(
+        (e) => e.id === entry.exerciseId,
+      )?.equipment);
+  return [
+    ...new Set([
+      ...(state.profile?.equipment.length
+        ? state.profile.equipment
+        : D.equipment),
+      ...(current ? [current] : []),
+    ]),
+  ];
+};
 export function substitutionOptions(
   state: D.State,
   entry: D.Entry,
   available: D.Exercise["equipment"][],
   now = Date.now(),
+  scope: "similar" | "all" = "similar",
 ) {
   const exercises = [...D.catalog, ...state.customExercises];
   const original = exercises.find((x) => x.id === entry.exerciseId);
@@ -17,8 +34,8 @@ export function substitutionOptions(
       (x) =>
         original &&
         x.id !== original.id &&
-        x.muscle === original.muscle &&
-        x.pattern === original.pattern &&
+        (scope === "all" ||
+          (x.muscle === original.muscle && x.pattern === original.pattern)) &&
         available.includes(x.equipment),
     )
     .map((exercise) => {
@@ -52,6 +69,7 @@ export function substituteExercise(
     exerciseId: string;
     available: D.Exercise["equipment"][];
     reason: "busy" | "unavailable" | "preference";
+    scope?: "similar" | "all";
   },
   now = Date.now(),
 ) {
@@ -61,7 +79,7 @@ export function substituteExercise(
   const entry = session.exercises.find((e) => e.id === input.entryId);
   const option =
     entry &&
-    substitutionOptions(state, entry, input.available, now).find(
+    substitutionOptions(state, entry, input.available, now, input.scope).find(
       (x) => x.exercise.id === input.exerciseId,
     );
   if (!entry || !option)
@@ -152,4 +170,17 @@ export function substituteExercise(
     },
   };
   return { state: D.historyStateSchema.parse(next), entryId: replacement.id };
+}
+export function substitutePreview(
+  state: D.State,
+  session: D.Session,
+  input: Parameters<typeof substituteExercise>[1],
+  now = Date.now(),
+) {
+  if (state.draft)
+    throw Error(
+      "Resume the active workout before changing another workout preview.",
+    );
+  const result = substituteExercise({ ...state, draft: session }, input, now);
+  return { session: result.state.draft!, entryId: result.entryId };
 }

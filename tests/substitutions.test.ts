@@ -1,10 +1,32 @@
 import { it, expect } from "vitest";
 import * as D from "../src/domain";
+import { editState } from "../src/stateEdit";
 import {
   substitutionOptions,
   substituteExercise,
   substitutionFingerprint,
+  defaultSwapEquipment,
+  substitutePreview,
 } from "../src/substitutions";
+it("keeps the current equipment type available for a same-equipment swap", () => {
+  const state = fixture(),
+    entry = state.draft!.exercises[0];
+  state.profile!.equipment = ["Barbell"];
+  const gear = defaultSwapEquipment(state);
+  expect(gear).toContain("Barbell");
+  state.customExercises = [
+    {
+      ...D.catalog.find((e) => e.id === "bench")!,
+      id: "custom-bench",
+      name: "Other bench",
+    },
+  ];
+  expect(
+    substitutionOptions(state, entry, gear).some(
+      (o) => o.exercise.id === "custom-bench",
+    ),
+  ).toBe(true);
+});
 function fixture() {
   const state = D.emptyState();
   state.profile = {
@@ -26,6 +48,37 @@ function fixture() {
   );
   return state;
 }
+it("swaps through the real immutable store updater without cloning a draft proxy", () => {
+  const state = fixture(),
+    fingerprint = substitutionFingerprint(state.draft!);
+  const result = editState(
+    state,
+    (data) =>
+      substituteExercise(data, {
+        fingerprint,
+        entryId: state.draft!.exercises[0].id,
+        exerciseId: "incline-db",
+        available: ["Dumbbell"],
+        reason: "preference",
+      }).state,
+  );
+  expect(result.draft!.exercises[0].exerciseId).toBe("incline-db");
+});
+it("swaps a pre-start preview without creating a draft or modifying the routine/history", () => {
+  const s = fixture(),
+    session = s.draft!;
+  s.draft = null;
+  const before = JSON.stringify(s);
+  const result = substitutePreview(s, session, {
+    fingerprint: substitutionFingerprint(session),
+    entryId: session.exercises[0].id,
+    exerciseId: "incline-db",
+    available: ["Dumbbell"],
+    reason: "preference",
+  });
+  expect(result.session.exercises[0].exerciseId).toBe("incline-db");
+  expect(JSON.stringify(s)).toBe(before);
+});
 it("offers only matching movement/muscle and currently selected equipment", () => {
   const state = fixture(),
     entry = state.draft!.exercises[0],
@@ -40,6 +93,25 @@ it("offers only matching movement/muscle and currently selected equipment", () =
     ),
   ).toBe(true);
   expect(substitutionOptions(state, entry, [])).toHaveLength(0);
+});
+it("allows an explicitly reviewed different movement while leaving similarity filtering as the default", () => {
+  const state = fixture(),
+    entry = state.draft!.exercises[0];
+  expect(
+    substitutionOptions(state, entry, ["Dumbbell"]).some(
+      (o) => o.exercise.id === "db-row",
+    ),
+  ).toBe(false);
+  const result = substituteExercise(state, {
+    fingerprint: substitutionFingerprint(state.draft!),
+    entryId: entry.id,
+    exerciseId: "db-row",
+    available: ["Dumbbell"],
+    reason: "preference",
+    scope: "all",
+  });
+  expect(result.state.draft!.exercises[0].exerciseId).toBe("db-row");
+  expect(result.state.programs).toEqual(state.programs);
 });
 it.each([false, true])(
   "preserves completed observations and separate history (partial %s)",

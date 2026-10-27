@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GripVertical, ListOrdered } from "lucide-react";
 import * as D from "./domain";
 import { exerciseGroups, moveGroup, type Removal } from "./workoutActions";
+import { ExerciseThumbnail } from "./ExerciseThumbnail";
 export function SwipeRow({
   children,
   label,
@@ -246,7 +247,16 @@ export function ExerciseQueue({
                   className="queue-name"
                   onClick={onSelect ? () => onSelect(id) : undefined}
                 >
-                  <b>{name}</b>
+                  <span className="queue-title-line">
+                    {exercises.find((e) => e.id === group[0].exerciseId) && (
+                      <ExerciseThumbnail
+                        exercise={exercises.find(
+                          (e) => e.id === group[0].exerciseId,
+                        )!}
+                      />
+                    )}
+                    <b>{name}</b>
+                  </span>
                   <small>
                     {done} / {total} completed
                     {group[0].target

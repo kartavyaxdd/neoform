@@ -27,6 +27,7 @@ import { ChangeReviews } from "./ChangeReviews";
 import { reviewAcceptedChanges } from "./coachingResponse";
 import { GeminiCoach } from "./GeminiCoach";
 import { canUseGemini, type CoachFocus } from "./aiCoach";
+import { SubstitutionSheet } from "./SubstitutionSheet";
 export function WorkoutPreview({
   workout,
   program,
@@ -49,6 +50,7 @@ export function WorkoutPreview({
     currentWorkout =
       currentProgram.workouts.find((w) => w.id === workout.id) ?? workout;
   const [starting, setStarting] = useState(false);
+  const [swapId, setSwapId] = useState<string | null>(null);
   const [geminiFocus, setGeminiFocus] = useState<CoachFocus | null>(null);
   const [shortReview, setShortReview] = useState(false);
   const [preview, setPreview] = useState(() =>
@@ -252,6 +254,15 @@ export function WorkoutPreview({
               const x = exercises.find((x) => x.id === entry.exerciseId);
               return x ? (
                 <div key={entry.id}>
+                  <button
+                    type="button"
+                    className="btn preview-swap"
+                    aria-label={`Swap ${x.name}`}
+                    disabled={!!stale || group.length > 1}
+                    onClick={() => setSwapId(entry.id)}
+                  >
+                    Swap
+                  </button>
                   {group.length > 1 && <h4>{x.name}</h4>}
                   <EntryPrescription
                     entry={entry}
@@ -386,6 +397,28 @@ export function WorkoutPreview({
               setReadiness(false);
               setNotice(
                 "Readiness updated. Review advice with this new context.",
+              );
+            }}
+          />
+        </Modal>
+      )}
+      {swapId && preview.seed.exercises.some((e) => e.id === swapId) && (
+        <Modal title="Swap exercise" close={() => setSwapId(null)}>
+          <SubstitutionSheet
+            key={swapId}
+            session={preview.seed}
+            entry={preview.seed.exercises.find((e) => e.id === swapId)!}
+            onDone={() => setSwapId(null)}
+            onPreview={(next) => {
+              setPreview({
+                ...preview,
+                seed: { ...next, shortPlan: undefined },
+                choices: [],
+                records: [],
+              });
+              setSwapId(null);
+              setNotice(
+                "Exercise swapped for this workout preview. Your routine is unchanged; review any shorter plan again.",
               );
             }}
           />
