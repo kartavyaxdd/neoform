@@ -148,10 +148,6 @@ export function WorkoutDashboard({
             </div>
           ))}
         </div>
-        <p className="caption">
-          Completed primary work this week
-          {scope === "program" ? " · active program" : " · all workouts"}.
-        </p>
         <button className="text-button weekly-review-link" onClick={review}>
           Weekly review <ArrowUpRight size={16} />
         </button>

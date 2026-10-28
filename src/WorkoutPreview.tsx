@@ -25,7 +25,10 @@ import {
 import type { CoachingProposal } from "./coachingTypes";
 import { ChangeReviews } from "./ChangeReviews";
 import { reviewAcceptedChanges } from "./coachingResponse";
-import { GeminiCoach } from "./GeminiCoach";
+import { deferredView } from "./deferredView";
+const GeminiCoach = deferredView(() =>
+  import("./GeminiCoach").then((m) => ({ default: m.GeminiCoach })),
+);
 import { canUseGemini, type CoachFocus } from "./aiCoach";
 import { SubstitutionSheet } from "./SubstitutionSheet";
 export function WorkoutPreview({

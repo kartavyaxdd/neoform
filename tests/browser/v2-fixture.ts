@@ -1,3 +1,4 @@
+import { exerciseOptions } from "./premium-controls";
 import { expect, type Page } from "@playwright/test";
 
 export async function fixture(page: Page) {
@@ -16,9 +17,7 @@ export async function fixture(page: Page) {
   await expect(page.locator(".sync-status")).toHaveText("Synced");
 }
 export async function currentReadiness(page: Page, muscle: string) {
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page.getByRole("button", { name: "Readiness", exact: true }).click();
   await page
     .getByLabel("Systemic fatigue now", { exact: true })

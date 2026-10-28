@@ -56,3 +56,30 @@ it("requests mixable audio, falls back when unsupported and never lets audio fai
   expect(audioSession.type).toBe("ambient");
   expect(() => audio.feedbackTone()).not.toThrow();
 });
+
+it("prepares audio once without resuming or playing until a timer interaction", async () => {
+  vi.resetModules();
+  const resume = vi.fn(async () => {}),
+    create = vi.fn();
+  const audioSession = { type: "auto" };
+  vi.stubGlobal("navigator", { audioSession });
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      state = "suspended";
+      resume = resume;
+      constructor() {
+        create();
+      }
+    },
+  );
+  const audio = await import("../src/feedbackAudio");
+  audio.prepareFeedbackAudio();
+  audio.prepareFeedbackAudio();
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(audioSession.type).toBe("ambient");
+  expect(resume).not.toHaveBeenCalled();
+  audio.unlockFeedbackAudio();
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(resume).toHaveBeenCalledTimes(1);
+});

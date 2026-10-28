@@ -57,11 +57,11 @@ test("exercise tabs use roving keyboard focus and retain set edits across naviga
   await expect(last).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(squat).toBeFocused();
-  await page.getByRole("button", { name: "Info", exact: true }).click();
+  await page.getByRole("button", { name: /^Watch tutorial for / }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Info", exact: true }),
+    page.getByRole("button", { name: /^Watch tutorial for / }),
   ).toBeFocused();
 });

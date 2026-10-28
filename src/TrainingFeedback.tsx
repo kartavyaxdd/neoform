@@ -682,7 +682,7 @@ export function FinishSessionFeedback({
           }
         }}
       >
-        Save workout
+        {busy ? "Saving workout…" : "Save workout"}
       </Button>
     </div>
   );

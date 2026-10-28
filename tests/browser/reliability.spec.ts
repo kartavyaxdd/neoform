@@ -1,3 +1,4 @@
+import { toggleTheme, exerciseOptions } from "./premium-controls";
 import { readData, writeData } from "./storage-client";
 import { test, expect, type Page } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
@@ -33,9 +34,7 @@ for (const [width, unit] of [
       .getByRole("button", { name: "Start workout", exact: true })
       .click();
     const open = async () => {
-      await page
-        .getByRole("button", { name: "Exercise options", exact: true })
-        .click();
+      await exerciseOptions(page);
       await page
         .getByRole("button", { name: "Equipment setup", exact: true })
         .click();
@@ -399,10 +398,7 @@ test("finishing workout B recommends workout C", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await expect(
-    page
-      .locator(".program-card")
-      .first()
-      .locator(".program-days > .workout-row:has(.next-tag) b"),
+    page.locator(".program-card").first().locator(".featured-workout h2"),
   ).toHaveText("Full body C");
 });
 test("acknowledged offline work never replays over a newer edit", async ({
@@ -414,7 +410,7 @@ test("acknowledged offline work never replays over a newer edit", async ({
       ? route.abort()
       : route.continue(),
   );
-  await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
+  await toggleTheme(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect
     .poll(() =>
@@ -436,7 +432,7 @@ test("acknowledged offline work never replays over a newer edit", async ({
   await page.locator(".sync-status").click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   // Old tab journals remain durable; receipts suppress replay without racing a live writer.
-  await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
+  await toggleTheme(page);
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.locator(".sync-status").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");

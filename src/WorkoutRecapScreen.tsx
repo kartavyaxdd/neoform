@@ -15,7 +15,7 @@ import { workoutRecap } from "./workoutRecap";
 import { TrainingBodyMap } from "./TrainingBodyMap";
 import { weeklyPrimarySets, weekMonday } from "./workoutPresentation";
 import { rirColour } from "./rewards";
-import { drawWorkoutPoster } from "./workoutPoster";
+
 import { ComparisonBars } from "./MetricChart";
 import { primaryWork } from "./visualData";
 export function WorkoutRecap({
@@ -51,24 +51,29 @@ export function WorkoutRecap({
     let active = true;
     setFile(null);
     setMessage("");
-    try {
-      drawWorkoutPoster(canvas.current, model, includeEnergy);
-      canvas.current.toBlob((blob) => {
-        if (!active) return;
-        if (blob)
-          setFile(
-            new File(
-              [blob],
-              `neoform-${session.date}-${session.id.slice(0, 8)}.png`,
-              { type: "image/png" },
-            ),
-          );
-        else
-          setMessage("Could not prepare the image. Try reopening the poster.");
-      }, "image/png");
-    } catch (e) {
-      setMessage((e as Error).message);
-    }
+    void import("./workoutPoster")
+      .then(({ drawWorkoutPoster }) => {
+        if (!active || !canvas.current) return;
+        drawWorkoutPoster(canvas.current, model, includeEnergy);
+        canvas.current.toBlob((blob) => {
+          if (!active) return;
+          if (blob)
+            setFile(
+              new File(
+                [blob],
+                `neoform-${session.date}-${session.id.slice(0, 8)}.png`,
+                { type: "image/png" },
+              ),
+            );
+          else
+            setMessage(
+              "Could not prepare the image. Try reopening the poster.",
+            );
+        }, "image/png");
+      })
+      .catch((e) => {
+        if (active) setMessage((e as Error).message);
+      });
     return () => {
       active = false;
     };

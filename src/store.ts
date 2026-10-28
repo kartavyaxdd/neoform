@@ -156,6 +156,11 @@ export const useStore = () =>
     },
     () => current,
   );
+// Read-only presentation access to the existing IndexedDB acknowledgement.
+// Legacy storage reports its own synchronous-save status instead.
+export function deviceSaveAcknowledged(): boolean | undefined {
+  return modern() ? durableGeneration >= current.box.generation : undefined;
+}
 export async function request<T = unknown>(
   path: string,
   method = "GET",

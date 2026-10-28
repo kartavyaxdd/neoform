@@ -908,13 +908,15 @@
   select,
   .muscle path {
     transition:
-      background-color 180ms ease,
-      color 180ms ease,
-      border-color 180ms ease,
-      box-shadow 180ms ease,
-      transform 160ms var(--motion-ease);
+      background-color var(--motion-control) ease,
+      color var(--motion-control) ease,
+      border-color var(--motion-control) ease,
+      box-shadow var(--motion-control) ease,
+      transform var(--motion-control) var(--motion-ease);
   }
-  button:active:not(:disabled) {
+  button:active:not(:disabled):not(.set-row button):not(
+      .exercise-prescription
+    ) {
     transform: scale(0.96);
   }
   .bottom-nav button svg,
@@ -924,25 +926,27 @@
   summary::after,
   summary > svg {
     transition:
-      transform 240ms var(--motion-spring),
-      color 180ms ease;
+      transform var(--motion-control) var(--motion-ease),
+      color var(--motion-control) ease;
   }
   .bottom-nav button.active svg,
   .exercise-nav button[aria-selected="true"] svg {
-    animation: neo-tab-pop 320ms var(--motion-spring);
+    animation: neo-tab-pop var(--motion-control) var(--motion-ease);
   }
   .complete-set.checked svg {
-    animation: neo-check 260ms var(--motion-spring);
+    animation: neo-check var(--motion-control) var(--motion-ease);
   }
   .modal[open] {
-    animation: neo-sheet-in 280ms var(--motion-ease);
+    animation: neo-sheet-in var(--motion-sheet) var(--motion-ease);
   }
   .modal[open]::backdrop {
-    animation: neo-fade-in 220ms ease;
+    animation: neo-fade-in var(--motion-content) ease;
   }
-  .modal-body > *,
+  .modal-view:not([hidden]) {
+    animation: neo-fade-in var(--motion-content) ease;
+  }
   details[open] > :not(summary) {
-    animation: neo-content-in 240ms var(--motion-ease);
+    animation: neo-fade-in var(--motion-content) ease;
   }
   .simple-dashboard > section,
   .program-card,
@@ -951,60 +955,36 @@
   .muscle-list,
   .workout-preview .grouped,
   .activity-week > div {
-    animation: neo-content-in 340ms var(--motion-ease) backwards;
-  }
-  .simple-dashboard > section:nth-of-type(2),
-  .preferences-grid > :nth-child(2),
-  .activity-week > :nth-child(2) {
-    animation-delay: 35ms;
-  }
-  .simple-dashboard > section:nth-of-type(3),
-  .preferences-grid > :nth-child(3),
-  .activity-week > :nth-child(3) {
-    animation-delay: 70ms;
-  }
-  .preferences-grid > :nth-child(4),
-  .activity-week > :nth-child(4) {
-    animation-delay: 105ms;
-  }
-  .preferences-grid > :nth-child(5),
-  .activity-week > :nth-child(5) {
-    animation-delay: 140ms;
-  }
-  .activity-week > :nth-child(6) {
-    animation-delay: 175ms;
-  }
-  .activity-week > :nth-child(7) {
-    animation-delay: 210ms;
+    animation: neo-fade-in var(--motion-content) ease;
   }
   .log-exercise {
-    animation: neo-content-in 220ms var(--motion-ease);
+    animation: none;
   }
   .muscle-detail {
-    animation: neo-content-in 240ms var(--motion-ease);
+    animation: neo-fade-in var(--motion-content) ease;
   }
   .muscle path {
     transition:
-      fill 320ms ease,
-      fill-opacity 320ms ease,
-      stroke 180ms ease;
+      fill var(--motion-content) ease,
+      fill-opacity var(--motion-content) ease,
+      stroke var(--motion-content) ease;
   }
   .chart .trendline {
     stroke-dasharray: 1;
-    animation: neo-chart-draw 850ms var(--motion-ease) both;
+    animation: neo-fade-in var(--motion-content) ease both;
   }
   .chart .area {
-    animation: neo-chart-area 750ms ease both;
+    animation: neo-fade-in var(--motion-content) ease both;
   }
   .chart-point {
     transform-box: fill-box;
     transform-origin: center;
-    animation: neo-point-in 420ms var(--motion-spring) 220ms backwards;
+    animation: neo-point-in var(--motion-content) var(--motion-ease);
   }
   .bar-track > span {
     transform-origin: left;
-    animation: neo-bar-in 650ms var(--motion-ease);
-    transition: width 450ms var(--motion-ease);
+    animation: neo-bar-in var(--motion-content) var(--motion-ease);
+    transition: opacity var(--motion-control) ease;
   }
   @media (hover: hover) and (pointer: fine) {
     .group-row:hover,

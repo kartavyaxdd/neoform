@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import * as D from "./domain";
 import { useStore, change, saveChange } from "./store";
-import { Button, Field, Num, Modal } from "./ui";
+import { Button, Field, Num, Modal, SheetNavigation } from "./ui";
 import { VideoInfo } from "./VideoInfo";
 import { TechniqueSheet } from "./TechniqueSheet";
 import { EquipmentSetup } from "./EquipmentSetup";
@@ -58,8 +58,14 @@ export function SessionLogger({
   history?: boolean;
 }) {
   const [selected, setSelected] = useState(() => resumeExerciseId(s)),
-    [sheet, setSheet] = useState<string | null>(null),
+    [sheetTrail, setSheetTrail] = useState<string[]>([]),
     [effort, setEffort] = useState<"RIR" | "RPE">("RIR");
+  const sheet = sheetTrail.at(-1) ?? null;
+  function setSheet(next: string | null) {
+    setSheetTrail((trail) =>
+      next === null ? [] : trail.at(-1) === next ? trail : [...trail, next],
+    );
+  }
   const data = useStore().box.data;
   const [typeSet, setTypeSet] = useState<string | null>(null);
   const program = data.programs.find((p) => p.id === s.programId);
@@ -240,7 +246,12 @@ export function SessionLogger({
                   of {e.sets.length}
                 </small>
               </div>
-              <p className="exercise-prescription">
+              <button
+                type="button"
+                className="exercise-prescription"
+                aria-label="Targets"
+                onClick={() => setSheet("Targets")}
+              >
                 {e.plannedWorkingSets ??
                   e.sets.filter((t) => t.kind === "working").length}{" "}
                 sets &middot;{" "}
@@ -252,7 +263,7 @@ export function SessionLogger({
                 ) : (
                   "No saved prescription"
                 )}
-              </p>
+              </button>
               <div className="logger-actions">
                 {!history && (
                   <Button
@@ -269,19 +280,16 @@ export function SessionLogger({
                     <Sparkles size={17} />
                   </Button>
                 )}
-                <Button onClick={() => setSheet("Info")}>Info</Button>
                 {!history && (
                   <Button onClick={() => setSheet("Substitute exercise")}>
                     Swap exercise
                   </Button>
                 )}
-                <Button onClick={() => setSheet("Warm Up")}>Warm Up</Button>
-                <Button onClick={() => setSheet("Targets")}>Targets</Button>
                 <Button
                   title="Exercise options"
-                  onClick={() => setSheet("Exercise options")}
+                  onClick={() => setSheet("More")}
                 >
-                  •••
+                  More
                 </Button>
               </div>
               <div className="set-table">
@@ -535,7 +543,11 @@ export function SessionLogger({
                         aria-label={`${set.done ? "Undo" : "Complete"} ${ex.name} set ${i + 1}`}
                         aria-pressed={set.done}
                         onClick={() => {
-                          unlockFeedbackAudio();
+                          if (
+                            data.settings.timerSound ||
+                            data.settings.celebrationSound
+                          )
+                            unlockFeedbackAudio();
                           const toggled = D.toggleSet(s, set.id);
                           if (
                             !history &&
@@ -563,18 +575,17 @@ export function SessionLogger({
                           ) {
                             const next = nextExerciseId(toggled, e.id);
                             setSelected(next);
-                            if (next !== e.id)
-                              tabs.current
-                                ?.querySelector<HTMLElement>(
+                            if (next !== e.id) {
+                              const tab =
+                                tabs.current?.querySelector<HTMLElement>(
                                   `[id="tab-${next}"]`,
-                                )
-                                ?.focus({ preventScroll: true });
-                            tabs.current
-                              ?.querySelector<HTMLElement>(`[id="tab-${next}"]`)
-                              ?.scrollIntoView({
+                                );
+                              tab?.focus({ preventScroll: true });
+                              tab?.scrollIntoView({
                                 block: "nearest",
                                 inline: "nearest",
                               });
+                            }
                           }
                         }}
                       >
@@ -722,403 +733,430 @@ export function SessionLogger({
                 </Modal>
               )}
               {sheet && (
-                <Modal
-                  title={
-                    sheet === "Info"
+                <SheetNavigation
+                  pages={sheetTrail}
+                  title={(page) =>
+                    page === "Info"
                       ? ex.name
-                      : sheet === "Next workout coach"
+                      : page === "Next workout coach"
                         ? "Progression"
-                        : sheet
+                        : page
                   }
                   close={() => setSheet(null)}
-                  presentation={sheet === "Lift progress" ? "screen" : "sheet"}
-                >
-                  {sheet === "Effort scale" ? (
-                    <p>
-                      RIR means reps in reserve. 0 is red and 10 is green, with
-                      a continuous scale between. Unknown effort stays grey (—).
-                      Colour describes effort, not good or bad, and never
-                      changes your rewards.
-                    </p>
-                  ) : sheet === "Info" ? (
-                    <>
-                      <VideoInfo exercise={ex} />
-                      <Button onClick={() => setSheet("Lift progress")}>
-                        Lift progress
-                      </Button>
-                    </>
-                  ) : sheet === "Lift progress" ? (
-                    <LiftProgress key={ex.id} exerciseId={ex.id} />
-                  ) : sheet === "Next workout coach" ? (
-                    <CoachSheet
-                      session={s}
-                      entryId={e.id}
-                      onOpenWorkout={() => setSheet(null)}
-                    />
-                  ) : sheet === "Next set advice" ? (
-                    <NextSetSheet
-                      sessionId={s.id}
-                      entryId={e.id}
-                      reviewTargets={() => setSheet("Targets")}
-                      reviewWorkout={() => setSheet("Next workout coach")}
-                    />
-                  ) : sheet === "Substitute exercise" ? (
-                    <SubstitutionSheet
-                      key={e.id}
-                      session={s}
-                      entry={e}
-                      onEditAdvanced={() => setSheet("Exercise options")}
-                      onDone={(id) => {
-                        setSelected(id);
-                        setSheet(null);
-                      }}
-                    />
-                  ) : sheet === "Exercise queue" ? (
-                    <ExerciseQueue
-                      session={s}
-                      exercises={exercises}
-                      onChange={setSession}
-                      onRemove={(id) => erased(removeEntry(s, id))}
-                      onSelect={(id) => {
-                        setSelected(id);
-                        setSheet(null);
-                      }}
-                      onSaveOrder={() =>
-                        saveChange((state) => saveSessionOrder(state, s))
-                      }
-                    />
-                  ) : sheet === "Exercise options" ? (
-                    <>
-                      <TechniqueSheet
+                  back={() => setSheetTrail((trail) => trail.slice(0, -1))}
+                  presentation={(page) =>
+                    page === "Lift progress" ? "screen" : "sheet"
+                  }
+                  render={(sheet) =>
+                    sheet === "Effort scale" ? (
+                      <p>
+                        RIR means reps in reserve. 0 is red and 10 is green,
+                        with a continuous scale between. Unknown effort stays
+                        grey (—). Colour describes effort, not good or bad, and
+                        never changes your rewards.
+                      </p>
+                    ) : sheet === "More" ? (
+                      <div className="sheet-menu">
+                        {[
+                          "Warm Up",
+                          "Equipment setup",
+                          "Exercise options",
+                          "Readiness",
+                          "Lift progress",
+                          "Info",
+                        ]
+                          .filter(
+                            (item) => !history || item !== "Equipment setup",
+                          )
+                          .map((item) => (
+                            <Button key={item} onClick={() => setSheet(item)}>
+                              {item === "Exercise options"
+                                ? "Advanced techniques & notes"
+                                : item}
+                            </Button>
+                          ))}
+                      </div>
+                    ) : sheet === "Info" ? (
+                      <>
+                        <VideoInfo exercise={ex} />
+                        <Button onClick={() => setSheet("Lift progress")}>
+                          Lift progress
+                        </Button>
+                      </>
+                    ) : sheet === "Lift progress" ? (
+                      <LiftProgress key={ex.id} exerciseId={ex.id} />
+                    ) : sheet === "Next workout coach" ? (
+                      <CoachSheet
+                        session={s}
+                        entryId={e.id}
+                        onOpenWorkout={() => setSheet(null)}
+                      />
+                    ) : sheet === "Next set advice" ? (
+                      <NextSetSheet
+                        sessionId={s.id}
+                        entryId={e.id}
+                        reviewTargets={() => setSheet("Targets")}
+                        reviewWorkout={() => setSheet("Next workout coach")}
+                      />
+                    ) : sheet === "Substitute exercise" ? (
+                      <SubstitutionSheet
                         key={e.id}
+                        session={s}
+                        entry={e}
+                        onEditAdvanced={() => setSheet("Exercise options")}
+                        onDone={(id) => {
+                          setSelected(id);
+                          setSheet(null);
+                        }}
+                      />
+                    ) : sheet === "Exercise queue" ? (
+                      <ExerciseQueue
+                        session={s}
+                        exercises={exercises}
+                        onChange={setSession}
+                        onRemove={(id) => erased(removeEntry(s, id))}
+                        onSelect={(id) => {
+                          setSelected(id);
+                          setSheet(null);
+                        }}
+                        onSaveOrder={() =>
+                          saveChange((state) => saveSessionOrder(state, s))
+                        }
+                      />
+                    ) : sheet === "Exercise options" ? (
+                      <>
+                        <TechniqueSheet
+                          key={e.id}
+                          session={s}
+                          entry={e}
+                          exercises={exercises}
+                          unit={unit}
+                          onChange={setSession}
+                          history={history}
+                        />
+                        <div className="actions wrap">
+                          <Button onClick={() => setSheet("Readiness")}>
+                            Readiness
+                          </Button>
+                          {!history && (
+                            <Button onClick={() => setSheet("Equipment setup")}>
+                              Equipment setup
+                            </Button>
+                          )}
+                          {!history && (
+                            <Button
+                              onClick={() => {
+                                setSheet("Substitute exercise");
+                              }}
+                            >
+                              Swap
+                            </Button>
+                          )}
+                          <Button
+                            variant="danger"
+                            onClick={() => {
+                              setSheet(null);
+                              remove("Remove exercise?", () =>
+                                setSession({
+                                  ...s,
+                                  exercises: s.exercises.filter(
+                                    (x) => x.id !== e.id,
+                                  ),
+                                }),
+                              );
+                            }}
+                          >
+                            Remove {ex.name}
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              setEffort(effort === "RIR" ? "RPE" : "RIR")
+                            }
+                          >
+                            Use {effort === "RIR" ? "RPE" : "RIR"}
+                          </Button>
+                        </div>
+                        <Field label={`${ex.name} notes`}>
+                          <textarea
+                            maxLength={2000}
+                            value={e.notes}
+                            onChange={(ev) =>
+                              updateEntry({ ...e, notes: ev.target.value })
+                            }
+                          />
+                        </Field>
+                        <details>
+                          <summary>Previous performance</summary>
+                          {prior ? (
+                            <p>
+                              {prior.sets
+                                .filter((t) => t.done && t.kind !== "warmup")
+                                .map(
+                                  (t) =>
+                                    `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`,
+                                )
+                                .join(" / ") || "Warmups only"}
+                            </p>
+                          ) : (
+                            <p>No previous sets.</p>
+                          )}
+                        </details>
+                      </>
+                    ) : sheet === "Add bout" ? (
+                      <TechniqueSheet
+                        key={e.id + "bout"}
                         session={s}
                         entry={e}
                         exercises={exercises}
                         unit={unit}
                         onChange={setSession}
                         history={history}
+                        addOnly
                       />
-                      <div className="actions wrap">
-                        <Button onClick={() => setSheet("Readiness")}>
-                          Readiness
-                        </Button>
-                        {!history && (
-                          <Button onClick={() => setSheet("Equipment setup")}>
-                            Equipment setup
-                          </Button>
-                        )}
-                        {!history && (
-                          <Button
-                            onClick={() => {
-                              setSheet("Substitute exercise");
-                            }}
-                          >
-                            Swap
-                          </Button>
-                        )}
-                        <Button
-                          variant="danger"
-                          onClick={() => {
-                            setSheet(null);
-                            remove("Remove exercise?", () =>
-                              setSession({
-                                ...s,
-                                exercises: s.exercises.filter(
-                                  (x) => x.id !== e.id,
+                    ) : sheet === "Readiness" ? (
+                      <ReadinessSheet
+                        key={e.id}
+                        value={s.readiness}
+                        muscles={[
+                          ...new Set([
+                            ex.muscle,
+                            ...ex.secondary,
+                            ...s.exercises.flatMap((e) => {
+                              const x = exercises.find(
+                                (x) => x.id === e.exerciseId,
+                              );
+                              return x ? [x.muscle, ...x.secondary] : [];
+                            }),
+                          ]),
+                        ]}
+                        readOnly={
+                          history ||
+                          s.exercises.some((e) =>
+                            e.sets.some((t) => t.done && t.kind !== "warmup"),
+                          )
+                        }
+                        onSave={(readiness) => {
+                          setSession({ ...s, readiness });
+                          setSheet(null);
+                        }}
+                      />
+                    ) : sheet === "Equipment setup" ? (
+                      e.sets.some((t) => t.done && t.kind !== "warmup") ? (
+                        <p>
+                          Working sets have already been recorded. Keep their
+                          setup intact; select a different setup before working
+                          sets in your next session.
+                        </p>
+                      ) : (
+                        <EquipmentSetup
+                          key={e.id}
+                          entry={e}
+                          exercise={ex}
+                          unit={unit}
+                          onSave={(setup) => updateEntry({ ...e, setup })}
+                          onUseForProgram={
+                            program &&
+                            s.workoutId &&
+                            e.sourceTargetId &&
+                            program.workouts.some(
+                              (w) =>
+                                w.id === s.workoutId &&
+                                w.exercises.some(
+                                  (t) =>
+                                    t.id === e.sourceTargetId &&
+                                    t.exerciseId === e.exerciseId,
                                 ),
-                              }),
-                            );
-                          }}
-                        >
-                          Remove {ex.name}
-                        </Button>
-                        <Button
-                          onClick={() =>
-                            setEffort(effort === "RIR" ? "RPE" : "RIR")
-                          }
-                        >
-                          Use {effort === "RIR" ? "RPE" : "RIR"}
-                        </Button>
-                      </div>
-                      <Field label={`${ex.name} notes`}>
-                        <textarea
-                          maxLength={2000}
-                          value={e.notes}
-                          onChange={(ev) =>
-                            updateEntry({ ...e, notes: ev.target.value })
+                            )
+                              ? () => {
+                                  change((d) => {
+                                    const p = d.programs.find(
+                                      (p) => p.id === s.programId,
+                                    );
+                                    const t = p?.workouts
+                                      .find((w) => w.id === s.workoutId)
+                                      ?.exercises.find(
+                                        (t) =>
+                                          t.id === e.sourceTargetId &&
+                                          t.exerciseId === e.exerciseId,
+                                      );
+                                    if (t) {
+                                      t.setup = structuredClone(e.setup);
+                                      t.nextRows = undefined;
+                                      t.coachingProposalId = undefined;
+                                    }
+                                    return d;
+                                  });
+                                  setSheet(null);
+                                }
+                              : undefined
                           }
                         />
-                      </Field>
-                      <details>
-                        <summary>Previous performance</summary>
-                        {prior ? (
-                          <p>
-                            {prior.sets
-                              .filter((t) => t.done && t.kind !== "warmup")
-                              .map(
-                                (t) =>
-                                  `${fmt(D.displayLoad(t.weight, e.convention || ex.convention, unit))} × ${t.reps}`,
-                              )
-                              .join(" / ") || "Warmups only"}
-                          </p>
-                        ) : (
-                          <p>No previous sets.</p>
-                        )}
-                      </details>
-                    </>
-                  ) : sheet === "Add bout" ? (
-                    <TechniqueSheet
-                      key={e.id + "bout"}
-                      session={s}
-                      entry={e}
-                      exercises={exercises}
-                      unit={unit}
-                      onChange={setSession}
-                      history={history}
-                      addOnly
-                    />
-                  ) : sheet === "Readiness" ? (
-                    <ReadinessSheet
-                      key={e.id}
-                      value={s.readiness}
-                      muscles={[
-                        ...new Set([
-                          ex.muscle,
-                          ...ex.secondary,
-                          ...s.exercises.flatMap((e) => {
-                            const x = exercises.find(
-                              (x) => x.id === e.exerciseId,
-                            );
-                            return x ? [x.muscle, ...x.secondary] : [];
-                          }),
-                        ]),
-                      ]}
-                      readOnly={
-                        history ||
-                        s.exercises.some((e) =>
-                          e.sets.some((t) => t.done && t.kind !== "warmup"),
-                        )
-                      }
-                      onSave={(readiness) => {
-                        setSession({ ...s, readiness });
-                        setSheet(null);
-                      }}
-                    />
-                  ) : sheet === "Equipment setup" ? (
-                    e.sets.some((t) => t.done && t.kind !== "warmup") ? (
-                      <p>
-                        Working sets have already been recorded. Keep their
-                        setup intact; select a different setup before working
-                        sets in your next session.
-                      </p>
+                      )
                     ) : (
-                      <EquipmentSetup
-                        key={e.id}
-                        entry={e}
-                        exercise={ex}
-                        unit={unit}
-                        onSave={(setup) => updateEntry({ ...e, setup })}
-                        onUseForProgram={
-                          program &&
-                          s.workoutId &&
-                          e.sourceTargetId &&
-                          program.workouts.some(
-                            (w) =>
-                              w.id === s.workoutId &&
-                              w.exercises.some(
-                                (t) =>
-                                  t.id === e.sourceTargetId &&
-                                  t.exerciseId === e.exerciseId,
-                              ),
-                          )
-                            ? () => {
-                                change((d) => {
-                                  const p = d.programs.find(
-                                    (p) => p.id === s.programId,
-                                  );
-                                  const t = p?.workouts
-                                    .find((w) => w.id === s.workoutId)
-                                    ?.exercises.find(
-                                      (t) =>
-                                        t.id === e.sourceTargetId &&
-                                        t.exerciseId === e.exerciseId,
-                                    );
-                                  if (t) {
-                                    t.setup = structuredClone(e.setup);
-                                    t.nextRows = undefined;
-                                    t.coachingProposalId = undefined;
-                                  }
-                                  return d;
-                                });
-                                setSheet(null);
-                              }
-                            : undefined
-                        }
-                      />
-                    )
-                  ) : (
-                    <>
-                      <p className="target-hint">
-                        {e.target
-                          ? `Target: ${e.target.min}–${e.target.max} reps · ${e.target.rir} RIR · ${e.target.rest}s rest`
-                          : "Free workout targets"}
-                        {e.superset ? ` · Superset ${e.superset}` : ""}
-                      </p>
-                      {sheet === "Targets" && e.target && (
-                        <div className="form-grid">
-                          <Field label="Minimum reps">
-                            <Num
-                              label="Minimum reps"
-                              value={e.target.min}
-                              min={1}
-                              max={e.target.max}
-                              onChange={(n) =>
-                                updateEntry({
-                                  ...e,
-                                  target: { ...e.target!, min: n },
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Maximum reps">
-                            <Num
-                              label="Maximum reps"
-                              value={e.target.max}
-                              min={e.target.min}
-                              max={100}
-                              onChange={(n) =>
-                                updateEntry({
-                                  ...e,
-                                  target: { ...e.target!, max: n },
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Rest seconds">
-                            <Num
-                              label="Rest seconds"
-                              value={e.target.rest}
-                              max={900}
-                              onChange={(n) =>
-                                updateEntry({
-                                  ...e,
-                                  target: { ...e.target!, rest: n },
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                      )}
-                      {sheet === "Targets" &&
-                        e.target &&
-                        !e.sets.some((t) => t.done && t.kind !== "warmup") &&
-                        !e.sets.some((t) => t.prescription?.proposalId) && (
-                          <Button
-                            disabled={e.sets.some(
-                              (t) =>
-                                t.kind === "working" &&
-                                (t.reps < e.target!.min ||
-                                  t.reps > e.target!.max),
-                            )}
-                            onClick={() => {
-                              let ordinal = 0;
-                              updateEntry({
-                                ...e,
-                                plannedWorkingSets: e.sets.filter(
-                                  (t) => t.kind === "working",
-                                ).length,
-                                sets: e.sets.map((t) =>
-                                  t.kind !== "working"
-                                    ? t
-                                    : {
-                                        ...t,
-                                        effortReported: false,
-                                        prescription: {
-                                          weight: t.weight,
-                                          reps: t.reps,
-                                          min: e.target!.min,
-                                          max: e.target!.max,
-                                          rir: e.target!.rir,
-                                          rest: e.target!.rest,
-                                          ordinal: ordinal++,
-                                        },
-                                      },
-                                ),
-                              });
-                            }}
-                          >
-                            Use current unlogged rows as manual plan
-                          </Button>
+                      <>
+                        <p className="target-hint">
+                          {e.target
+                            ? `Target: ${e.target.min}–${e.target.max} reps · ${e.target.rir} RIR · ${e.target.rest}s rest`
+                            : "Free workout targets"}
+                          {e.superset ? ` · Superset ${e.superset}` : ""}
+                        </p>
+                        {sheet === "Targets" && e.target && (
+                          <div className="form-grid">
+                            <Field label="Minimum reps">
+                              <Num
+                                label="Minimum reps"
+                                value={e.target.min}
+                                min={1}
+                                max={e.target.max}
+                                onChange={(n) =>
+                                  updateEntry({
+                                    ...e,
+                                    target: { ...e.target!, min: n },
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field label="Maximum reps">
+                              <Num
+                                label="Maximum reps"
+                                value={e.target.max}
+                                min={e.target.min}
+                                max={100}
+                                onChange={(n) =>
+                                  updateEntry({
+                                    ...e,
+                                    target: { ...e.target!, max: n },
+                                  })
+                                }
+                              />
+                            </Field>
+                            <Field label="Rest seconds">
+                              <Num
+                                label="Rest seconds"
+                                value={e.target.rest}
+                                max={900}
+                                onChange={(n) =>
+                                  updateEntry({
+                                    ...e,
+                                    target: { ...e.target!, rest: n },
+                                  })
+                                }
+                              />
+                            </Field>
+                          </div>
                         )}
-                      {sheet === "Targets" &&
-                        e.plannedWorkingSets !==
-                          e.sets.filter((t) => t.kind === "working").length && (
-                          <div className="training-coaching">
-                            <p>
-                              Added or removed sets do not silently change the
-                              prescription. Confirm a deliberate dose change;
-                              skipped work should stay incomplete.
-                            </p>
+                        {sheet === "Targets" &&
+                          e.target &&
+                          !e.sets.some((t) => t.done && t.kind !== "warmup") &&
+                          !e.sets.some((t) => t.prescription?.proposalId) && (
                             <Button
-                              onClick={() =>
+                              disabled={e.sets.some(
+                                (t) =>
+                                  t.kind === "working" &&
+                                  (t.reps < e.target!.min ||
+                                    t.reps > e.target!.max),
+                              )}
+                              onClick={() => {
+                                let ordinal = 0;
                                 updateEntry({
                                   ...e,
                                   plannedWorkingSets: e.sets.filter(
                                     (t) => t.kind === "working",
                                   ).length,
+                                  sets: e.sets.map((t) =>
+                                    t.kind !== "working"
+                                      ? t
+                                      : {
+                                          ...t,
+                                          effortReported: false,
+                                          prescription: {
+                                            weight: t.weight,
+                                            reps: t.reps,
+                                            min: e.target!.min,
+                                            max: e.target!.max,
+                                            rir: e.target!.rir,
+                                            rest: e.target!.rest,
+                                            ordinal: ordinal++,
+                                          },
+                                        },
+                                  ),
+                                });
+                              }}
+                            >
+                              Use current unlogged rows as manual plan
+                            </Button>
+                          )}
+                        {sheet === "Targets" &&
+                          e.plannedWorkingSets !==
+                            e.sets.filter((t) => t.kind === "working")
+                              .length && (
+                            <div className="training-coaching">
+                              <p>
+                                Added or removed sets do not silently change the
+                                prescription. Confirm a deliberate dose change;
+                                skipped work should stay incomplete.
+                              </p>
+                              <Button
+                                onClick={() =>
+                                  updateEntry({
+                                    ...e,
+                                    plannedWorkingSets: e.sets.filter(
+                                      (t) => t.kind === "working",
+                                    ).length,
+                                  })
+                                }
+                              >
+                                Confirm planned dose:{" "}
+                                {
+                                  e.sets.filter((t) => t.kind === "working")
+                                    .length
+                                }{" "}
+                                working sets
+                              </Button>
+                            </div>
+                          )}
+                        <p className="caption">
+                          Warm-up sets do not count toward working volume.
+                        </p>
+                        {e.sets.map((set, i) => (
+                          <div className="set-options" key={set.id}>
+                            <span>Set {i + 1}</span>
+                            <select
+                              aria-label={`${ex.name} set ${i + 1} type`}
+                              value={set.kind}
+                              onChange={(ev) =>
+                                updateSet(e, {
+                                  ...set,
+                                  kind: ev.target.value as D.SetLog["kind"],
                                 })
                               }
                             >
-                              Confirm planned dose:{" "}
-                              {
-                                e.sets.filter((t) => t.kind === "working")
-                                  .length
-                              }{" "}
-                              working sets
-                            </Button>
+                              <option value="working">Working</option>
+                              <option value="warmup">Warm-up</option>
+                              <option value="drop">Drop</option>
+                            </select>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={`Remove ${ex.name} set ${i + 1}`}
+                              onClick={() => {
+                                setSheet(null);
+                                remove("Remove set?", () =>
+                                  updateEntry({
+                                    ...e,
+                                    sets: e.sets.filter((x) => x.id !== set.id),
+                                  }),
+                                );
+                              }}
+                            >
+                              <X size={18} />
+                            </button>
                           </div>
-                        )}
-                      <p className="caption">
-                        Warm-up sets do not count toward working volume.
-                      </p>
-                      {e.sets.map((set, i) => (
-                        <div className="set-options" key={set.id}>
-                          <span>Set {i + 1}</span>
-                          <select
-                            aria-label={`${ex.name} set ${i + 1} type`}
-                            value={set.kind}
-                            onChange={(ev) =>
-                              updateSet(e, {
-                                ...set,
-                                kind: ev.target.value as D.SetLog["kind"],
-                              })
-                            }
-                          >
-                            <option value="working">Working</option>
-                            <option value="warmup">Warm-up</option>
-                            <option value="drop">Drop</option>
-                          </select>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={`Remove ${ex.name} set ${i + 1}`}
-                            onClick={() => {
-                              setSheet(null);
-                              remove("Remove set?", () =>
-                                updateEntry({
-                                  ...e,
-                                  sets: e.sets.filter((x) => x.id !== set.id),
-                                }),
-                              );
-                            }}
-                          >
-                            <X size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </Modal>
+                        ))}
+                      </>
+                    )
+                  }
+                />
               )}
             </section>
           );

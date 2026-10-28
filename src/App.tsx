@@ -1,12 +1,18 @@
-import { ProgramEditor as ProgramBuilder } from "./ProgramEditor";
+import { deferredView } from "./deferredView";
+import { persistencePresentation } from "./presentationStatus";
+
 import { ExercisePicker } from "./ExercisePicker";
-import { WorkoutRecap } from "./WorkoutRecapScreen";
+
 import {
   useRestAlerts,
   claimRestTimer,
   cancelRestAlertForSwitch,
 } from "./restAlerts";
-import { feedbackTone, unlockFeedbackAudio } from "./feedbackAudio";
+import {
+  feedbackTone,
+  unlockFeedbackAudio,
+  prepareFeedbackAudio,
+} from "./feedbackAudio";
 import { WorkoutCelebration } from "./RewardProgress";
 import { rewards } from "./rewards";
 import { weekMonday } from "./workoutPresentation";
@@ -30,9 +36,9 @@ import {
 import { VideoInfo } from "./VideoInfo";
 import { HevyImport } from "./HevyImport.jsx";
 import { GeminiKeySettings } from "./GeminiKeySettings";
-import { GeminiCoach } from "./GeminiCoach";
+
 import { canUseGemini } from "./aiCoach";
-import { AiWizard } from "./AiWizard";
+
 import { SessionLogger } from "./CompactLogger";
 import {
   FinishSessionFeedback,
@@ -97,7 +103,20 @@ import {
   useStore,
   exportPendingCopies,
   lockProfile,
+  deviceSaveAcknowledged,
 } from "./store";
+const ProgramBuilder = deferredView(() =>
+  import("./ProgramEditor").then((m) => ({ default: m.ProgramEditor })),
+);
+const WorkoutRecap = deferredView(() =>
+  import("./WorkoutRecapScreen").then((m) => ({ default: m.WorkoutRecap })),
+);
+const GeminiCoach = deferredView(() =>
+  import("./GeminiCoach").then((m) => ({ default: m.GeminiCoach })),
+);
+const AiWizard = deferredView(() =>
+  import("./AiWizard").then((m) => ({ default: m.AiWizard })),
+);
 type Page =
   | "overview"
   | "train"
@@ -472,6 +491,25 @@ export default function App() {
     xp: number;
   } | null>(null);
   const clockActive = !!(s.draft || s.timer);
+  useEffect(() => {
+    if (
+      !store.ready ||
+      !store.user ||
+      !(s.settings.timerSound || s.settings.celebrationSound)
+    )
+      return;
+    if ("requestIdleCallback" in window) {
+      const idle = window.requestIdleCallback(prepareFeedbackAudio);
+      return () => window.cancelIdleCallback(idle);
+    }
+    const idle = setTimeout(prepareFeedbackAudio, 200);
+    return () => clearTimeout(idle);
+  }, [
+    store.ready,
+    store.user?.id,
+    s.settings.timerSound,
+    s.settings.celebrationSound,
+  ]);
   const setProgress = s.draft
     ? sessionSetProgress(s.draft)
     : { completed: 0, total: 0 };
@@ -868,6 +906,7 @@ export default function App() {
     }
     setModal({
       title: "Review workout",
+      presentation: "screen",
       content: (
         <FinishSessionFeedback
           draft={draft}
@@ -977,20 +1016,11 @@ export default function App() {
   thisWeek.setHours(0, 0, 0, 0);
   thisWeek.setDate(thisWeek.getDate() - ((thisWeek.getDay() + 6) % 7));
   const seconds = D.restRemaining(s.timer, Date.now());
-  const title =
-    page === "overview"
-      ? "Your workspace"
-      : page === "train"
-        ? "Training studio"
-        : page === "session"
-          ? "Active session"
-          : page === "history"
-            ? "Training journal"
-            : page === "insights"
-              ? "Training insights"
-              : page === "settings"
-                ? "Your preferences"
-                : "Exercise library";
+  const persistence = persistencePresentation(
+    store.status,
+    deviceSaveAcknowledged(),
+    !!store.conflict,
+  );
   return (
     <div className={"app-shell page-" + page}>
       <a className="skip-link" href="#main-content">
@@ -1050,9 +1080,8 @@ export default function App() {
       </aside>
       <div className="main-column">
         <header className="topbar">
-          <span className="breadcrumb">
-            Workspace <ChevronRight size={14} />
-            <b>{title}</b>
+          <span className="app-wordmark" aria-label="NEOFORM">
+            NEOFORM
           </span>
           <div className="topbar-actions">
             <button
@@ -1061,36 +1090,11 @@ export default function App() {
                 (store.box.dirty || store.conflict ? "pending" : "")
               }
               onClick={() => void sync()}
-              title="Check for changes"
+              title={`${persistence.detail} · Check for changes`}
+              data-state={persistence.tone}
             >
               <i />
-              {store.status}
-            </button>
-            <button
-              className="icon-button"
-              aria-label="Toggle theme"
-              onClick={() =>
-                change((s) => ({
-                  ...s,
-                  settings: {
-                    ...s.settings,
-                    theme: s.settings.theme === "dark" ? "light" : "dark",
-                  },
-                }))
-              }
-            >
-              {s.settings.theme === "dark" ? (
-                <Sun size={19} />
-              ) : (
-                <Moon size={19} />
-              )}
-            </button>
-            <button
-              className="icon-button mobile-settings"
-              aria-label="Settings"
-              onClick={() => go("settings")}
-            >
-              <Settings size={20} />
+              {persistence.label}
             </button>
           </div>
         </header>
@@ -1154,7 +1158,7 @@ export default function App() {
             />
           )}
           {notice && (
-            <div className="banner" role="status">
+            <div className="status-toast" role="status">
               {notice}
               <button
                 className="icon-button"
@@ -1242,6 +1246,7 @@ export default function App() {
                   ? () =>
                       setModal({
                         title: "Gemini coach",
+                        presentation: "screen",
                         content: <GeminiCoach />,
                       })
                   : undefined
@@ -1441,7 +1446,6 @@ export default function App() {
                     )
                   }
                   onDone={(setId, entry) => {
-                    unlockFeedbackAudio();
                     const timerId = D.uid();
                     claimRestTimer(timerId);
                     const draft = D.toggleSet(s.draft!, setId);
@@ -2941,7 +2945,11 @@ function Preferences({
   userEmail: string;
   setNotice: (s: string) => void;
   confirm: (title: string, text: string, fn: () => void) => void;
-  open: (m: { title: string; content: ReactNode }) => void;
+  open: (m: {
+    title: string;
+    content: ReactNode;
+    presentation?: "screen" | "sheet";
+  }) => void;
   close: () => void;
 }) {
   const singleUser = useStore().user?.accessMode === "single-user-local";
@@ -2965,6 +2973,22 @@ function Preferences({
           </small>
         </span>
       </div>
+      <Button
+        title="Toggle theme"
+        onClick={() =>
+          change((s) => ({
+            ...s,
+            settings: {
+              ...s.settings,
+              theme: s.settings.theme === "dark" ? "light" : "dark",
+            },
+          }))
+        }
+      >
+        {s.settings.theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}{" "}
+        Appearance · {s.settings.theme === "dark" ? "Dark" : "Light"}
+      </Button>
+
       <h2 className="settings-section-title">Profile & shortcuts</h2>
       <div className="more-links grouped">
         <button className="group-row" onClick={onLibrary}>
@@ -3027,23 +3051,6 @@ function Preferences({
                   >
                     <option>kg</option>
                     <option>lb</option>
-                  </select>
-                </Field>
-                <Field label="Appearance">
-                  <select
-                    value={s.settings.theme}
-                    onChange={(e) =>
-                      change((s) => ({
-                        ...s,
-                        settings: {
-                          ...s.settings,
-                          theme: e.target.value as "dark" | "light",
-                        },
-                      }))
-                    }
-                  >
-                    <option value="dark">Graphite · Dark</option>
-                    <option value="light">Mineral · Light</option>
                   </select>
                 </Field>
               </div>
@@ -3176,7 +3183,11 @@ function Preferences({
               <div className="preference-content">
                 <Button
                   onClick={() =>
-                    open({ title: "Gemini coach", content: <GeminiCoach /> })
+                    open({
+                      title: "Gemini coach",
+                      presentation: "screen",
+                      content: <GeminiCoach />,
+                    })
                   }
                 >
                   Open Gemini coach

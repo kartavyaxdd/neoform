@@ -39,7 +39,16 @@
     radial-gradient(ellipse at 8% 4%, #b5d4ff 0, transparent 46%),
     radial-gradient(ellipse at 100% 48%, #c7b9f580 0, transparent 50%),
     radial-gradient(ellipse at 15% 96%, #bce8e570 0, transparent 45%);
-  --radius: 22px;
+  --radius: 24px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --motion-control: 120ms;
+  --motion-content: 180ms;
+  --motion-sheet: 240ms;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -86,19 +95,6 @@ h2,
 h3 {
   letter-spacing: -0.25px;
 }
-.btn {
-  border-color: transparent;
-  background: var(--surface2);
-  border-radius: 9px;
-}
-.btn.primary {
-  background: var(--ink);
-  color: var(--surface);
-  border-color: var(--ink);
-}
-.btn.primary:hover {
-  background: color-mix(in srgb, var(--ink) 84%, var(--surface));
-}
 .text-button {
   color: var(--ink);
   text-decoration: underline;
@@ -143,7 +139,7 @@ h3 {
   font-weight: 650;
 }
 .home-groups {
-  gap: 30px;
+  gap: var(--space-6);
 }
 .workout-title {
   background: var(--surface);
@@ -840,11 +836,6 @@ h3 {
 .preference-group > .eyebrow {
   display: none;
 }
-.modal {
-  background: var(--surface);
-  border-color: var(--line);
-  box-shadow: var(--shadow);
-}
 .modal-head {
   border-bottom: 0;
   background: var(--surface);
@@ -888,10 +879,10 @@ h3 {
   font-size: 16px;
   font-weight: 500;
 }
-.modal:has(.workout-recap) .modal-head {
+.modal:has(> .modal-view:not([hidden]) .workout-recap) .modal-head {
   flex-direction: row-reverse;
 }
-.modal:has(.workout-recap) .modal-head h2 {
+.modal:has(> .modal-view:not([hidden]) .workout-recap) .modal-head h2 {
   flex: 1;
   text-align: center;
   padding-right: 44px;
@@ -1173,12 +1164,12 @@ h3 {
   .page-session main#main-content {
     padding-top: 0;
   }
-  .modal:has(.workout-recap) {
+  .modal:has(> .modal-view:not([hidden]) .workout-recap) {
     height: 100dvh;
     max-height: 100dvh;
     border-radius: 0;
   }
-  .modal:has(.workout-recap) .modal-body {
+  .modal:has(> .modal-view:not([hidden]) .workout-recap) .modal-body {
     padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
   .bottom-nav button.active svg {
@@ -1279,15 +1270,15 @@ h3 {
   -webkit-user-select: none;
 }
 
-.modal:has(.modal-foot) {
+.modal:has(> .modal-view:not([hidden]) .modal-foot) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.modal:has(.modal-foot) .modal-head {
+.modal:has(> .modal-view:not([hidden]) .modal-foot) .modal-head {
   flex-shrink: 0;
 }
-.modal:has(.modal-foot) .modal-body {
+.modal:has(> .modal-view:not([hidden]) .modal-foot) .modal-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1352,7 +1343,7 @@ h3 {
 }
 
 /* Exercise information follows the supplied Instructions / Details / History sheet. */
-.modal:has(.video-info) .modal-body {
+.modal:has(> .modal-view:not([hidden]) .video-info) .modal-body {
   padding-top: 0;
 }
 .exercise-info-tabs {
@@ -1425,21 +1416,29 @@ h3 {
   font: inherit;
   text-align: left;
   padding: 0;
-  min-height: 26px;
+  min-height: 44px;
 }
-.modal:has(.program-editor),
-.modal:has(.workout-preview) {
+.modal:has(> .modal-view:not([hidden]) .program-editor),
+.modal:has(> .modal-view:not([hidden]) .workout-preview) {
   width: min(100%, 760px);
   height: min(94dvh, 980px);
   display: flex;
   flex-direction: column;
 }
-.modal:has(.program-editor) > .modal-head,
-.modal:has(.workout-preview) > .modal-head {
+.modal:has(> .modal-view:not([hidden]) .program-editor)
+  > .modal-view
+  > .modal-head,
+.modal:has(> .modal-view:not([hidden]) .workout-preview)
+  > .modal-view
+  > .modal-head {
   flex: 0 0 auto;
 }
-.modal:has(.program-editor) > .modal-body,
-.modal:has(.workout-preview) > .modal-body {
+.modal:has(> .modal-view:not([hidden]) .program-editor)
+  > .modal-view
+  > .modal-body,
+.modal:has(> .modal-view:not([hidden]) .workout-preview)
+  > .modal-view
+  > .modal-body {
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
@@ -1512,7 +1511,7 @@ h3 {
   align-items: center;
   gap: 8px;
   border: 1.5px solid var(--surface3);
-  border-radius: 11px;
+  border-radius: 12px;
   flex: 0 0 184px;
   height: 80px;
   overflow: hidden;
@@ -1778,7 +1777,8 @@ h3 {
   margin: 16px 0 24px;
 }
 
-:root[data-theme="dark"] .modal:has(.program-editor) {
+:root[data-theme="dark"]
+  .modal:has(> .modal-view:not([hidden]) .program-editor) {
   --surface: #1f1f1f;
   --surface2: #3b3b3b;
   --surface3: #4b4b4b;
@@ -1796,10 +1796,10 @@ h3 {
   font-size: 12px;
 }
 
-.screen-modal > .modal-head::before {
+.screen-modal > .modal-view > .modal-head::before {
   display: none;
 }
-.screen-modal > .modal-head {
+.screen-modal > .modal-view > .modal-head {
   padding-top: max(12px, env(safe-area-inset-top));
   min-height: 56px;
 }
@@ -2242,7 +2242,7 @@ progress::-moz-progress-bar {
   min-height: 44px;
   border: 0;
   background: transparent;
-  border-radius: 11px;
+  border-radius: 12px;
   color: var(--muted);
   padding: 8px 12px;
   font-size: 12px;
@@ -2315,7 +2315,7 @@ progress::-moz-progress-bar {
 }
 .btn,
 .icon-button {
-  border-radius: 13px;
+  border-radius: 12px;
   min-height: 44px;
 }
 .btn {
@@ -2342,7 +2342,7 @@ textarea {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  border-radius: 11px;
+  border-radius: 12px;
   font-size: 16px;
 }
 input:focus,
@@ -2355,9 +2355,140 @@ textarea:focus {
   outline-offset: 3px;
 }
 .modal {
+  overflow: hidden;
+  padding: 0;
   background: var(--glass-strong);
   border: 1px solid var(--glass-edge);
   border-radius: 28px 28px 0 0;
+}
+.modal-view {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+  min-height: 0;
+}
+.modal-view[hidden] {
+  display: none !important;
+}
+.modal-view > .modal-head {
+  flex-shrink: 0;
+}
+.modal-view > .modal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: var(--space-6);
+}
+.modal-view > .modal-foot {
+  flex-shrink: 0;
+}
+.modal:has(.modal-view[data-presentation="screen"]:not([hidden])) {
+  width: min(960px, 100vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+.modal-view[data-presentation="screen"]:not([hidden]) {
+  height: 100%;
+}
+.sheet-menu {
+  display: grid;
+  gap: var(--space-2);
+}
+.sheet-menu .btn {
+  justify-content: flex-start;
+}
+.sheet-loading {
+  min-height: 120px;
+  padding: var(--space-6);
+  color: var(--muted);
+}
+.app-wordmark {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+.topbar {
+  justify-content: space-between;
+}
+.sync-status[data-state="attention"] {
+  color: var(--danger);
+}
+.sync-status[data-state="device"] i {
+  background: var(--gold);
+}
+.sync-status[data-state="saving"] i {
+  background: var(--accent);
+}
+.status-toast {
+  position: fixed;
+  bottom: max(100px, calc(env(safe-area-inset-bottom) + 88px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+  background: var(--glass-strong);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+}
+.featured-workout {
+  padding: var(--space-6);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  background: linear-gradient(130deg, var(--accent-soft), var(--glass-strong));
+  box-shadow: var(--shadow);
+}
+.featured-workout h2 {
+  font-size: 24px;
+  margin: var(--space-2) 0;
+}
+.featured-workout .btn {
+  width: 100%;
+  margin-top: var(--space-4);
+}
+.workout-home .plan-workouts-link {
+  align-self: flex-end;
+}
+button.exercise-prescription {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: var(--space-2) 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.logger-actions {
+  justify-content: flex-end;
+}
+.logger-actions > .btn:first-child[aria-label="Progression"] {
+  margin-right: auto;
+}
+.metric-chart,
+.set-table {
+  backdrop-filter: none;
+  background: var(--surface);
+  border-radius: 12px;
+}
+.glass-card .glass-card {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  border: 0;
 }
 .modal-head,
 .modal-foot,
@@ -2992,14 +3123,14 @@ textarea:focus {
 @media (prefers-reduced-motion: no-preference) {
   .glass-card,
   .metric-chart {
-    animation: neo-fade-in 220ms ease both;
+    animation: neo-fade-in var(--motion-content) ease both;
   }
   .btn:active,
   .icon-button:active {
     filter: brightness(0.96);
   }
   .chart-bar {
-    transition: opacity 160ms ease;
+    transition: opacity var(--motion-control) ease;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3080,5 +3211,18 @@ textarea:focus {
   .comparison-track,
   .muscle-meter {
     border: 1px solid CanvasText;
+  }
+}
+
+@media (max-width: 767px) {
+  .modal-view > .modal-body {
+    padding: var(--space-4);
+  }
+  .modal:has(.modal-view[data-presentation="screen"]:not([hidden])) {
+    width: 100vw;
+    margin: 0;
+  }
+  .featured-workout {
+    padding: var(--space-4);
   }
 }

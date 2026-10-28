@@ -166,11 +166,11 @@ for (const width of [360, 390])
       .selectOption("active-rest");
     // Closing the sheet does not implicitly accept the edit.
     await dialog
-      .getByRole("button", { name: "Close dialog", exact: true })
+      .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
       .click();
     await page
       .getByRole("dialog")
-      .getByRole("button", { name: "Close dialog", exact: true })
+      .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
       .click();
     expect((await data(page)).programs[0].phase).toBe("deload");
     dialog = await edit(page);

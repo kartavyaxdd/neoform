@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import * as D from "../../src/domain";
 import { fixture } from "./v2-fixture";
@@ -175,9 +176,7 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Minimize workout", exact: true })
       .click();
-    await page
-      .getByRole("button", { name: "Toggle theme", exact: true })
-      .click();
+    await toggleTheme(page);
     await page
       .getByRole("button", { name: `View program ${p.name}`, exact: true })
       .click();

@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import * as D from "../../src/domain";
 import { fixture } from "./v2-fixture";
@@ -112,7 +113,7 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Start workout", exact: true })
       .click();
-    await page.getByRole("button", { name: "Info", exact: true }).click();
+    await page.getByRole("button", { name: /^Watch tutorial for / }).click();
     const dialog = page.getByRole("dialog");
     await expect(
       dialog.getByRole("tab", { name: "Instructions", exact: true }),
@@ -141,7 +142,7 @@ for (const width of [360, 390, 1440])
     });
     const header = await dialog.locator(".modal-head").boundingBox(),
       close = await dialog
-        .getByRole("button", { name: "Close dialog", exact: true })
+        .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
         .boundingBox();
     expect(close!.x).toBeLessThan(header!.x + header!.width / 2);
     await page.keyboard.press("Escape");
@@ -160,9 +161,7 @@ for (const width of [360, 390, 1440])
       await page.evaluate(() => document.fonts.check('16px "DM Sans"')),
     ).toBe(true);
     await context.setOffline(false);
-    await page
-      .getByRole("button", { name: "Toggle theme", exact: true })
-      .click();
+    await toggleTheme(page);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     expect(
       await page.evaluate(

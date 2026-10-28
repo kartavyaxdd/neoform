@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { readData } from "./storage-client";
@@ -91,10 +92,8 @@ test("large backup restores through the logger, survives offline reload and expo
     await navigator.serviceWorker.ready;
   });
   await context.setOffline(true);
-  await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
-  await expect(page.locator(".sync-status")).toHaveText(
-    "Offline · saved on device",
-  );
+  await toggleTheme(page);
+  await expect(page.locator(".sync-status")).toHaveText("Saved on device");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await context.setOffline(false);

@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { readData, writeData } from "./storage-client";
@@ -78,25 +79,19 @@ for (const width of [360, 390, 1440])
       path: `${process.env.NEOFORM_QA_OUTPUT}/lift-progress-${width}.png`,
       animations: "disabled",
     });
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await expect(
       page.getByRole("button", { name: "Compare this lift", exact: true }),
     ).toBeFocused();
     if (width === 390) {
-      await page
-        .getByRole("button", { name: "Toggle theme", exact: true })
-        .click();
-      await page
-        .getByRole("button", { name: "Compare this lift", exact: true })
-        .click();
+      await toggleTheme(page);
+      await open();
       await page.screenshot({
         path: `${process.env.NEOFORM_QA_OUTPUT}/lift-progress-dark.png`,
         animations: "disabled",
       });
       await page
-        .getByRole("button", { name: "Close dialog", exact: true })
+        .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
         .click();
       await page.evaluate(async () => {
         await navigator.serviceWorker.ready;

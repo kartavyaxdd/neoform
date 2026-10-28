@@ -219,9 +219,7 @@ for (const width of [360, 390, 1440])
         key,
       ),
     ).toBe(false);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: "Workout", exact: true }).click();
     await page
       .getByRole("button", { name: "Start Weekly QA", exact: true })
@@ -244,7 +242,7 @@ for (const width of [360, 390, 1440])
     expect((await (await readData(page)).json()).data).toEqual(saved);
     for (let i = 0; i < 3; i++)
       await page
-        .getByRole("button", { name: "Close dialog", exact: true })
+        .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
         .last()
         .click();
     await page.getByRole("button", { name: "More", exact: true }).click();

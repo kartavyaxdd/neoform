@@ -92,7 +92,7 @@ test("Hevy rejects invalid UTF-8 and oversized files; cancelling a 360px preview
     }),
   ).toBe(true);
   await page.screenshot({ path: ".planning/hevy-import-360.png" });
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   expect(await data(page)).toEqual(before);
 });
 

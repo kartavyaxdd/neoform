@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { closeSheets } from "./premium-controls";
 import * as D from "../../src/domain";
 import { fixture } from "./v2-fixture";
 import { readData, writeData } from "./storage-client";
@@ -58,9 +59,7 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("region", { name: "Next-set advice", exact: true }),
     ).toContainText("Effort is unknown");
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await closeSheets(page);
     await page
       .getByLabel("Barbell bench press set 1 RIR", { exact: true })
       .fill("0");
@@ -110,10 +109,8 @@ for (const width of [360, 390, 1440])
     );
     expect(saved.draft!.exercises[0].coachingContext).toBeUndefined();
     expect(saved.coachingEvents ?? []).toEqual([]);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
-    await page.getByRole("button", { name: "Info", exact: true }).click();
+    await closeSheets(page);
+    await page.getByRole("button", { name: /^Watch tutorial for / }).click();
     await page
       .getByRole("button", { name: "Lift progress", exact: true })
       .click();

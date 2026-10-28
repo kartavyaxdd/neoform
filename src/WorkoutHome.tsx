@@ -43,8 +43,8 @@ export function WorkoutHome({
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const exercises = [...D.catalog, ...s.customExercises];
   const active = s.programs.find((p) => !p.archived);
+  const nextWorkout = active && D.nextWorkout(active, s.sessions);
   function program(p: D.Program, open = false) {
-    const next = p.workouts.indexOf(D.nextWorkout(p, s.sessions));
     return (
       <details
         className={"program-card grouped " + (p.archived ? "archived" : "")}
@@ -76,44 +76,49 @@ export function WorkoutHome({
           <ChevronDown size={18} />
         </summary>
         <div className="program-days">
-          {p.workouts.map((w, i) => (
-            <button
-              className="workout-row"
-              key={w.id}
-              onClick={() => start(w, p)}
-              disabled={p.archived}
-              aria-label={`Start ${w.name}`}
-            >
-              <span>
-                <b>{w.name}</b>
-                <small className="program-exercise-names">
-                  {w.exercises
-                    .map(
-                      (t) => exercises.find((x) => x.id === t.exerciseId)?.name,
-                    )
-                    .filter(Boolean)
-                    .join(", ")}
-                </small>
-                <span className="program-muscle-tags">
-                  {[
-                    ...new Set(
-                      w.exercises
-                        .map(
-                          (t) =>
-                            exercises.find((x) => x.id === t.exerciseId)
-                              ?.muscle,
-                        )
-                        .filter(Boolean),
-                    ),
-                  ].map((m) => (
-                    <small key={m}>{m}</small>
-                  ))}
+          {p.workouts
+            .filter(
+              (w) =>
+                !!s.draft || p.id !== active?.id || w.id !== nextWorkout?.id,
+            )
+            .map((w) => (
+              <button
+                className="workout-row"
+                key={w.id}
+                onClick={() => start(w, p)}
+                disabled={p.archived}
+                aria-label={`Start ${w.name}`}
+              >
+                <span>
+                  <b>{w.name}</b>
+                  <small className="program-exercise-names">
+                    {w.exercises
+                      .map(
+                        (t) =>
+                          exercises.find((x) => x.id === t.exerciseId)?.name,
+                      )
+                      .filter(Boolean)
+                      .join(", ")}
+                  </small>
+                  <span className="program-muscle-tags">
+                    {[
+                      ...new Set(
+                        w.exercises
+                          .map(
+                            (t) =>
+                              exercises.find((x) => x.id === t.exerciseId)
+                                ?.muscle,
+                          )
+                          .filter(Boolean),
+                      ),
+                    ].map((m) => (
+                      <small key={m}>{m}</small>
+                    ))}
+                  </span>
                 </span>
-              </span>
-              {open && i === next && <span className="next-tag">Next</span>}
-              <ArrowRight size={18} />
-            </button>
-          ))}
+                <ArrowRight size={18} />
+              </button>
+            ))}
         </div>
         {!p.archived && (
           <button className="btn" onClick={() => reviewProgram(p)}>
@@ -263,6 +268,36 @@ export function WorkoutHome({
         })}
       </div>
       <div className="home-groups">
+        {s.draft && (
+          <button
+            className="group-row resume-row featured-workout"
+            aria-label="Resume session"
+            onClick={() => start()}
+          >
+            <Dumbbell size={20} />
+            <span>
+              <b>Resume workout</b>
+              <small>{s.draft.name}</small>
+            </span>
+            <ArrowRight size={20} />
+          </button>
+        )}
+        {!s.draft && active && nextWorkout && (
+          <section className="featured-workout" aria-label="Next workout">
+            <span className="eyebrow">UP NEXT · WEEK {active.currentWeek}</span>
+            <h2>{nextWorkout.name}</h2>
+            <p className="caption">
+              {nextWorkout.exercises.length} exercises · {active.name}
+            </p>
+            <Button
+              variant="primary"
+              title={`Start ${nextWorkout.name}`}
+              onClick={() => start(nextWorkout, active)}
+            >
+              Preview workout <ArrowRight size={18} />
+            </Button>
+          </section>
+        )}
         <button
           className="text-button plan-workouts-link"
           onClick={() => setPlanner(true)}
@@ -278,20 +313,6 @@ export function WorkoutHome({
               }}
             />
           </Modal>
-        )}
-        {s.draft && (
-          <button
-            className="group-row resume-row"
-            aria-label="Resume session"
-            onClick={() => start()}
-          >
-            <Dumbbell size={20} />
-            <span>
-              <b>Resume session</b>
-              <small>{s.draft.name}</small>
-            </span>
-            <ArrowRight size={20} />
-          </button>
         )}
         {date !== D.today() && (
           <section>
@@ -322,9 +343,6 @@ export function WorkoutHome({
         <section>
           <div className="group-heading">
             <h2>Active Program</h2>
-            {active && (
-              <small className="current-week">Week {active.currentWeek}</small>
-            )}
           </div>
           {active ? (
             program(active, true)

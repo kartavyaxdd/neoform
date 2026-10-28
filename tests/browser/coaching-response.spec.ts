@@ -113,9 +113,7 @@ for (const width of [360, 390, 1440])
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     // Exit the logger without changing its durable draft, then rehearse old-format backup compatibility.
     await page
       .getByRole("button", { name: "Session options", exact: true })

@@ -1,3 +1,4 @@
+import { exerciseOptions } from "./premium-controls";
 import { readData, writeData } from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
@@ -92,9 +93,7 @@ for (const width of [360, 390])
       }),
     ).toBeEnabled();
     await page.keyboard.press("Escape");
-    await page
-      .getByRole("button", { name: "Exercise options", exact: true })
-      .click();
+    await exerciseOptions(page);
     await page.getByRole("button", { name: "Readiness", exact: true }).click();
     await expect(
       page.getByRole("button", { name: "Save current readiness", exact: true }),
@@ -154,9 +153,7 @@ for (const width of [360, 390])
         exact: true,
       })
       .click();
-    await page
-      .getByRole("button", { name: "Exercise options", exact: true })
-      .click();
+    await exerciseOptions(page);
     await page.getByRole("button", { name: "Readiness", exact: true }).click();
     await expect(
       page.getByText("Pre-session observations stay as recorded", {
@@ -219,9 +216,7 @@ test("read-only readiness labels each muscle's own age", async ({ page }) => {
   await page
     .getByRole("button", { name: "Resume session", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page.getByRole("button", { name: "Readiness", exact: true }).click();
   await expect(
     page.getByText("General context reported", { exact: false }),

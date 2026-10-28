@@ -1,3 +1,4 @@
+import { exerciseOptions } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import * as D from "../../src/domain";
 import { fixture } from "./v2-fixture";
@@ -111,9 +112,7 @@ for (const width of [360, 390, 1440])
     expect(saved.sessions).toEqual(state.sessions);
     expect(saved.draft).toBeNull();
     expect(saved.programs[0].workouts[0].exercises[0].nextRows).toBeTruthy();
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page
       .getByRole("button", { name: "Review program", exact: true })
       .click();
@@ -121,9 +120,7 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("button", { name: "Review next targets", exact: true }),
     ).toBeDisabled();
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     const approved = structuredClone(saved.programs);
     await page
       .getByRole("button", { name: "Start Substitution QA", exact: true })
@@ -140,9 +137,7 @@ for (const width of [360, 390, 1440])
         exact: true,
       })
       .click();
-    await page
-      .getByRole("button", { name: "Exercise options", exact: true })
-      .click();
+    await exerciseOptions(page);
     await page.getByRole("button", { name: "Swap", exact: true }).click();
     await page.getByText("Available equipment", { exact: true }).click();
     expect(

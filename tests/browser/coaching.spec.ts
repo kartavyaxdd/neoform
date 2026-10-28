@@ -156,9 +156,7 @@ for (const width of [360, 390])
       path: `${process.env.NEOFORM_QA_OUTPUT}/weekly-coaching-${width}.png`,
       animations: "disabled",
     });
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByText("Your data, portable.", { exact: true }).click();
     const download = page.waitForEvent("download");

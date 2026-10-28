@@ -1,12 +1,18 @@
 import {
   cloneElement,
+  createContext,
   isValidElement,
+  Suspense,
+  useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useId,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { X, ChevronLeft } from "lucide-react";
 export function Button({
   children,
@@ -96,61 +102,156 @@ export function Num({
     />
   );
 }
+const SheetContext = createContext<{
+  host: HTMLDialogElement | null;
+  setChildren: React.Dispatch<React.SetStateAction<number>>;
+} | null>(null);
+
+export function SheetNavigation({
+  pages,
+  title,
+  render,
+  close,
+  back,
+  presentation,
+  depth = 0,
+}: {
+  pages: string[];
+  title: (page: string) => string;
+  render: (page: string) => ReactNode;
+  close: () => void;
+  back: () => void;
+  presentation: (page: string) => "screen" | "sheet";
+  depth?: number;
+}) {
+  const page = pages[depth];
+  return (
+    <Modal
+      title={title(page)}
+      close={depth ? back : close}
+      presentation={presentation(page)}
+    >
+      {render(page)}
+      {depth + 1 < pages.length && (
+        <SheetNavigation
+          pages={pages}
+          title={title}
+          render={render}
+          close={close}
+          back={back}
+          presentation={presentation}
+          depth={depth + 1}
+        />
+      )}
+    </Modal>
+  );
+}
+
 export function Modal({
   title,
   children,
   close,
+  back,
   footer,
   presentation = "sheet",
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  back?: () => void;
   footer?: ReactNode;
   presentation?: "screen" | "sheet";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  useEffect(() => {
+  const parent = useContext(SheetContext);
+  const [host, setHost] = useState<HTMLDialogElement | null>(null);
+  const attach = useCallback((node: HTMLDialogElement | null) => {
+    ref.current = node;
+    setHost(node);
+  }, []);
+  const [childCount, setChildren] = useState(0);
+  const root = parent?.host ?? host;
+  const register = parent?.setChildren;
+  useLayoutEffect(() => {
     const trigger = document.activeElement as HTMLElement | null;
     const dialog = ref.current;
-    dialog?.showModal();
+    if (register) register((n) => n + 1);
+    else dialog?.showModal();
     return () => {
-      dialog?.close();
-      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+      if (register) register((n) => n - 1);
+      else dialog?.close();
+      queueMicrotask(() => {
+        if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+      });
     };
-  }, []);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (dialog?.open && !dialog.contains(document.activeElement))
-      dialog
-        .querySelector<HTMLElement>("input,select,textarea,button")
-        ?.focus();
-  }, [title]);
+  }, [register]);
+  useLayoutEffect(() => {
+    if (!root?.open) return;
+    const view = root.querySelector<HTMLElement>(".modal-view:not([hidden])");
+    const heading = view?.querySelector("h2[id]");
+    if (heading) root.setAttribute("aria-labelledby", heading.id);
+    root.classList.toggle(
+      "screen-modal",
+      view?.dataset.presentation === "screen",
+    );
+    if (view && !view.contains(document.activeElement))
+      view.querySelector<HTMLElement>("input,select,textarea,button")?.focus();
+  });
+  const view = (
+    <SheetContext.Provider value={{ host: root, setChildren }}>
+      <section
+        className="modal-view"
+        hidden={childCount > 0}
+        data-presentation={presentation}
+        aria-labelledby={titleId}
+      >
+        <div className="modal-head">
+          <h2 id={titleId}>{title}</h2>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={parent || back ? "Back" : "Close dialog"}
+            data-sheet-close
+            onClick={back ?? close}
+          >
+            {parent || back || presentation === "screen" ? (
+              <ChevronLeft size={23} />
+            ) : (
+              <X size={20} />
+            )}
+          </button>
+        </div>
+        <div className="modal-body">
+          <Suspense
+            fallback={
+              <p className="sheet-loading" role="status">
+                Opening…
+              </p>
+            }
+          >
+            {children}
+          </Suspense>
+        </div>
+        {footer && <div className="modal-foot">{footer}</div>}
+      </section>
+    </SheetContext.Provider>
+  );
+  if (parent) return root ? createPortal(view, root) : null;
   return (
     <dialog
-      ref={ref}
-      className={`modal ${presentation === "screen" ? "screen-modal" : ""}`}
-      onCancel={close}
-      aria-labelledby={titleId}
+      ref={attach}
+      className="modal"
+      onCancel={(event) => {
+        event.preventDefault();
+        ref.current
+          ?.querySelector<HTMLButtonElement>(
+            ".modal-view:not([hidden]) [data-sheet-close]",
+          )
+          ?.click();
+      }}
     >
-      <div className="modal-head">
-        <h2 id={titleId}>{title}</h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Close dialog"
-          onClick={close}
-        >
-          {presentation === "screen" ? (
-            <ChevronLeft size={23} />
-          ) : (
-            <X size={20} />
-          )}
-        </button>
-      </div>
-      <div className="modal-body">{children}</div>
-      {footer && <div className="modal-foot">{footer}</div>}
+      {view}
     </dialog>
   );
 }

@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { readData, writeData } from "./storage-client";
@@ -82,9 +83,7 @@ for (const width of [360, 390, 1440])
       page.getByRole("region", { name: "Chest work", exact: true }),
     ).toContainText("3 sets");
     await shot("weekly");
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: "Levels", exact: true }).click();
     await expect(
       page.getByRole("region", { name: "Chest weekly work", exact: true }),
@@ -95,9 +94,7 @@ for (const width of [360, 390, 1440])
       page.getByRole("heading", { name: "App & data", exact: true }),
     ).toBeVisible();
     await shot("more");
-    await page
-      .getByRole("button", { name: "Toggle theme", exact: true })
-      .click();
+    await toggleTheme(page);
     await page.getByRole("button", { name: "Dashboard", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await shot("dark");

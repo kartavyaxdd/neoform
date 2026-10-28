@@ -142,9 +142,7 @@ for (const width of [360, 390, 1440])
     expect(png.readUInt32BE(16)).toBe(1080);
     expect(png.readUInt32BE(20)).toBe(1920);
     expect(png.length).toBeGreaterThan(20000);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: "Workout", exact: true }).click();
     await page
       .getByRole("button", { name: `Start ${workout.name}`, exact: true })
@@ -168,9 +166,7 @@ for (const width of [360, 390, 1440])
     ).toBe("ambient");
     await expect(page.getByRole("dialog")).toContainText("controlled by iOS");
     await expect(page.locator(".sync-status")).toHaveText("Synced");
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.reload();
     await page
       .getByRole("button", { name: "Rest timer controls", exact: true })

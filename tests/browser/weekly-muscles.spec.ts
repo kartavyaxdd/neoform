@@ -145,9 +145,7 @@ for (const width of [360, 390, 1440])
     expect(await importHistoryBackup(await exportHistoryBackup(saved))).toEqual(
       saved,
     );
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: /Weekly review/ }).click();
     const after = page.getByRole("article", {
       name: "Back weekly review",

@@ -9,7 +9,10 @@ import {
 } from "./aiCoach";
 import { geminiProofSchema } from "./aiProof";
 import { GeminiKeySettings } from "./GeminiKeySettings";
-import { AiWizard } from "./AiWizard";
+import { deferredView } from "./deferredView";
+const AiWizard = deferredView(() =>
+  import("./AiWizard").then((m) => ({ default: m.AiWizard })),
+);
 import { Button, Field } from "./ui";
 type Message = { role: "user" | "assistant"; text: string; reply?: CoachReply };
 export function GeminiCoach({ focus }: { focus?: CoachFocus }) {

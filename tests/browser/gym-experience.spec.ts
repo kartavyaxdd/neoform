@@ -171,9 +171,7 @@ for (const width of [360, 390, 1440])
       reordered.programs[0].workouts[0].exercises.map((e: any) => e.exerciseId),
     ).toEqual(["db-row", "bench"]);
     expect(reordered.sessions).toEqual(state.sessions);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page
       .getByRole("tab", { name: "Barbell bench press", exact: true })
       .click();
@@ -358,9 +356,7 @@ for (const width of [360, 390, 1440])
         }),
       ).toHaveCount(0);
     }
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     await context.setOffline(true);
     await page.reload();

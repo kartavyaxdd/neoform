@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { readData } from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
@@ -89,7 +90,7 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
     .getByRole("button", { name: "Start workout", exact: true })
     .click();
   await capture("logger");
-  await page.getByRole("button", { name: "Info", exact: true }).click();
+  await page.getByRole("button", { name: /^Watch tutorial for / }).click();
   await capture("video", true);
   await expect(page.getByRole("dialog").locator("iframe")).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -181,7 +182,7 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
   expect(saved.programs[0]).toEqual(before.programs[0]);
   expect(saved.programs[1].workouts[0].exercises[0].sets).toBe(3);
   expect(saved.sessions).toEqual(before.sessions);
-  await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
+  await toggleTheme(page);
   await capture("home-dark");
   await page
     .getByRole("button", { name: "Start Full body B", exact: true })

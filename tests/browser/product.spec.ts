@@ -1,3 +1,4 @@
+import { toggleTheme, exerciseOptions } from "./premium-controls";
 import { test, expect, type Page } from "@playwright/test";
 import type { State } from "../../src/domain";
 import fs from "node:fs";
@@ -61,7 +62,7 @@ async function sessionNotes(page: Page) {
     .click();
 }
 async function closeSheet(page: Page) {
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
 }
 async function programOptions(page: Page) {
   await page
@@ -174,9 +175,15 @@ test("registration → onboarding → edited program → log/undo/resume → his
   ).toBeVisible();
   await expect(page.getByRole("cell", { name: "60 × 10" })).toBeVisible();
   // The configured superset context is not a valid straight-barbell e1RM.
-  const recordRow=page.getByRole("row").filter({has:page.getByRole("cell",{name:/Barbell back squat.*superset/})});
-  await expect(recordRow.getByRole("cell",{name:"—",exact:true})).toBeVisible();
-  await expect(page.getByRole("cell",{name:"80 kg",exact:true})).toHaveCount(0);
+  const recordRow = page.getByRole("row").filter({
+    has: page.getByRole("cell", { name: /Barbell back squat.*superset/ }),
+  });
+  await expect(
+    recordRow.getByRole("cell", { name: "—", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "80 kg", exact: true }),
+  ).toHaveCount(0);
   await page.getByText("View chart data", { exact: true }).click();
   await expect(
     page.getByRole("columnheader", { name: "Week of" }),
@@ -405,7 +412,7 @@ test("custom exercise, past workout edit/delete, responsive dark/light screensho
   await synced(page);
   expect((await json(page)).data.sessions).toHaveLength(0);
   await nav(page, "Overview");
-  await page.getByRole("button", { name: "Toggle theme" }).click();
+  await toggleTheme(page);
   for (const width of [1440, 768, 390, 360]) {
     await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
     await expect
@@ -420,12 +427,12 @@ test("custom exercise, past workout edit/delete, responsive dark/light screensho
       fullPage: true,
     });
   }
-  await page.getByRole("button", { name: "Toggle theme" }).click();
+  await toggleTheme(page);
   await page.screenshot({
     path: "evidence/screenshots/overview-light-360.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Toggle theme" }).click();
+  await toggleTheme(page);
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
@@ -501,14 +508,18 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       .getByRole("button", { name: "Finish session", exact: true })
       .click();
     // Explicit fresh reports are required; skipped defaults do not prove recovery.
-    await page.getByLabel("Systemic fatigue",{exact:true}).selectOption("1");
-    await page.getByLabel("Unscoped pain",{exact:true}).selectOption("no");
-    await page.getByText("Other unscoped observations",{exact:true}).click();
-    await page.getByLabel("Unscoped soreness",{exact:true}).selectOption("1");
-    await page.getByRole("button", { name: "Save completed workout" }).click();
     await page
-      .getByRole("button", { name: "Close dialog", exact: true })
+      .getByLabel("Systemic fatigue", { exact: true })
+      .selectOption("1");
+    await page.getByLabel("Unscoped pain", { exact: true }).selectOption("no");
+    await page
+      .getByText("Other unscoped observations", { exact: true })
       .click();
+    await page
+      .getByLabel("Unscoped soreness", { exact: true })
+      .selectOption("1");
+    await page.getByRole("button", { name: "Save completed workout" }).click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await synced(page);
     await nav(page, "Overview");
   }
@@ -521,9 +532,7 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       exact: true,
     }),
   });
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   const options = page.getByRole("dialog");
   await options.getByText("Progression note", { exact: true }).click();
   await expect(options).toContainText("61.5 kg × 8 reps");
@@ -564,9 +573,7 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
       exact: true,
     }),
   });
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Swap", exact: true })
@@ -581,9 +588,7 @@ test("progression acceptance, working/warmup distinctions, substitutions, resume
   await page
     .getByRole("tab", { name: "Barbell back squat", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page.getByRole("button", { name: "Use RPE", exact: true }).click();
   await closeSheet(page);
   await page

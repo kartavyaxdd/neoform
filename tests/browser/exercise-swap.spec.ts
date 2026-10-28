@@ -121,9 +121,7 @@ for (const width of [360, 390, 1440])
       "src",
       /youtube-nocookie.com\/embed\/5CECBjd7HLQ/,
     );
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

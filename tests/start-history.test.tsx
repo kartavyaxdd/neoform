@@ -32,6 +32,7 @@ vi.mock("react", async () => {
 });
 vi.mock("../src/store", () => ({
   useStore: () => fixture.snapshot,
+  deviceSaveAcknowledged: () => undefined,
   change: (fn: any) => {
     fixture.snapshot = {
       ...fixture.snapshot,
@@ -39,7 +40,10 @@ vi.mock("../src/store", () => ({
     };
   },
   saveChange: async (fn: any) => {
-    fixture.snapshot = { ...fixture.snapshot, box: { ...fixture.snapshot.box, data: fn(fixture.snapshot.box.data) } };
+    fixture.snapshot = {
+      ...fixture.snapshot,
+      box: { ...fixture.snapshot.box, data: fn(fixture.snapshot.box.data) },
+    };
     return true;
   },
   request: vi.fn(),

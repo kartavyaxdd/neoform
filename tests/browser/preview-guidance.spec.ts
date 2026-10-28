@@ -133,7 +133,7 @@ for (const width of [360, 390, 1440])
       ).toBeVisible();
       if (offline) {
         await expect(page.locator(".sync-status")).toHaveText(
-          "Offline · saved on device",
+          "Saved on device",
         );
         await page.reload();
         await expect(

@@ -14,7 +14,8 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const args = process.argv.slice(2);
 const browserMatch = process.env.NEOFORM_QA_BROWSER_MATCH;
-if (browserMatch && !/^[a-z0-9-]+\.spec\.ts$/.test(browserMatch))
+const browserMatches = browserMatch ? browserMatch.split(",") : [];
+if (browserMatches.some((name) => !/^[a-z0-9-]+\.spec\.ts$/.test(name)))
   throw Error("Invalid focused browser spec.");
 if (
   args.some(
@@ -367,7 +368,7 @@ try {
       launch([
         path.join(root, "node_modules/@playwright/test/cli.js"),
         "test",
-        ...(browserMatch ? [browserMatch] : []),
+        ...browserMatches,
       ]),
     );
   }

@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import { readData, writeData } from "./storage-client";
@@ -190,9 +191,7 @@ for (const width of [360, 390, 1440])
     expect((await (await readData(page)).json()).data.timer.remaining).toBe(
       restBefore + 30,
     );
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await expect(
       page.getByRole("button", { name: "Rest timer controls", exact: true }),
     ).toHaveAttribute("data-paused", "true");
@@ -207,9 +206,7 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Resume timer", exact: true })
       .click();
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await expect(
       page.getByRole("button", { name: "Rest timer controls", exact: true }),
     ).toHaveAttribute(
@@ -285,7 +282,11 @@ for (const width of [360, 390, 1440])
     await page.getByText("Detailed training insights", { exact: true }).click();
     await expect(page.locator(".chart .trendline").first()).toHaveCSS(
       "animation-name",
-      "neo-chart-draw",
+      "neo-fade-in",
+    );
+    await expect(page.locator(".chart .trendline").first()).toHaveCSS(
+      "animation-duration",
+      "0.18s",
     );
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(page.locator(".chart .trendline").first()).toHaveCSS(
@@ -337,9 +338,7 @@ for (const width of [360, 390, 1440])
       .getByRole("button", { name: "Review previous week", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toContainText(/1 completed workout/);
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await capture("more");
     await page.getByText("Training preferences", { exact: true }).click();
@@ -354,9 +353,7 @@ for (const width of [360, 390, 1440])
       (await (await readData(page)).json()).data.settings.autoAdvance,
     ).toBe(false);
     await page.getByText("Training preferences", { exact: true }).click();
-    await page
-      .getByRole("button", { name: "Toggle theme", exact: true })
-      .click();
+    await toggleTheme(page);
     await capture("more-dark");
     await page.getByRole("button", { name: "Dashboard", exact: true }).click();
     await capture("dashboard-dark");

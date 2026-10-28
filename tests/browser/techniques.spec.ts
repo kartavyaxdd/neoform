@@ -1,3 +1,4 @@
+import { exerciseOptions } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import type { State } from "../../src/domain";
@@ -17,9 +18,7 @@ for (const technique of [
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
-    await page
-      .getByRole("button", { name: "Exercise options", exact: true })
-      .click();
+    await exerciseOptions(page);
     await page
       .getByLabel("Training technique", { exact: true })
       .selectOption(technique);
@@ -35,9 +34,7 @@ for (const technique of [
     }
     if (technique === "giant-set")
       await page.getByLabel("Total rep goal", { exact: true }).fill("25");
-    await page
-      .getByRole("button", { name: "Close dialog", exact: true })
-      .click();
+    await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
     const count = await page.locator(".set-row").count();
     for (let i = 1; i <= count; i++)
       await page
@@ -66,7 +63,7 @@ for (const technique of [
         .getByRole("button", { name: "Append raw bout", exact: true })
         .click();
       await page
-        .getByRole("button", { name: "Close dialog", exact: true })
+        .getByRole("button", { name: /^(?:Back|Close dialog)$/ })
         .click();
     }
     await expect(page.locator(".sync-status")).toHaveText("Synced");
@@ -121,9 +118,7 @@ test("manual superset pairs round IDs and can unpair both untouched exercises", 
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page
     .getByLabel("Training technique", { exact: true })
     .selectOption("superset");
@@ -147,7 +142,7 @@ test("manual superset pairs round IDs and can unpair both untouched exercises", 
   await page
     .getByRole("button", { name: "Unpair unlogged exercises", exact: true })
     .click();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
   const after = await page.evaluate(
@@ -163,23 +158,49 @@ test("manual superset pairs round IDs and can unpair both untouched exercises", 
   expect(after.sessions).toEqual(data.sessions);
 });
 
-test("manual pre-exhaust orders isolation before its compound and persists paired metadata", async ({page})=>{
- await page.setViewportSize({width:390,height:844});await fixture(page);
- await page.getByRole('button',{name:'Start Full body A',exact:true}).click();
- await page.getByRole('tab',{name:'Dumbbell lateral raise',exact:true}).click();
- await page.getByRole('button',{name:'Exercise options',exact:true}).click();
- await page.getByLabel('Training technique',{exact:true}).selectOption('pre-exhaust');
- await page.getByLabel('Partner exercise',{exact:true}).selectOption({label:'Barbell bench press'});
- await page.getByRole('button',{name:'Apply technique to unlogged exercise',exact:true}).click();
- await page.getByRole('button',{name:'Close dialog',exact:true}).click();
- await expect(page.locator('.sync-status')).toHaveText('Synced');await page.reload();
- const data=await page.evaluate(async()=>((await(await fetch('/api/data')).json()) as {data:State}).data);
- const first=data.draft!.exercises.findIndex(e=>e.exerciseId==='lateral');
- const pair=data.draft!.exercises.slice(first,first+2);
- expect(pair.map(e=>e.exerciseId)).toEqual(['lateral','bench']);
- expect(pair.every(e=>e.technique==='pre-exhaust' && !!e.protocol)).toBe(true);
- expect(pair[0].sets[0].groupId).toBe(pair[1].sets[0].groupId);
- expect(data.sessions).toHaveLength(0);
+test("manual pre-exhaust orders isolation before its compound and persists paired metadata", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fixture(page);
+  await page
+    .getByRole("button", { name: "Start Full body A", exact: true })
+    .click();
+  await page
+    .getByRole("tab", { name: "Dumbbell lateral raise", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Exercise options", exact: true })
+    .click();
+  await page
+    .getByLabel("Training technique", { exact: true })
+    .selectOption("pre-exhaust");
+  await page
+    .getByLabel("Partner exercise", { exact: true })
+    .selectOption({ label: "Barbell bench press" });
+  await page
+    .getByRole("button", {
+      name: "Apply technique to unlogged exercise",
+      exact: true,
+    })
+    .click();
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await expect(page.locator(".sync-status")).toHaveText("Synced");
+  await page.reload();
+  const data = await page.evaluate(
+    async () =>
+      ((await (await fetch("/api/data")).json()) as { data: State }).data,
+  );
+  const first = data.draft!.exercises.findIndex(
+    (e) => e.exerciseId === "lateral",
+  );
+  const pair = data.draft!.exercises.slice(first, first + 2);
+  expect(pair.map((e) => e.exerciseId)).toEqual(["lateral", "bench"]);
+  expect(pair.every((e) => e.technique === "pre-exhaust" && !!e.protocol)).toBe(
+    true,
+  );
+  expect(pair[0].sets[0].groupId).toBe(pair[1].sets[0].groupId);
+  expect(data.sessions).toHaveLength(0);
 });
 
 test("manual myorep activation and mini bouts survive refresh in five-column mobile rows", async ({
@@ -190,9 +211,7 @@ test("manual myorep activation and mini bouts survive refresh in five-column mob
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page
     .getByLabel("Training technique", { exact: true })
     .selectOption("myoreps");
@@ -208,7 +227,7 @@ test("manual myorep activation and mini bouts survive refresh in five-column mob
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await expect(page.locator(".set-row")).toHaveCount(1);
   await expect(
     page.locator(".set-row").first().locator(":scope > *"),
@@ -233,7 +252,7 @@ test("manual myorep activation and mini bouts survive refresh in five-column mob
   await page
     .getByRole("button", { name: "Append raw bout", exact: true })
     .click();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await expect(page.locator(".set-row")).toHaveCount(2);
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
@@ -242,9 +261,7 @@ test("manual myorep activation and mini bouts survive refresh in five-column mob
     page.getByLabel("Barbell back squat set 2 reps", { exact: true }),
   ).toHaveValue("5");
   await expect(page.locator(".set-number").nth(1)).toHaveText("M");
-  await page
-    .getByRole("button", { name: "Exercise options", exact: true })
-    .click();
+  await exerciseOptions(page);
   await page.getByText("Progression note", { exact: false }).click();
   await expect(
     page.getByRole("button", { name: "Accept for unlogged sets", exact: true }),
@@ -255,7 +272,7 @@ test("manual myorep activation and mini bouts survive refresh in five-column mob
       exact: true,
     }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await mkdir("evidence/techniques/screenshots", { recursive: true });
   await page.screenshot({
     path: "evidence/techniques/screenshots/technique-360.png",

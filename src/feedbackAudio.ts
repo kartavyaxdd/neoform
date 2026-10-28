@@ -1,8 +1,8 @@
 let context: AudioContext | undefined;
 export const DEFAULT_REST_CHIME_VOLUME = 0.65;
-export function unlockFeedbackAudio() {
-  // Mixable, non-exclusive audio where the browser supports Audio Session.
-  // Do not request playback/microphone focus or try to bypass the mute switch.
+export function prepareFeedbackAudio() {
+  // Keep idle setup mixable too; creating the audio system can be slow.
+  // No oscillator is started until the user's existing sound preference calls for it.
   try {
     const session = (
       navigator as Navigator & { audioSession?: { type: string } }
@@ -13,7 +13,16 @@ export function unlockFeedbackAudio() {
   }
   try {
     if (!context || context.state === "closed") context = new AudioContext();
-    if (context.state !== "running") void context.resume().catch(() => {});
+  } catch {
+    /* Audio is optional. */
+  }
+}
+export function unlockFeedbackAudio() {
+  // Resume only through the user's timer interaction. Never bypass mute settings.
+  prepareFeedbackAudio();
+  try {
+    if (context && context.state !== "running")
+      void context.resume().catch(() => {});
   } catch {
     /* Audio is optional. */
   }

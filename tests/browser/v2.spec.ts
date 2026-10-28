@@ -1,3 +1,4 @@
+import { toggleTheme } from "./premium-controls";
 import { test, expect } from "@playwright/test";
 import { fixture } from "./v2-fixture";
 import type { State } from "../../src/domain";
@@ -44,7 +45,7 @@ test("logger offers a video Info sheet", async ({ page }) => {
   await page
     .getByRole("button", { name: "Start Full body A", exact: true })
     .click();
-  await page.getByRole("button", { name: "Info", exact: true }).click();
+  await page.getByRole("button", { name: /^Watch tutorial for / }).click();
   await expect(
     page
       .getByRole("dialog")
@@ -102,7 +103,7 @@ test("compact light Workout home, one selected exercise, refresh/undo and lazy v
   await expect(
     page.getByRole("heading", { name: "Barbell back squat", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Info", exact: true }).click();
+  await page.getByRole("button", { name: /^Watch tutorial for / }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator("iframe")).toHaveCount(0);
   await expect(
@@ -125,7 +126,7 @@ test("compact light Workout home, one selected exercise, refresh/undo and lazy v
   const popup = await popupPromise;
   await expect(popup).toHaveURL("https://www.youtube.com/watch?v=gMgvBspQ9lk");
   await popup.close();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
   await page
@@ -168,7 +169,7 @@ test("personal video validation, save/reload and unmapped exercise Info", async 
     .fill("https://youtu.be/vcBig73ojpE");
   await dialog.getByRole("button", { name: "Save video link" }).click();
   await expect(dialog.getByRole("status")).toContainText("saved");
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
   await page.reload();
   await page
@@ -354,7 +355,7 @@ test("REAL model generation -> editable preview -> explicit save/activate -> rel
       .boundingBox();
     expect(box!.y + box!.height).toBeLessThan(650);
   }
-  await page.getByRole("button", { name: "Info", exact: true }).click();
+  await page.getByRole("button", { name: /^Watch tutorial for / }).click();
   await captures("video-info");
   await page
     .getByRole("button", { name: "Play demonstration", exact: true })
@@ -395,7 +396,7 @@ test("REAL model generation -> editable preview -> explicit save/activate -> rel
   );
   await direct.close();
   await page.screenshot({ path: "evidence/v2/video-playing-390.png" });
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await page
     .getByLabel("Barbell back squat set 1 weight", { exact: true })
     .fill("60");
@@ -411,7 +412,7 @@ test("REAL model generation -> editable preview -> explicit save/activate -> rel
   await page
     .getByRole("button", { name: "Save completed workout", exact: true })
     .click();
-  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Back|Close dialog)$/ }).click();
   await page
     .getByRole("navigation", { name: "Mobile navigation" })
     .getByRole("button", { name: "Workout", exact: true })
@@ -471,7 +472,7 @@ test("REAL model generation -> editable preview -> explicit save/activate -> rel
   expect(saved.programs[1]).toEqual(before.programs[0]);
   expect(saved.sessions).toEqual(before.sessions);
   expect(saved.programs[0].workouts).toHaveLength(2);
-  await page.getByRole("button", { name: "Toggle theme", exact: true }).click();
+  await toggleTheme(page);
   await page.screenshot({ path: "evidence/v2/workout-home-dark-390.png" });
   await page
     .getByRole("button", { name: /Start / })

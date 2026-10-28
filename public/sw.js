@@ -1,5 +1,7 @@
 // Public shell only. Auth and private API responses never enter Cache Storage.
 const CACHE = "neoform-shell-v1";
+// Build fills the public asset list so lazy views also open on an installed offline shell.
+const CHUNKS = [];
 self.addEventListener("install", (event) =>
   event.waitUntil(
     (async () => {
@@ -11,12 +13,15 @@ self.addEventListener("install", (event) =>
       ].map((m) => m[1]);
       await cache.put("/", res);
       await cache.addAll([
-        "/manifest.webmanifest",
-        "/icon.svg",
-        "/icon-192.png",
-        "/icon-512.png",
-        "/base.css",
-        ...paths,
+        ...new Set([
+          "/manifest.webmanifest",
+          "/icon.svg",
+          "/icon-192.png",
+          "/icon-512.png",
+          "/base.css",
+          ...paths,
+          ...CHUNKS,
+        ]),
       ]);
       await self.skipWaiting();
     })(),
