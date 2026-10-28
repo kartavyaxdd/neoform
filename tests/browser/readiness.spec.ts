@@ -1,4 +1,4 @@
-import { exerciseOptions } from "./premium-controls";
+import { exerciseOptions, closeSheets } from "./premium-controls";
 import { readData, writeData } from "./storage-client";
 import { test, expect } from "@playwright/test";
 import { fixture, currentReadiness } from "./v2-fixture";
@@ -163,7 +163,7 @@ for (const width of [360, 390])
     await expect(
       page.getByRole("button", { name: "Save current readiness", exact: true }),
     ).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    await closeSheets(page);
     await page
       .getByRole("button", { name: "Finish session", exact: true })
       .click();

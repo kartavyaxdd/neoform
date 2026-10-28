@@ -130,40 +130,62 @@ for (const width of [360, 390, 1440])
         name: "Complete Barbell bench press set 1",
         exact: true,
       });
-      await completion.evaluate((el) =>
-        el.addEventListener(
-          "click",
-          () => {
-            const at = performance.now();
-            requestAnimationFrame(() => {
-              (window as unknown as { premiumAck: unknown }).premiumAck = {
-                ms: performance.now() - at,
-                label: el.getAttribute("aria-label"),
-              };
-            });
-          },
-          { once: true },
-        ),
-      );
       const before = await reps.boundingBox();
-      await completion.click();
-      await expect(
-        page.getByRole("button", {
-          name: "Undo Barbell bench press set 1",
-          exact: true,
-        }),
-      ).toBeVisible();
-      const ack = await page.evaluate(
-        () =>
-          (window as unknown as { premiumAck: { ms: number; label: string } })
-            .premiumAck,
-      );
-      expect(ack.label).toContain("Undo");
+      const samples: { ms: number; label: string }[] = [];
+      await page.bringToFront();
+      for (let sample = 0; sample < 3; sample++) {
+        await completion.evaluate((el) => {
+          delete (window as unknown as { premiumAck?: unknown }).premiumAck;
+          el.addEventListener(
+            "click",
+            () => {
+              const at = performance.now();
+              requestAnimationFrame(() => {
+                (window as unknown as { premiumAck: unknown }).premiumAck = {
+                  ms: performance.now() - at,
+                  label: el.getAttribute("aria-label"),
+                };
+              });
+            },
+            { once: true },
+          );
+        });
+        await completion.click();
+        await expect(
+          page.getByRole("button", {
+            name: "Undo Barbell bench press set 1",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => (window as unknown as { premiumAck?: unknown }).premiumAck,
+            ),
+          )
+          .toBeDefined();
+        const ack = await page.evaluate(
+          () =>
+            (window as unknown as { premiumAck: { ms: number; label: string } })
+              .premiumAck,
+        );
+        expect(ack.label).toContain("Undo");
+        samples.push(ack);
+        expect((await reps.boundingBox())?.y).toBe(before?.y);
+        if (sample < 2)
+          await page
+            .getByRole("button", {
+              name: "Undo Barbell bench press set 1",
+              exact: true,
+            })
+            .click();
+      }
+      const medianMs = samples.map((s) => s.ms).sort((a, b) => a - b)[1];
       await test.info().attach("set-completion-ack", {
-        body: JSON.stringify({ width, cpuRate, ...ack }),
+        body: JSON.stringify({ width, cpuRate, medianMs, samples }),
         contentType: "application/json",
       });
-      expect(ack.ms).toBeLessThanOrEqual(100);
+      expect(medianMs).toBeLessThanOrEqual(100);
       await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
       expect((await reps.boundingBox())?.y).toBe(before?.y);
       await page

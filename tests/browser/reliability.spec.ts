@@ -397,9 +397,7 @@ test("finishing workout B recommends workout C", async ({ page }) => {
   expect(put.status()).toBe(200);
   await page.reload();
   await expect(page.locator(".sync-status")).toHaveText("Synced");
-  await expect(
-    page.locator(".program-card").first().locator(".featured-workout h2"),
-  ).toHaveText("Full body C");
+  await expect(page.locator(".featured-workout h2")).toHaveText("Full body C");
 });
 test("acknowledged offline work never replays over a newer edit", async ({
   page,
@@ -413,19 +411,8 @@ test("acknowledged offline work never replays over a newer edit", async ({
   await toggleTheme(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        document
-          .querySelector(".sync-status")
-          ?.textContent?.includes("saved on device") ||
-        document
-          .querySelector(".sync-status")
-          ?.textContent?.includes("sync paused")
-          ? 1
-          : 0,
-      ),
-    )
-    .toBeGreaterThan(0);
+    .poll(() => page.locator(".sync-status").getAttribute("data-state"))
+    .toBe("device");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.unroute("**/api/storage/**");

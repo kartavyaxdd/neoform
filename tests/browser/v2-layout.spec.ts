@@ -71,7 +71,11 @@ test("responsive home/logger/video/wizard/review and explicit save preserve exis
           const box = await page
             .getByLabel(`Barbell back squat set ${set} weight`, { exact: true })
             .boundingBox();
-          expect(box!.y + box!.height).toBeLessThan(650);
+          const visibleBottom = (await nav.isVisible())
+            ? (await nav.boundingBox())!.y
+            : height;
+          expect(box!.y).toBeGreaterThanOrEqual(0);
+          expect(box!.y + box!.height).toBeLessThan(visibleBottom - 16);
           geometry.push({ width, set, bottom: box!.y + box!.height });
         }
       }
