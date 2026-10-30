@@ -56,20 +56,64 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByLabel("Gemini API key", { exact: true }),
     ).toHaveValue("");
-    await page.route("**/api/ai/test", (r) =>
-      r.fulfill({ json: { connected: true, model: GEMINI_MODEL } }),
-    );
+    let replyAllowed = false;
+    await page.route("**/api/ai/test", (r) => {
+      const data = r.request().postDataJSON();
+      expect(Object.keys(data)).toEqual(["mode"]);
+      return data.mode === "reply"
+        ? replyAllowed
+          ? r.fulfill({
+              json: {
+                connected: true,
+                model: GEMINI_MODEL,
+                reply: true,
+                proof,
+              },
+            })
+          : r.fulfill({
+              status: 422,
+              json: {
+                error:
+                  "Google did not accept this credential (ACCESS_TOKEN_TYPE_UNSUPPORTED). Copy a complete Gemini API key from Google AI Studio.",
+                code: "GEMINI_KEY_TYPE_UNSUPPORTED",
+              },
+            })
+        : r.fulfill({ json: { connected: true, model: GEMINI_MODEL } });
+    });
     await page
       .getByRole("button", { name: "Test connection", exact: true })
       .click();
     await expect(
       page.getByRole("status").filter({ hasText: "Key accepted" }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Test reply", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "ACCESS_TOKEN_TYPE_UNSUPPORTED",
+    );
+    await expect(
+      page.getByRole("link", { name: "Open Google AI Studio", exact: true }),
+    ).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
+    await expect(
+      page.getByLabel("Gemini API key", { exact: true }),
+    ).toHaveValue("");
+    replyAllowed = true;
+    await page.getByRole("button", { name: "Test reply", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Reply received" }),
+    ).toContainText("No workout data was sent");
     const calls: any[] = [];
     let held: Route | undefined;
     await page.route("**/api/ai/chat", async (r) => {
       const data = r.request().postDataJSON();
       calls.push(data);
+      if (data.question === "Connection failure")
+        return r.fulfill({
+          status: 422,
+          json: {
+            error: "Google rejected this API key.",
+            code: "GEMINI_KEY_REJECTED",
+          },
+        });
       if (data.question === "Wait for cancellation") {
         held = r;
         return;
@@ -113,6 +157,23 @@ for (const width of [360, 390, 1440])
       .getByRole("button", { name: "Review my program", exact: true })
       .click();
     await expect(page.locator(".gemini-message.assistant")).toHaveCount(2);
+    await page
+      .getByLabel("Ask your coach", { exact: true })
+      .fill("Connection failure");
+    await page.getByRole("button", { name: "Ask Gemini", exact: true }).click();
+    await expect(page.locator(".gemini-coach > details")).toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(page.getByRole("alert")).toContainText(
+      "Google rejected this API key",
+    );
+    await expect(
+      page
+        .locator(".gemini-coach")
+        .getByLabel("Gemini API key", { exact: true }),
+    ).toHaveValue("");
+    await page.getByText("Gemini connection", { exact: true }).click();
     expect(calls[1].conversation).toHaveLength(2);
     await page
       .getByLabel("Ask your coach", { exact: true })

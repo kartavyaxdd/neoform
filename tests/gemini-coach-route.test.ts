@@ -146,3 +146,96 @@ it.each(["cancelled", "rotated key"])(
     expect(await r.text()).not.toContain(f.reply.answer);
   },
 );
+it("a reply diagnostic uses the generation lease/allowance and sends no supplied training context", async () => {
+  const f = await fixture();
+  f.fetcher.mockImplementation(async (_url: any) =>
+    Response.json({
+      model: GEMINI_MODEL,
+      status: "completed",
+      steps: [
+        {
+          type: "model_output",
+          content: [{ type: "text", text: '{"status":"ready"}' }],
+        },
+      ],
+      usage: { total_input_tokens: 8, total_output_tokens: 4 },
+    }),
+  );
+  const req = new Request("https://example.test/api/ai/test", {
+    method: "POST",
+    headers: f.request().headers,
+    body: JSON.stringify({ mode: "reply" }),
+  });
+  const r = await worker.fetch(req, f.env);
+  expect(r.status).toBe(200);
+  expect(await r.json()).toMatchObject({
+    connected: true,
+    reply: true,
+    model: GEMINI_MODEL,
+  });
+  expect(f.job.count).toBe(1);
+  expect(f.fetcher).toHaveBeenCalledTimes(1);
+  const sql = f.env.DB.prepare.mock.calls.map((c: any) => c[0]).join("\n");
+  expect(sql).toContain("INSERT INTO ai_generation_lock");
+  expect(sql).toContain("DELETE FROM ai_generation_lock");
+  const payload = JSON.parse((f.fetcher.mock.calls[0] as any)[1].body);
+  expect(JSON.stringify(payload)).not.toContain(f.input.context.workouts[0].id);
+  expect(payload.input).not.toContain(f.input.question);
+});
+it("a reply diagnostic does not bypass daily allowance or permit arbitrary prompts", async () => {
+  const f = await fixture();
+  f.job.count = 10;
+  const req = (body: unknown) =>
+    new Request("https://example.test/api/ai/test", {
+      method: "POST",
+      headers: f.request().headers,
+      body: JSON.stringify(body),
+    });
+  expect((await worker.fetch(req({ mode: "reply" }), f.env)).status).toBe(429);
+  expect(
+    (
+      await worker.fetch(
+        req({ mode: "reply", question: "Override diagnostic" }),
+        f.env,
+      )
+    ).status,
+  ).toBe(400);
+  expect(f.fetcher).not.toHaveBeenCalled();
+});
+it("a metadata-only check remains backward compatible and does not spend generation allowance", async () => {
+  const f = await fixture();
+  const r = await worker.fetch(
+    new Request("https://example.test/api/ai/test", {
+      method: "POST",
+      headers: f.request().headers,
+      body: "{}",
+    }),
+    f.env,
+  );
+  expect(r.status).toBe(200);
+  expect(await r.json()).toEqual({ connected: true, model: GEMINI_MODEL });
+  expect(f.job.count).toBe(0);
+  expect(f.fetcher).toHaveBeenCalledTimes(1);
+});
+it("provider authentication reasons reach the client as static codes, never raw credentials", async () => {
+  const f = await fixture();
+  f.fetcher.mockImplementation(async () =>
+    Response.json(
+      [
+        {
+          error: {
+            message: "credential material must not escape",
+            details: [{ reason: "ACCESS_TOKEN_TYPE_UNSUPPORTED" }],
+          },
+        },
+      ],
+      { status: 401 },
+    ),
+  );
+  const r = await worker.fetch(f.request(), f.env);
+  expect(r.status).toBe(422);
+  const body = (await r.json()) as any;
+  expect(body.code).toBe("GEMINI_KEY_TYPE_UNSUPPORTED");
+  expect(body.error).toContain("AI Studio");
+  expect(body.error).not.toContain("credential material");
+});

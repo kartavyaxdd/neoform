@@ -8,6 +8,7 @@ import {
   generateGemini,
   coachGemini,
   testGemini,
+  probeGemini,
 } from "./gemini";
 export interface GeminiEnv {
   DB: D1Database;
@@ -117,7 +118,10 @@ export async function geminiRoute(
   const input = chat
     ? parse(coachInputSchema, raw)
     : test
-      ? parse(z.object({}).strict(), raw)
+      ? parse(
+          z.object({ mode: z.enum(["metadata", "reply"]).optional() }).strict(),
+          raw,
+        )
       : parse(generationSchema, raw);
   const requestId =
     req.headers.get("X-Neoform-Generation") || crypto.randomUUID();
@@ -164,7 +168,8 @@ export async function geminiRoute(
         "Gemini key changed. Try again with the current connection.",
       );
   };
-  if (test) {
+  const replyTest = test && (input as { mode?: string }).mode === "reply";
+  if (test && !replyTest) {
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(15000)]);
     try {
       const result = await testGemini({ key, signal });
@@ -227,15 +232,17 @@ export async function geminiRoute(
     if (!active || active.cancelled || controller.signal.aborted)
       throw new GeminiFault(499, "Generation cancelled.");
     await keyCurrent();
-    const generated = chat
-      ? await coachGemini({ key, input, signal: controller.signal })
-      : await generateGemini({
-          key,
-          input: generationInput.parse(input),
-          trainingContext: (input as z.infer<typeof generationSchema>)
-            .trainingContext,
-          signal: controller.signal,
-        });
+    const generated = replyTest
+      ? await probeGemini({ key, signal: controller.signal })
+      : chat
+        ? await coachGemini({ key, input, signal: controller.signal })
+        : await generateGemini({
+            key,
+            input: generationInput.parse(input),
+            trainingContext: (input as z.infer<typeof generationSchema>)
+              .trainingContext,
+            signal: controller.signal,
+          });
     const finished = await env.DB.prepare(
       "SELECT cancelled FROM ai_generation_lock WHERE owner=?",
     )
@@ -244,6 +251,12 @@ export async function geminiRoute(
     if (!finished || finished.cancelled || controller.signal.aborted)
       throw new GeminiFault(499, "Generation cancelled.");
     await keyCurrent();
+    if (replyTest && profileId)
+      await env.DB.prepare(
+        "UPDATE profile_ai_keys SET verified_at=? WHERE profile_id=? AND encrypted=?",
+      )
+        .bind(Date.now(), profileId, stored.encrypted)
+        .run();
     return Response.json(generated);
   } catch (e) {
     if (req.signal.aborted) throw new GeminiFault(499, "Generation cancelled.");

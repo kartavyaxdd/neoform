@@ -18,6 +18,7 @@ export class GeminiFault extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
   ) {
     super(message);
   }
@@ -85,27 +86,81 @@ export async function decryptAccountKey(
   );
   return new TextDecoder().decode(plaintext);
 }
-async function boundedJson(response: Response, max = 262144) {
-  if (!response.ok) {
-    await response.body?.cancel();
-    if (response.status === 503)
-      throw new GeminiFault(
-        503,
-        "Gemini is temporarily unavailable. Try again later; no other model or provider was used.",
-      );
-    throw new GeminiFault(
-      response.status === 429
-        ? 429
-        : response.status === 401 || response.status === 403
-          ? 422
-          : 502,
-      response.status === 429
-        ? "Gemini quota reached. Try later."
-        : response.status === 401 || response.status === 403
-          ? "Gemini rejected this API key. Replace it in More settings."
-          : "Gemini could not generate a program. No fallback was used.",
+// Interpret only known signals. Raw provider messages can contain credentials,
+// project identifiers or arbitrary HTML, and never cross our response boundary.
+function providerFault(status: number, payload: any) {
+  const error = (Array.isArray(payload) ? payload[0] : payload)?.error;
+  const reasons = new Set(
+    Array.isArray(error?.details)
+      ? error.details.map((d: any) => d?.reason)
+      : [],
+  );
+  const message = typeof error?.message === "string" ? error.message : "";
+  if (reasons.has("ACCESS_TOKEN_TYPE_UNSUPPORTED"))
+    return new GeminiFault(
+      422,
+      "Google did not accept this credential (ACCESS_TOKEN_TYPE_UNSUPPORTED). Copy a complete Gemini API key from Google AI Studio and save it in Gemini connection.",
+      "GEMINI_KEY_TYPE_UNSUPPORTED",
     );
-  }
+  if (/reported as leaked|key.*blocked/i.test(message))
+    return new GeminiFault(
+      422,
+      "Google has blocked this key. Create a replacement in Google AI Studio and save it in Gemini connection.",
+      "GEMINI_KEY_BLOCKED",
+    );
+  if (reasons.has("SERVICE_DISABLED"))
+    return new GeminiFault(
+      422,
+      "The Gemini API is disabled for this Google project. Review its API access in Google AI Studio or Google Cloud; replacing the key alone may not resolve it.",
+      "GEMINI_API_DISABLED",
+    );
+  if (
+    [...reasons].some(
+      (r) => typeof r === "string" && /^API_KEY_.*_BLOCKED$/.test(r),
+    )
+  )
+    return new GeminiFault(
+      422,
+      "Google rejected this key's application or API restrictions. Use a key permitted to call the Gemini API from the NEOFORM server; review its restrictions in Google AI Studio.",
+      "GEMINI_KEY_RESTRICTED",
+    );
+  if (reasons.has("API_KEY_INVALID") || status === 401)
+    return new GeminiFault(
+      422,
+      "Google rejected this API key. Save a complete, active Gemini API key from Google AI Studio in Gemini connection.",
+      "GEMINI_KEY_REJECTED",
+    );
+  if (status === 403 || status === 402)
+    return new GeminiFault(
+      422,
+      "Google denied this key or project's Gemini access. Check the project's access, restrictions and quota status in Google AI Studio.",
+      "GEMINI_ACCESS_DENIED",
+    );
+  if (status === 429)
+    return new GeminiFault(
+      429,
+      "Google Gemini quota reached. Check this project's quota in Google AI Studio before retrying.",
+      "GEMINI_QUOTA",
+    );
+  if (status === 404)
+    return new GeminiFault(
+      503,
+      "The configured Gemini model is unavailable for this key. No other model or provider was used.",
+      "GEMINI_MODEL_UNAVAILABLE",
+    );
+  if (status === 503 || status === 500 || status === 502 || status === 504)
+    return new GeminiFault(
+      503,
+      "Gemini is temporarily unavailable. Try again later; no other model or provider was used.",
+      "GEMINI_UNAVAILABLE",
+    );
+  return new GeminiFault(
+    502,
+    "Google rejected the Gemini request. Test the connection before trying again. No fallback was used.",
+    "GEMINI_REQUEST_REJECTED",
+  );
+}
+async function responseJson(response: Response, max: number) {
   const reader = response.body?.getReader();
   if (!reader) throw new GeminiFault(502, "Gemini returned an empty response.");
   let size = 0;
@@ -131,6 +186,122 @@ async function boundedJson(response: Response, max = 262144) {
   } catch {
     throw new GeminiFault(502, "Gemini returned malformed JSON.");
   }
+}
+async function boundedJson(response: Response, max = 262144) {
+  if (!response.ok) {
+    let error: unknown;
+    try {
+      error = await responseJson(response, 16384);
+    } catch {
+      /* Untrusted/oversized errors get a static fallback. */
+    }
+    throw providerFault(response.status, error);
+  }
+  return responseJson(response, max);
+}
+
+function noToolText(response: any) {
+  if (
+    response.model !== GEMINI_MODEL ||
+    response.status !== "completed" ||
+    !Array.isArray(response.steps) ||
+    response.steps.some(
+      (s: any) => !["model_output", "thought"].includes(s?.type),
+    ) ||
+    (response.usage?.total_tool_use_tokens ?? 0) !== 0
+  )
+    throw new GeminiFault(
+      502,
+      "Gemini did not return a complete no-tool model response.",
+      "GEMINI_REPLY_INVALID",
+    );
+  const parts = response.steps
+    .filter((s: any) => s.type === "model_output")
+    .flatMap((s: any) => s.content || []);
+  if (
+    !parts.length ||
+    parts.some((p: any) => p?.type !== "text" || typeof p.text !== "string")
+  )
+    throw new GeminiFault(
+      502,
+      "Gemini returned unsupported non-text content.",
+      "GEMINI_REPLY_INVALID",
+    );
+  return parts.map((p: any) => p.text).join("");
+}
+
+// A tiny real inference check, independent of the owner's training data.
+export async function probeGemini({
+  key,
+  signal,
+  fetcher = fetch,
+}: {
+  key: string;
+  signal: AbortSignal;
+  fetcher?: typeof fetch;
+}) {
+  const response = await boundedJson(
+    await fetcher(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        signal,
+        body: JSON.stringify({
+          model: GEMINI_MODEL,
+          input:
+            'Connection diagnostic only. Return the JSON object {"status":"ready"}.',
+          stream: false,
+          store: false,
+          background: false,
+          response_format: {
+            type: "text",
+            mime_type: "application/json",
+            schema: {
+              type: "object",
+              properties: { status: { type: "string", enum: ["ready"] } },
+              required: ["status"],
+              additionalProperties: false,
+            },
+          },
+          generation_config: {
+            max_output_tokens: 128,
+            thinking_level: "minimal",
+            thinking_summaries: "none",
+          },
+        }),
+      },
+    ),
+  );
+  const text = noToolText(response);
+  let ready = false;
+  try {
+    ready = z
+      .object({ status: z.literal("ready") })
+      .strict()
+      .safeParse(JSON.parse(text)).success;
+  } catch {}
+  const proof = geminiProofSchema.safeParse({
+    provider: "gemini",
+    model: response.model,
+    inputTokens: response.usage?.total_input_tokens,
+    outputTokens: response.usage?.total_output_tokens,
+    toolCalls: 0,
+    toolsProvided: 0,
+    agentLoop: false,
+  });
+  if (!ready || !proof.success)
+    throw new GeminiFault(
+      502,
+      "Gemini did not return the expected diagnostic reply and usage evidence.",
+      "GEMINI_REPLY_INVALID",
+    );
+  return {
+    connected: true,
+    reply: true,
+    model: GEMINI_MODEL,
+    proof: proof.data,
+  };
 }
 // Google documents a JSON Schema subset; string lengths remain enforced by
 // the full generatedSchema/validateGenerated boundary after model output.

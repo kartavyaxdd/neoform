@@ -21,6 +21,7 @@ export function GeminiCoach({ focus }: { focus?: CoachFocus }) {
     [question, setQuestion] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [connectionOpen, setConnectionOpen] = useState(false),
     [generate, setGenerate] = useState(false);
   const pending = useRef<{ id: string; controller: AbortController } | null>(
     null,
@@ -86,6 +87,13 @@ export function GeminiCoach({ focus }: { focus?: CoachFocus }) {
       ]);
       setQuestion("");
     } catch (e) {
+      const failure = e as { status?: number; data?: { code?: string } };
+      if (
+        failure.status === 428 ||
+        failure.status === 422 ||
+        failure.data?.code?.startsWith("GEMINI_KEY_")
+      )
+        setConnectionOpen(true);
       if (!controller.signal.aborted)
         setError(
           (e as Error).name === "ZodError"
@@ -204,7 +212,11 @@ export function GeminiCoach({ focus }: { focus?: CoachFocus }) {
         </div>
       </form>
       {error && <p role="alert">{error}</p>}
-      <details className="panel">
+      <details
+        className="panel"
+        open={connectionOpen}
+        onToggle={(e) => setConnectionOpen(e.currentTarget.open)}
+      >
         <summary>Gemini connection</summary>
         <GeminiKeySettings />
       </details>

@@ -162,6 +162,50 @@ it("profiles require server authorization, keep original owner, isolate data, fe
   expect(
     (
       await call(
+        "/ai/test",
+        "POST",
+        { mode: "reply" },
+        cookie,
+        "public-workspace",
+      )
+    ).status,
+  ).toBe(428);
+  expect(
+    (
+      await call(
+        "/ai/test",
+        "POST",
+        { mode: "reply", question: "arbitrary prompt" },
+        cookie,
+        "public-workspace",
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await call(
+        "/ai/test",
+        "POST",
+        { mode: "other" },
+        cookie,
+        "public-workspace",
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await call(
+        "/ai/test",
+        "POST",
+        { mode: "reply" },
+        secondCookie,
+        "workspace-profile:abhishek",
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call(
         "/ai/key",
         "PUT",
         { key: aiKey },

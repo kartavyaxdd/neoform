@@ -557,6 +557,7 @@ export default {
           ? json(
               {
                 error: e.message,
+                ...(e instanceof GeminiFault && e.code ? { code: e.code } : {}),
                 ...(e instanceof ProfileFault
                   ? { accessMode: e.accessMode }
                   : {}),
