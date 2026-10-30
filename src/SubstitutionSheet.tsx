@@ -9,6 +9,7 @@ import {
   substituteExercise,
   defaultSwapEquipment,
   substitutePreview,
+  substitutionRecoveryWarning,
 } from "./substitutions";
 
 export function SubstitutionSheet({
@@ -24,7 +25,8 @@ export function SubstitutionSheet({
   onEditAdvanced?: () => void;
   onPreview?: (session: D.Session, id: string) => void;
 }) {
-  const state = useStore().box.data;
+  const snapshot = useStore(),
+    state = snapshot.box.data;
   const original = [...D.catalog, ...state.customExercises].find(
     (x) => x.id === entry.exerciseId,
   )!;
@@ -38,6 +40,7 @@ export function SubstitutionSheet({
     ),
     [selected, setSelected] = useState(""),
     [error, setError] = useState(""),
+    [reviewedRecovery, setReviewedRecovery] = useState<string | undefined>(),
     [busy, setBusy] = useState(false);
   const options = substitutionOptions(
       state,
@@ -47,6 +50,9 @@ export function SubstitutionSheet({
       scope,
     ),
     option = options.find((x) => x.exercise.id === selected);
+  const warning = option
+    ? substitutionRecoveryWarning(state, session, entry, option.exercise)
+    : null;
   async function apply() {
     setBusy(true);
     setError("");
@@ -59,6 +65,7 @@ export function SubstitutionSheet({
           available,
           reason,
           scope,
+          reviewedRecovery,
         });
         onPreview(result.session, result.entryId);
         return;
@@ -72,6 +79,7 @@ export function SubstitutionSheet({
           available,
           reason,
           scope,
+          reviewedRecovery,
         });
         id = result.entryId;
         return result.state;
@@ -79,7 +87,7 @@ export function SubstitutionSheet({
       if (saved) onDone(id);
       else
         setError(
-          "The swap could not be saved. Check sync status before retrying.",
+          "The swap could not be saved. Check the saving status for details before retrying.",
         );
     } catch (e) {
       setError((e as Error).message);
@@ -179,16 +187,53 @@ export function SubstitutionSheet({
               ? `Own logged reference: ${option.reference.session.date}. Previous performance in the logger uses matching setup and method.`
               : "No logged reference for this exercise."}
           </p>
+          {warning && (
+            <section
+              className="swap-recovery-warning"
+              aria-label="Recovery warning"
+            >
+              <h3>Recovery warning</h3>
+              <p>
+                This is a manual exercise choice, not a pain-free or recovery
+                recommendation. Swapping does not clear the reported concern.
+              </p>
+              <details>
+                <summary>Reported concerns</summary>
+                <ul>
+                  {warning.concerns.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </details>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={reviewedRecovery === warning.basis}
+                  onChange={(e) =>
+                    setReviewedRecovery(
+                      e.target.checked ? warning.basis : undefined,
+                    )
+                  }
+                />
+                I reviewed the warning and am choosing this exercise manually.
+              </label>
+            </section>
+          )}
           <Button
             variant="primary"
-            disabled={busy}
+            disabled={busy || (!!warning && reviewedRecovery !== warning.basis)}
             onClick={() => void apply()}
           >
-            Use substitute for this workout
+            {busy ? "Saving swap…" : "Use substitute for this workout"}
           </Button>
         </section>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert">
+          {error}
+          {snapshot.error ? ` ${snapshot.error}` : ""}
+        </p>
+      )}
       {onEditAdvanced && (
         <Button onClick={onEditAdvanced}>
           Edit advanced or linked exercise

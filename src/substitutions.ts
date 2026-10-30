@@ -4,6 +4,61 @@ import { recoveryTime } from "./readiness";
 
 export const substitutionFingerprint = (session: D.Session) =>
   canonical(session);
+// A manual substitution is not a recovery clearance. Bind acknowledgement to
+// the selected movement and actual reports, so a later concern needs review.
+export function substitutionRecoveryWarning(
+  state: D.State,
+  session: D.Session,
+  entry: D.Entry,
+  alternative: D.Exercise,
+  now = Date.now(),
+) {
+  const exercises = [...D.catalog, ...state.customExercises];
+  const concerns = [alternative.muscle, ...alternative.secondary].flatMap(
+    (muscle) => {
+      const status = D.recoveryStatus(
+        muscle,
+        state.sessions,
+        exercises,
+        now,
+        session.readiness,
+      );
+      return status.blocked ? status.evidence : [];
+    },
+  );
+  if (
+    entry.coachingContext?.skipReason === "pain" ||
+    session.feedback.pain === true ||
+    session.muscleFeedback?.some(
+      (m) =>
+        [alternative.muscle, ...alternative.secondary].includes(m.muscle) &&
+        m.pain === true,
+    )
+  )
+    concerns.push("This workout includes an applicable pain report.");
+  if (!concerns.length) return null;
+  return {
+    concerns: [...new Set(concerns)],
+    basis: canonical([
+      session.id,
+      entry.id,
+      alternative.id,
+      entry.coachingContext,
+      session.readiness,
+      session.feedback,
+      session.muscleFeedback,
+      state.sessions.map((s) => [
+        s.id,
+        s.date,
+        s.startedAt,
+        s.duration,
+        s.readiness,
+        s.feedback,
+        s.muscleFeedback,
+      ]),
+    ]),
+  };
+}
 export const defaultSwapEquipment = (state: D.State, entry?: D.Entry) => {
   const current =
     entry &&
@@ -70,6 +125,7 @@ export function substituteExercise(
     available: D.Exercise["equipment"][];
     reason: "busy" | "unavailable" | "preference";
     scope?: "similar" | "all";
+    reviewedRecovery?: string;
   },
   now = Date.now(),
 ) {
@@ -102,19 +158,14 @@ export function substituteExercise(
       "Edit advanced or linked sequences together instead of using a quick substitution.",
     );
   const exercises = [...D.catalog, ...state.customExercises];
-  if (
-    entry.coachingContext?.skipReason === "pain" ||
-    [option.exercise.muscle, ...option.exercise.secondary].some(
-      (muscle) =>
-        D.recoveryStatus(
-          muscle,
-          state.sessions,
-          exercises,
-          now,
-          session.readiness,
-        ).blocked,
-    )
-  )
+  const warning = substitutionRecoveryWarning(
+    state,
+    session,
+    entry,
+    option.exercise,
+    now,
+  );
+  if (warning && input.reviewedRecovery !== warning.basis)
     throw Error(
       "Review reported recovery concerns first. A substitution does not establish pain-free training.",
     );
@@ -138,10 +189,17 @@ export function substituteExercise(
     preference: "Personal preference",
   }[input.reason];
   replacement.notes =
-    `Substituted for ${original.name}. ${reason}. This workout only; establish a separate load reference.`.slice(
+    `Substituted for ${original.name}. ${reason}. This workout only; establish a separate load reference.${warning ? " Manual choice after recovery-warning review; the warning is not cleared." : ""}`.slice(
       0,
       2000,
     );
+  if (entry.coachingContext?.skipReason === "pain")
+    replacement.coachingContext = {
+      execution: "unknown",
+      rest: "unknown",
+      recordedAt: now,
+      skipReason: "pain",
+    };
   const retained = {
     ...entry,
     sets: completed,

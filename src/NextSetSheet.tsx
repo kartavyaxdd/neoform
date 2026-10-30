@@ -1,34 +1,23 @@
-import { useEffect, useState } from "react";
 import * as D from "./domain";
-import { useStore } from "./store";
-import { nextSetAdvice } from "./nextSetAdvice";
+import type { NextSetReview } from "./useNextSetReview";
 import { Button } from "./ui";
 
 export function NextSetSheet({
-  sessionId,
+  state,
+  session,
   entryId,
+  review,
   reviewTargets,
   reviewWorkout,
 }: {
-  sessionId: string;
+  state: D.State;
+  session: D.Session;
   entryId: string;
+  review: NextSetReview;
   reviewTargets: () => void;
   reviewWorkout: () => void;
 }) {
-  const state = useStore().box.data,
-    session = state.draft?.id === sessionId ? state.draft : null;
-  const [checkedBasis, setCheckedBasis] = useState<string | null>(null);
-  const [, refresh] = useState(0);
-  const timer = state.timer;
-  useEffect(() => {
-    if (!timer || timer.paused || timer.endAt <= Date.now()) return;
-    const id = setTimeout(
-      () => refresh((n) => n + 1),
-      Math.min(3600000, timer.endAt - Date.now() + 30),
-    );
-    return () => clearTimeout(id);
-  }, [timer?.id, timer?.endAt, timer?.paused]);
-  if (!session)
+  if (state.draft?.id !== session.id)
     return (
       <p role="status">
         The active workout changed. Close this sheet and open its current
@@ -40,14 +29,7 @@ export function NextSetSheet({
       (x) => x.id === entry?.exerciseId,
     );
   if (!entry || !ex) return <p>This exercise is no longer in the workout.</p>;
-  const unconfirmed = nextSetAdvice(state, session, entryId),
-    checked = checkedBasis === unconfirmed.basis;
-  const advice = checked
-    ? nextSetAdvice(state, session, entryId, {
-        execution: "consistent",
-        rest: "usual",
-      })
-    : unconfirmed;
+  const { advice, checked } = review;
   const next = entry.sets.find((t) => t.id === advice.nextSetId),
     plan = next?.prescription;
   const convention = entry.convention ?? ex.convention;
@@ -84,9 +66,7 @@ export function NextSetSheet({
           <input
             type="checkbox"
             checked={checked}
-            onChange={(e) =>
-              setCheckedBasis(e.target.checked ? unconfirmed.basis : null)
-            }
+            onChange={(e) => review.confirm(e.target.checked)}
           />
           The last completed set used usual rest and the same execution.
         </label>

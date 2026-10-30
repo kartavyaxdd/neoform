@@ -19,6 +19,23 @@ export type NextSetAdvice = {
   load?: number;
   basis: string;
 };
+export function nextSetHeadline(
+  advice: NextSetAdvice,
+  unit: "kg" | "lb",
+  convention: D.Exercise["convention"],
+) {
+  if (advice.kind === "load")
+    return `Review ${Number(D.displayLoad(advice.load!, convention, unit).toFixed(2))} ${convention === "machine-label" ? "label" : unit} next`;
+  return {
+    context: "Check rest & execution",
+    effort: "Report the last set’s RIR",
+    keep: "Keep the assigned row",
+    rest: "Rest before your next set",
+    manual: "Review the next set",
+    pause: "Pause and review recovery",
+    done: "Working sets complete",
+  }[advice.kind];
+}
 export function nextSetAdvice(
   state: D.State,
   session: D.Session,
@@ -29,7 +46,18 @@ export function nextSetAdvice(
   const entry = session.exercises.find((e) => e.id === entryId),
     exercises = [...D.catalog, ...state.customExercises],
     ex = exercises.find((x) => x.id === entry?.exerciseId);
-  const basis = canonical([session.id, entry, session.readiness]);
+  const basis = canonical([
+    session.id,
+    entry,
+    session.readiness,
+    session.feedback,
+    session.muscleFeedback,
+    session.exercises.map((e) => [
+      e.id,
+      e.exerciseId,
+      e.sets.filter((t) => t.done),
+    ]),
+  ]);
   const advice = (
     kind: NextSetAdvice["kind"],
     reason: string,
@@ -61,6 +89,7 @@ export function nextSetAdvice(
   if (
     (entry.technique && entry.technique !== "straight") ||
     entry.techniqueGroup ||
+    entry.protocol ||
     entry.repGoal ||
     entry.tempo ||
     entry.superset ||

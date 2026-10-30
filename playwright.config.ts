@@ -27,6 +27,7 @@ export default defineConfig({
             "weekly-muscles.spec.ts",
             "glass-ui.spec.ts",
             "exercise-swap.spec.ts",
+            "manual-swap-recovery.spec.ts",
             "premium-experience.spec.ts",
           ]
         : [
@@ -44,6 +45,7 @@ export default defineConfig({
             "weekly-muscles.spec.ts",
             "glass-ui.spec.ts",
             "exercise-swap.spec.ts",
+            "manual-swap-recovery.spec.ts",
             "premium-experience.spec.ts",
             "coaching.spec.ts",
             "readiness.spec.ts",

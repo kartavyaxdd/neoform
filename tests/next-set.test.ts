@@ -1,6 +1,6 @@
 import { it, expect } from "vitest";
 import * as D from "../src/domain";
-import { nextSetAdvice } from "../src/nextSetAdvice";
+import { nextSetAdvice, nextSetHeadline } from "../src/nextSetAdvice";
 import { liftProgressFixture } from "./lift-progress-fixture";
 const now = Date.parse("2026-10-25T12:00:00Z"),
   check = { execution: "consistent", rest: "usual" } as const;
@@ -154,14 +154,66 @@ it.each(["dose", "row context", "machine", "bodyweight"])(
     ).toBeUndefined();
   },
 );
-it.each(["group", "rep goal"])(
+it.each(["group", "rep goal", "protocol"])(
   "keeps ambiguous legacy %s metadata out of straight-set advice",
   (kind) => {
     const { state, session, entry } = fixture();
     if (kind === "group") entry.techniqueGroup = "legacy-group";
+    else if (kind === "protocol") entry.protocol = "Legacy linked group";
     else entry.repGoal = 50;
     expect(nextSetAdvice(state, session, entry.id, check, now).kind).toBe(
       "manual",
     );
   },
 );
+it("recomputes from each completed set, edits and Undo without rewriting assigned targets", () => {
+  const { state, session, entry } = fixture();
+  const plans = structuredClone(entry.sets.map((t) => t.prescription));
+  const first = nextSetAdvice(state, session, entry.id, check, now);
+  expect(first.kind).toBe("load");
+  Object.assign(entry.sets[1], {
+    done: true,
+    reps: 10,
+    rir: 3,
+    effortReported: true,
+  });
+  const second = nextSetAdvice(state, session, entry.id, check, now);
+  expect(second.kind).toBe("keep");
+  expect(second.nextSetId).toBe(entry.sets[2].id);
+  expect(second.basis).not.toBe(first.basis);
+  entry.sets[1].rir = 0;
+  expect(nextSetAdvice(state, session, entry.id, check, now).kind).toBe("load");
+  entry.sets[1].effortReported = false;
+  expect(nextSetAdvice(state, session, entry.id, check, now).kind).toBe(
+    "effort",
+  );
+  entry.sets[1].done = false;
+  expect(nextSetAdvice(state, session, entry.id, check, now)).toMatchObject({
+    kind: first.kind,
+    nextSetId: first.nextSetId,
+    load: first.load,
+  });
+  entry.sets.forEach((t) => (t.done = true));
+  expect(nextSetAdvice(state, session, entry.id, check, now).kind).toBe("done");
+  expect(entry.sets.map((t) => t.prescription)).toEqual(plans);
+});
+it("invalidates confirmation after order or another completed exercise changes", () => {
+  const { state, session, entry } = fixture();
+  const first = nextSetAdvice(state, session, entry.id, check, now);
+  session.exercises.unshift(
+    D.createEntry(D.catalog.find((e) => e.id === "curl")!),
+  );
+  const second = nextSetAdvice(state, session, entry.id, check, now);
+  expect(second.basis).not.toBe(first.basis);
+  session.exercises[0].sets[0].done = true;
+  expect(nextSetAdvice(state, session, entry.id, check, now).basis).not.toBe(
+    second.basis,
+  );
+});
+it("formats a live load cue using the current display unit without changing canonical loads", () => {
+  const { state, session, entry } = fixture();
+  const advice = nextSetAdvice(state, session, entry.id, check, now);
+  expect(nextSetHeadline(advice, "kg", "total")).toBe("Review 45 kg next");
+  expect(nextSetHeadline(advice, "lb", "total")).toContain("99.21 lb");
+  expect(advice.load).toBe(45);
+});

@@ -34,6 +34,8 @@ import { ReadinessSheet } from "./ReadinessSheet";
 import { CoachSheet } from "./CoachSheet";
 import { LiftProgress } from "./LiftProgressScreen";
 import { NextSetSheet } from "./NextSetSheet";
+import { useNextSetReview } from "./useNextSetReview";
+import { nextSetHeadline } from "./nextSetAdvice";
 import { SubstitutionSheet } from "./SubstitutionSheet";
 import { ExerciseThumbnail } from "./ExerciseThumbnail";
 import { giantProgress } from "./techniques";
@@ -71,6 +73,11 @@ export function SessionLogger({
   const program = data.programs.find((p) => p.id === s.programId);
   const tabs = useRef<HTMLDivElement>(null);
   const current = s.exercises.find((x) => x.id === selected) || s.exercises[0];
+  const nextSetReview = useNextSetReview(
+    data,
+    s,
+    history ? undefined : current?.id,
+  );
   const [undo, setUndo] = useState<{ item: Removal; until: number } | null>(
       null,
     ),
@@ -209,6 +216,9 @@ export function SessionLogger({
             e,
             ex,
           );
+          const nextPlan = e.sets.find(
+            (t) => t.id === nextSetReview?.advice.nextSetId,
+          )?.prescription;
           return (
             <section
               className="log-exercise"
@@ -595,6 +605,34 @@ export function SessionLogger({
                   </SwipeRow>
                 ))}
               </div>
+              {!history &&
+                data.coaching?.enabled !== false &&
+                nextSetReview &&
+                e.sets.some((t) => t.done && t.kind === "working") && (
+                  <button
+                    type="button"
+                    className="live-next-set"
+                    aria-label="Live next-set guidance"
+                    onClick={() => setSheet("Next set advice")}
+                  >
+                    <Sparkles size={17} aria-hidden="true" />
+                    <span>
+                      <strong role="status">
+                        {nextSetHeadline(
+                          nextSetReview.advice,
+                          unit,
+                          e.convention || ex.convention,
+                        )}
+                      </strong>
+                      <small>
+                        {nextPlan
+                          ? `Assigned: ${fmt(D.displayLoad(nextPlan.weight, e.convention || ex.convention, unit))} ${(e.convention || ex.convention) === "machine-label" ? "label" : unit} × ${nextPlan.min}–${nextPlan.max} · ${nextPlan.rir} RIR`
+                          : "Review current performance"}
+                      </small>
+                    </span>
+                    <ChevronRight size={17} aria-hidden="true" />
+                  </button>
+                )}
               {!history && data.settings.celebrations !== false && (
                 <LiveRecordBadge
                   sessionId={s.id}
@@ -793,8 +831,10 @@ export function SessionLogger({
                       />
                     ) : sheet === "Next set advice" ? (
                       <NextSetSheet
-                        sessionId={s.id}
+                        state={data}
+                        session={s}
                         entryId={e.id}
+                        review={nextSetReview!}
                         reviewTargets={() => setSheet("Targets")}
                         reviewWorkout={() => setSheet("Next workout coach")}
                       />

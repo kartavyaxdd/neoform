@@ -53,6 +53,11 @@ for (const width of [360, 390, 1440])
     await page
       .getByRole("button", { name: "Resume session", exact: true })
       .click();
+    const cue = page.getByRole("button", {
+      name: "Live next-set guidance",
+      exact: true,
+    });
+    await expect(cue).toContainText("Report the last set’s RIR");
     await page
       .getByRole("button", { name: "Progression", exact: true })
       .click();
@@ -63,6 +68,7 @@ for (const width of [360, 390, 1440])
     await page
       .getByLabel("Barbell bench press set 1 RIR", { exact: true })
       .fill("0");
+    await expect(cue).toContainText("Check rest & execution");
     await expect(page.locator(".sync-status")).toHaveText("Synced");
     await page
       .getByRole("button", { name: "Progression", exact: true })
@@ -79,6 +85,15 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("region", { name: "Next-set advice", exact: true }),
     ).toContainText("Review 45 kg for the next set");
+    await closeSheets(page);
+    await expect(cue).toContainText("Review 45 kg next");
+    await cue.click();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "The last completed set used usual rest and the same execution.",
+        exact: true,
+      }),
+    ).toBeChecked();
     await page
       .getByRole("checkbox", {
         name: "The last completed set used usual rest and the same execution.",
@@ -110,6 +125,58 @@ for (const width of [360, 390, 1440])
     expect(saved.draft!.exercises[0].coachingContext).toBeUndefined();
     expect(saved.coachingEvents ?? []).toEqual([]);
     await closeSheets(page);
+    // The live surface follows the latest set and timer without reopening a sheet.
+    await page
+      .getByLabel("Barbell bench press set 2 reps", { exact: true })
+      .fill("10");
+    await page
+      .getByLabel("Barbell bench press set 2 RIR", { exact: true })
+      .fill("3");
+    const input = page.getByLabel("Barbell bench press set 3 reps", {
+      exact: true,
+    });
+    const beforeY = (await input.boundingBox())!.y;
+    await page.clock.install();
+    await page
+      .getByRole("button", {
+        name: "Complete Barbell bench press set 2",
+        exact: true,
+      })
+      .click();
+    await expect(cue).toContainText("Rest before your next set");
+    expect((await input.boundingBox())!.y).toBeCloseTo(beforeY, 0);
+    await page.clock.fastForward(125000);
+    await expect(cue).toContainText("Check rest & execution");
+    await cue.click();
+    await page
+      .getByRole("checkbox", {
+        name: "The last completed set used usual rest and the same execution.",
+        exact: true,
+      })
+      .check();
+    await closeSheets(page);
+    await expect(cue).toContainText("Keep the assigned row");
+    await page.screenshot({
+      path: `${process.env.NEOFORM_QA_OUTPUT}/live-next-set-${width}.png`,
+      animations: "disabled",
+    });
+    await page
+      .getByLabel("Barbell bench press set 2 RIR", { exact: true })
+      .fill("");
+    await expect(cue).toContainText("Report the last set’s RIR");
+    await page
+      .getByRole("button", {
+        name: "Undo Barbell bench press set 2",
+        exact: true,
+      })
+      .click();
+    await expect(cue).toContainText("Check rest & execution");
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
+    const current = (await (await readData(page)).json()).data as D.State;
+    expect(current.draft!.exercises[0].sets.map((t) => t.prescription)).toEqual(
+      entry.sets.map((t) => t.prescription),
+    );
+    expect(current.programs).toEqual(state.programs);
     await page.getByRole("button", { name: /^Watch tutorial for / }).click();
     await page
       .getByRole("button", { name: "Lift progress", exact: true })

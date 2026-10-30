@@ -2478,6 +2478,47 @@ button.exercise-prescription {
 .logger-actions > .btn:first-child[aria-label="Progression"] {
   margin-right: auto;
 }
+.live-next-set {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.live-next-set > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.live-next-set > span {
+  flex: 1;
+  min-width: 0;
+}
+.live-next-set strong,
+.live-next-set small {
+  display: block;
+}
+.live-next-set strong {
+  font-size: 13px;
+}
+.live-next-set small {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.swap-recovery-warning {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
 .metric-chart,
 .set-table {
   backdrop-filter: none;

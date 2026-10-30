@@ -1,12 +1,14 @@
 import { it, expect } from "vitest";
 import * as D from "../src/domain";
 import { editState } from "../src/stateEdit";
+import { nextSetAdvice } from "../src/nextSetAdvice";
 import {
   substitutionOptions,
   substituteExercise,
   substitutionFingerprint,
   defaultSwapEquipment,
   substitutePreview,
+  substitutionRecoveryWarning,
 } from "../src/substitutions";
 it("keeps the current equipment type available for a same-equipment swap", () => {
   const state = fixture(),
@@ -226,6 +228,142 @@ it("does not bypass a reported assisting-muscle recovery concern", () => {
       reason: "busy",
     }),
   ).toThrow(/recovery/);
+});
+it("permits a reviewed manual Y-raise swap without clearing recovery or inventing a load", () => {
+  const state = fixture(),
+    now = Date.now();
+  const y = {
+    ...D.catalog.find((e) => e.id === "lateral")!,
+    id: "qa-y-raise",
+    name: "Standing Y Raise (Cable)",
+    equipment: "Cable" as const,
+    convention: "machine-label" as const,
+  };
+  state.customExercises = [y];
+  state.draft!.exercises = [D.createEntry(y)];
+  const entry = state.draft!.exercises[0];
+  state.draft!.readiness = {
+    recordedAt: now,
+    fatigue: null,
+    pain: null,
+    context: "unknown",
+    factors: [],
+    muscles: [
+      { muscle: "Shoulders", recovered: "no", pain: null, soreness: null },
+    ],
+  };
+  const before = structuredClone(state);
+  const input = {
+    fingerprint: substitutionFingerprint(state.draft!),
+    entryId: entry.id,
+    exerciseId: "lateral",
+    available: ["Dumbbell" as const],
+    reason: "preference" as const,
+  };
+  const warning = substitutionRecoveryWarning(
+    state,
+    state.draft!,
+    entry,
+    D.catalog.find((e) => e.id === "lateral")!,
+    now,
+  );
+  expect(warning).toBeTruthy();
+  expect(() => substituteExercise(state, input, now)).toThrow(/recovery/);
+  const result = substituteExercise(
+    state,
+    { ...input, reviewedRecovery: warning!.basis },
+    now,
+  );
+  expect(result.state.draft!.exercises[0].exerciseId).toBe("lateral");
+  expect(
+    result.state.draft!.exercises[0].sets.every(
+      (t) => t.weight === 0 && !t.effortReported,
+    ),
+  ).toBe(true);
+  expect(result.state.draft!.readiness).toEqual(before.draft!.readiness);
+  expect(
+    D.recoveryStatus(
+      "Shoulders",
+      result.state.sessions,
+      [...D.catalog, y],
+      now,
+      result.state.draft!.readiness,
+    ).blocked,
+  ).toBe(true);
+  expect(result.state.programs).toEqual(before.programs);
+  expect(state).toEqual(before);
+  // A new concern after acknowledgement requires another review.
+  state.draft!.readiness!.muscles[0].pain = true;
+  expect(() =>
+    substituteExercise(
+      state,
+      {
+        ...input,
+        fingerprint: substitutionFingerprint(state.draft!),
+        reviewedRecovery: warning!.basis,
+      },
+      now,
+    ),
+  ).toThrow(/recovery/);
+});
+it("a draft pain report appears in the manual swap warning before save", () => {
+  const state = fixture(),
+    entry = state.draft!.exercises[0];
+  state.draft!.feedback.pain = true;
+  expect(
+    substitutionRecoveryWarning(
+      state,
+      state.draft!,
+      entry,
+      D.catalog.find((e) => e.id === "incline-db")!,
+    ),
+  ).toBeTruthy();
+});
+it("carries an original exercise pain caution through a reviewed swap without asserting recovery", () => {
+  const state = fixture(),
+    session = state.draft!,
+    entry = session.exercises[0],
+    now = Date.now();
+  entry.coachingContext = {
+    execution: "unknown",
+    rest: "unknown",
+    skipReason: "pain",
+    recordedAt: now,
+  };
+  const warning = substitutionRecoveryWarning(
+    state,
+    session,
+    entry,
+    D.catalog.find((e) => e.id === "incline-db")!,
+    now,
+  )!;
+  const result = substituteExercise(
+    state,
+    {
+      fingerprint: substitutionFingerprint(session),
+      entryId: entry.id,
+      exerciseId: "incline-db",
+      available: ["Dumbbell"],
+      reason: "preference",
+      reviewedRecovery: warning.basis,
+    },
+    now,
+  );
+  expect(result.state.draft!.exercises[0].coachingContext).toMatchObject({
+    execution: "unknown",
+    rest: "unknown",
+    skipReason: "pain",
+  });
+  expect(
+    nextSetAdvice(
+      result.state,
+      result.state.draft!,
+      result.entryId,
+      undefined,
+      now,
+    ).kind,
+  ).toBe("pause");
+  expect(result.state.draft!.feedback).toEqual(session.feedback);
 });
 it("rejects advanced row metadata even without an exercise-level technique label", () => {
   const state = fixture(),
