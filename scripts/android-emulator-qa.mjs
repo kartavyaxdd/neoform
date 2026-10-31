@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  deviceFailureEvidence,
+  workflowError,
+} from "./android-device-evidence.mjs";
 const api = process.argv[2];
 if (!["33", "36"].includes(api))
   throw Error("Specify isolated Android API 33 or 36.");
@@ -98,6 +102,17 @@ const emulator = spawn(
   { env, windowsHide: true, detached: !windows, stdio: ["ignore", log, log] },
 );
 let booted = false;
+let instrumentation = "";
+function diagnostic(args) {
+  const result = spawnSync(adb, ["-s", serial, ...args], {
+    env,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 10000,
+    maxBuffer: 1024 * 1024,
+  });
+  return result.stdout || result.stderr || "";
+}
 try {
   const deadline = Date.now() + 300000;
   while (Date.now() < deadline && emulator.exitCode === null) {
@@ -125,6 +140,8 @@ try {
     );
   }
   console.log(`Android API ${api} booted on owned ${serial}.`);
+  // This is a fresh harness-owned emulator, never the user's actual Android.
+  diagnostic(["logcat", "-c"]);
   run(adb, [
     "-s",
     serial,
@@ -149,6 +166,7 @@ try {
     "-r",
     "app.neoform.android.test/androidx.test.runner.AndroidJUnitRunner",
   ]);
+  instrumentation = result;
   fs.writeFileSync(path.join(base, "instrumentation.log"), result);
   if (
     !/OK \(\d+ tests?\)/.test(result) ||
@@ -158,6 +176,29 @@ try {
     throw Error("Android instrumented tests failed.");
   }
   console.log(result.match(/OK \(\d+ tests?\)/)[0]);
+} catch (error) {
+  if (booted) {
+    const crash = diagnostic(["logcat", "-b", "crash", "-d", "-v", "brief"]);
+    const system =
+      diagnostic(["shell", "dumpsys", "webviewupdate"]) +
+      "\n" +
+      diagnostic([
+        "logcat",
+        "-d",
+        "-v",
+        "brief",
+        "AndroidRuntime:E",
+        "chromium:E",
+        "WebViewFactory:E",
+        "*:S",
+      ]);
+    const evidence = deviceFailureEvidence(api, crash, system, instrumentation);
+    fs.writeFileSync(path.join(base, "failure-evidence.log"), evidence);
+    console.error(evidence);
+    if (process.env.GITHUB_ACTIONS === "true")
+      console.error(workflowError(api, evidence));
+  }
+  throw error;
 } finally {
   if (!windows && emulator.exitCode === null && emulator.signalCode === null) {
     spawnSync(adb, ["-s", serial, "emu", "kill"], {
