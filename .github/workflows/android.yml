@@ -46,7 +46,7 @@ jobs:
         run: |
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
           sudo chmod a+rw /dev/kvm
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-${{ matrix.api }};google_apis;x86_64"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-${{ matrix.api }};google_apis;x86_64"
       - name: Build test installation
         run: |
           npm ci
