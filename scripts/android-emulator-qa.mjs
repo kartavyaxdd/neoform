@@ -156,26 +156,30 @@ try {
     "-r",
     "android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
   ]);
-  const result = run(adb, [
-    "-s",
-    serial,
-    "shell",
-    "am",
-    "instrument",
-    "-w",
-    "-r",
-    "app.neoform.android.test/androidx.test.runner.AndroidJUnitRunner",
-  ]);
-  instrumentation = result;
-  fs.writeFileSync(path.join(base, "instrumentation.log"), result);
-  if (
-    !/OK \(\d+ tests?\)/.test(result) ||
-    /FAILURES|INSTRUMENTATION_FAILED/.test(result)
-  ) {
-    console.error(result);
-    throw Error("Android instrumented tests failed.");
+  for (let cycle = 1; cycle <= 3; cycle++) {
+    const result = run(adb, [
+      "-s",
+      serial,
+      "shell",
+      "am",
+      "instrument",
+      "-w",
+      "-r",
+      "app.neoform.android.test/androidx.test.runner.AndroidJUnitRunner",
+    ]);
+    instrumentation = result;
+    fs.writeFileSync(path.join(base, `instrumentation-${cycle}.log`), result);
+    if (
+      !/OK \(\d+ tests?\)/.test(result) ||
+      /FAILURES|INSTRUMENTATION_FAILED/.test(result)
+    ) {
+      console.error(result);
+      throw Error("Android instrumented tests failed.");
+    }
+    console.log(
+      `Fresh instrumentation ${cycle}/3: ${result.match(/OK \(\d+ tests?\)/)[0]}`,
+    );
   }
-  console.log(result.match(/OK \(\d+ tests?\)/)[0]);
 } catch (error) {
   if (booted) {
     const crash = diagnostic(["logcat", "-b", "crash", "-d", "-v", "brief"]);

@@ -1,6 +1,5 @@
 package app.neoform.android
 
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -19,37 +18,45 @@ import java.util.concurrent.atomic.AtomicReference
 @RunWith(AndroidJUnit4::class)
 class HealthDeviceTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    @Test fun bundledAppCanCallNativeBridgeWithoutExposingHealth() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            val deadline = System.currentTimeMillis() + 45000
-            var result = ""
-            while (System.currentTimeMillis() < deadline && !result.contains("bridge-ready")) {
-                val latch = CountDownLatch(1)
-                val value = AtomicReference("")
-                scenario.onActivity { activity ->
-                    activity.bridge.webView.evaluateJavascript("""
-                        (function() {
-                          if (!window.Capacitor || !window.Capacitor.Plugins.NeoformNative) return 'loading';
-                          if (!window.__neoformSmokeStarted) {
-                            window.__neoformSmokeStarted = true;
-                            var native = window.Capacitor.Plugins.NeoformNative;
-                            native.notificationStatus().then(function(s) {
-                              return native.healthStatus().then(function() { window.__neoformSmoke = 'health-leak'; }, function() {
-                                window.__neoformSmoke = typeof s.enabled === 'boolean' ? 'bridge-ready' : 'bad-native-response';
-                              });
-                            }).catch(function() { window.__neoformSmoke = 'bridge-failed'; });
-                          }
-                          return window.__neoformSmoke || 'waiting';
-                        })()
-                    """.trimIndent()) { reply -> value.set(reply); latch.countDown() }
-                }
-                assertTrue(latch.await(5, TimeUnit.SECONDS))
-                result = value.get()
-                assertFalse(result.contains("health-leak"))
-                assertFalse(result.contains("bridge-failed"))
-                if (!result.contains("bridge-ready")) Thread.sleep(500)
+    private fun assertBundledBridge(scenario: ActivityScenario<MainActivity>) {
+        val deadline = System.currentTimeMillis() + 45000
+        var result = ""
+        while (System.currentTimeMillis() < deadline && !result.contains("bridge-ready")) {
+            val latch = CountDownLatch(1)
+            val value = AtomicReference("")
+            scenario.onActivity { activity ->
+                activity.bridge.webView.evaluateJavascript("""
+                    (function() {
+                      if (!window.Capacitor || !window.Capacitor.Plugins.NeoformNative) return 'loading';
+                      if (!window.__neoformSmokeStarted) {
+                        window.__neoformSmokeStarted = true;
+                        var native = window.Capacitor.Plugins.NeoformNative;
+                        native.notificationStatus().then(function(s) {
+                          return native.healthStatus().then(function() { window.__neoformSmoke = 'health-leak'; }, function() {
+                            window.__neoformSmoke = typeof s.enabled === 'boolean' ? 'bridge-ready' : 'bad-native-response';
+                          });
+                        }).catch(function() { window.__neoformSmoke = 'bridge-failed'; });
+                      }
+                      return window.__neoformSmoke || 'waiting';
+                    })()
+                """.trimIndent()) { reply -> value.set(reply); latch.countDown() }
             }
-            assertTrue("Bundled app must load and reach its native bridge: $result", result.contains("bridge-ready"))
+            assertTrue(latch.await(5, TimeUnit.SECONDS))
+            result = value.get()
+            assertFalse(result.contains("health-leak"))
+            assertFalse(result.contains("bridge-failed"))
+            if (!result.contains("bridge-ready")) Thread.sleep(500)
+        }
+        assertTrue("Bundled app must load and reach its native bridge: $result", result.contains("bridge-ready"))
+    }
+    @Test fun bundledAppCanCallNativeBridgeWithoutExposingHealth() {
+        // Every creation and recreation must pass. A failure is never retried.
+        repeat(3) {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                assertBundledBridge(scenario)
+                scenario.recreate()
+                assertBundledBridge(scenario)
+            }
         }
     }
     @Test fun privateHealthCacheIsEncryptedAndExcludedFromBackup() {

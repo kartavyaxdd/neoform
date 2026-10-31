@@ -87,7 +87,10 @@ coverage are separate from physical Nord CE 2 qualification.
 
 Local verification compiles both APKs and tests native API/profile/alarm rules. The
 device suite additionally checks Keystore encryption, backup exclusion, permission
-defaults, cancelled alarms, and loading the actual bundled UI/native bridge. CI has
+defaults, cancelled alarms, and loading the actual bundled UI/native bridge. Each CI
+device run requires three fresh instrumentation processes; each exercises three
+activity creations and three recreations. The first failure stops the run without
+retry, retaining crash-buffer and WebView diagnostics from that isolated device. CI has
 separate accelerated API33/API36 jobs. This Windows machine currently lacks an Android
 emulator acceleration driver; its software API36 boot attempt exceeded the five-minute
 QA deadline. Do not report that attempt as a passing device test or silently change
