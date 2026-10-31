@@ -94,6 +94,10 @@ QA deadline. Do not report that attempt as a passing device test or silently cha
 Windows virtualization settings. Phone/ring exports and screen-off notification timing
 remain separate physical-device acceptance checks.
 
+The emulator harness terminates its own isolated process group/tree after checking
+results. Successful tests must not leave a renderer alive and consume a runner until
+timeout; existing emulators or physical devices are never claimed or terminated.
+
 After gates and a clean reviewed commit, `npm run android:release` builds exact-SHA web
 assets, synchronizes Capacitor, compiles/tests release Kotlin, generates/reuses the
 installation's private signing identity under `~/.neoform-android-signing`, aligns,

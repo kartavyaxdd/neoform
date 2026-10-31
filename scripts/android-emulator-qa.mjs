@@ -95,7 +95,7 @@ const emulator = spawn(
       ? ["-accel", "off"]
       : []),
   ],
-  { env, windowsHide: true, stdio: ["ignore", log, log] },
+  { env, windowsHide: true, detached: !windows, stdio: ["ignore", log, log] },
 );
 let booted = false;
 try {
@@ -159,14 +159,35 @@ try {
   }
   console.log(result.match(/OK \(\d+ tests?\)/)[0]);
 } finally {
-  if (emulator.exitCode === null) {
+  if (!windows && emulator.exitCode === null && emulator.signalCode === null) {
     spawnSync(adb, ["-s", serial, "emu", "kill"], {
       env,
       windowsHide: true,
       stdio: "ignore",
       timeout: 10000,
     });
-    emulator.kill();
   }
+  // adb can acknowledge shutdown while the emulator's renderer remains alive.
+  // Terminate only the process tree/group created by this script; never discover
+  // an emulator or physical device by name/port and kill it.
+  if (emulator.pid) {
+    if (windows && emulator.exitCode === null && emulator.signalCode === null) {
+      spawnSync("taskkill", ["/PID", String(emulator.pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore",
+        timeout: 10000,
+      });
+    } else if (!windows) {
+      for (const signal of ["SIGTERM", "SIGKILL"]) {
+        try {
+          process.kill(-emulator.pid, signal);
+        } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
+        if (signal === "SIGTERM") await delay(2000);
+      }
+    }
+  }
+  emulator.unref();
   fs.closeSync(log);
 }
