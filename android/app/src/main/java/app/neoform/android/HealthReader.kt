@@ -12,8 +12,14 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.ZoneId
 import java.time.Duration
+import kotlinx.coroutines.CancellationException
+
+class HealthReadException(val metric: String, cause: Exception) : Exception("Health Connect read failed", cause)
 
 class HealthReader(private val context: Context) {
+    private suspend fun <T> reading(metric: String, block: suspend () -> T): T = try { block() }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { throw HealthReadException(metric, e) }
     companion object {
         val permissions = linkedMapOf(
             "steps" to HealthPermission.getReadPermission(StepsRecord::class),
@@ -61,7 +67,7 @@ class HealthReader(private val context: Context) {
                 val from = maxOf(day.atStartOfDay(zone).toInstant(), start)
                 val to = minOf(day.plusDays(1).atStartOfDay(zone).toInstant(), now)
                 if (from < to) {
-                    val result = client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(from, to)))
+                    val result = reading("steps") { client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(from, to))) }
                     result[StepsRecord.COUNT_TOTAL]?.let {
                         add("steps", "steps-$day", "health-connect-aggregate", from, to.minusMillis(1), it.toDouble(), "count")
                     }
@@ -71,42 +77,46 @@ class HealthReader(private val context: Context) {
         }
         if ("sleep" in granted) {
             var token: String? = null
+            val cursor = HealthPageCursor()
             do {
-                val result = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range, pageSize = 500, pageToken = token))
+                val result = reading("sleep") { client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, range, pageSize = 500, pageToken = token)) }
                 result.records.filter { it.endTime <= now }.forEach {
                     add("sleep", it.metadata.id, it.metadata.dataOrigin.packageName, it.startTime, it.endTime,
                         Duration.between(it.startTime, it.endTime).toMillis() / 60000.0, "min")
                 }
-                token = result.pageToken
+                token = reading("sleep") { cursor.next(result.pageToken) }
             } while (token != null && rows.length() < 10000)
             if (token != null) clipped = true
         }
         if ("weight" in granted) {
             var token: String? = null
+            val cursor = HealthPageCursor()
             do {
-                val result = client.readRecords(ReadRecordsRequest(WeightRecord::class, range, pageSize = 500, pageToken = token))
+                val result = reading("weight") { client.readRecords(ReadRecordsRequest(WeightRecord::class, range, pageSize = 500, pageToken = token)) }
                 result.records.forEach { add("weight", it.metadata.id, it.metadata.dataOrigin.packageName, it.time, it.time, it.weight.inKilograms, "kg") }
-                token = result.pageToken
+                token = reading("weight") { cursor.next(result.pageToken) }
             } while (token != null && rows.length() < 10000)
             if (token != null) clipped = true
         }
         if ("nutrition" in granted) {
             var token: String? = null
+            val cursor = HealthPageCursor()
             do {
-                val result = client.readRecords(ReadRecordsRequest(NutritionRecord::class, range, pageSize = 500, pageToken = token))
+                val result = reading("nutrition") { client.readRecords(ReadRecordsRequest(NutritionRecord::class, range, pageSize = 500, pageToken = token)) }
                 result.records.filter { it.endTime <= now }.forEach {
                     it.energy?.let { energy -> add("nutrition", it.metadata.id, it.metadata.dataOrigin.packageName, it.startTime, it.endTime, energy.inKilocalories, "kcal") }
                 }
-                token = result.pageToken
+                token = reading("nutrition") { cursor.next(result.pageToken) }
             } while (token != null && rows.length() < 10000)
             if (token != null) clipped = true
         }
         if ("resting-heart-rate" in granted) {
             var token: String? = null
+            val cursor = HealthPageCursor()
             do {
-                val result = client.readRecords(ReadRecordsRequest(RestingHeartRateRecord::class, range, pageSize = 500, pageToken = token))
+                val result = reading("resting-heart-rate") { client.readRecords(ReadRecordsRequest(RestingHeartRateRecord::class, range, pageSize = 500, pageToken = token)) }
                 result.records.forEach { add("resting-heart-rate", it.metadata.id, it.metadata.dataOrigin.packageName, it.time, it.time, it.beatsPerMinute.toDouble(), "bpm") }
-                token = result.pageToken
+                token = reading("resting-heart-rate") { cursor.next(result.pageToken) }
             } while (token != null && rows.length() < 10000)
             if (token != null) clipped = true
         }

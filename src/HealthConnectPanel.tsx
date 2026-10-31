@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 import { Button, Field } from "./ui";
-import { useHealthState, healthOperation } from "./healthConnect";
+import {
+  useHealthState,
+  healthOperation,
+  cancelHealthOperation,
+} from "./healthConnect";
 import {
   healthContext,
   HEALTH_KINDS,
@@ -115,6 +119,9 @@ export function HealthConnectPanel() {
         backups and Gemini.
       </p>
       <p role="status">{v.message}</p>
+      {v.busy && (
+        <Button onClick={cancelHealthOperation}>Cancel connection</Button>
+      )}
       {v.availability === "unsupported" && (
         <p>
           Health Connect is unavailable on this device. Workout logging still

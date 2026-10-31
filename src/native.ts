@@ -22,6 +22,7 @@ type NativePlugin = {
     permissions: HealthKind[];
   }>;
   healthConnect(): Promise<void>;
+  healthCancel(): Promise<void>;
   healthSnapshot(): Promise<{ snapshot: HealthSnapshot | null }>;
   healthSync(): Promise<{ snapshot: HealthSnapshot }>;
   healthSources(o: {

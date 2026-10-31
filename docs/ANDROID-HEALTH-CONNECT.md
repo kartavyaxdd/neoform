@@ -122,3 +122,19 @@ SHA, package, version, size and APK SHA-256. This APK contains no personal recor
 provider credentials. Health Connect data availability from boAt Crest and Welltory
 must be checked on the actual phone; browser bridge fixtures do not qualify sensors,
 Android permission dialogs or screen-off delivery.
+
+## Older-provider sync reliability
+
+Android 13 and earlier providers may return an empty string instead of `null` when
+record pagination ends. Every record reader treats either as complete, rejects a
+repeated cursor and bounds total pages even when records are filtered out. This prevents
+an empty final page from causing repeated requests and an apparently stuck connection.
+See Google's [raw-data pagination documentation](https://developer.android.com/health-and-fitness/health-connect/read-data).
+
+Connection UI distinguishes opening permissions, checking grants and importing records.
+The user can cancel a pending operation, and late results cannot replace a newer view.
+Permission waits, provider reads and recovery checks have finite deadlines; timeout
+cancels native work. Permission screens launch on the Android UI thread. A failed read
+identifies the data type without exposing provider response bodies or health values.
+On-device error diagnostics contain only a fixed method/metric and exception class;
+records, record counts, timestamps, credentials and exception messages are not logged.

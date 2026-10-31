@@ -36,13 +36,21 @@ class NeoformNativePlugin : Plugin() {
     @Volatile private var bound = false
     @Volatile private var healthJob: Job? = null
     private var healthRequest: PluginCall? = null
+    private var healthRequestEpoch = 0L
     override fun load() { vault = PrivateVault(context); health = HealthReader(context); alarms = RestAlarms(context) }
     private fun trusted(): Boolean = bridge.localUrl.trimEnd('/') == "https://localhost" && bridge.serverUrl == null
     private fun execute(call: PluginCall, block: suspend () -> JSObject?) {
         if (!trusted()) { call.reject("Native access is limited to bundled NEOFORM."); return }
         scope.launch { try { call.resolve(block()) } catch (_: CancellationException) { call.reject("Operation cancelled.") }
+            catch (e: HealthReadException) {
+                android.util.Log.w("NeoformHealth", "healthSync:" + e.metric + ":" + e.cause?.javaClass?.simpleName)
+                call.reject("Health Connect could not read this data type. Review permissions and try syncing again.", "HEALTH_READ_" + e.metric.uppercase().replace('-', '_'))
+            }
             catch (_: SecurityException) { call.reject("Permission changed. Review Android permissions and sync again.") }
-            catch (_: Exception) { call.reject("Device operation unavailable. Reopen NEOFORM and try again.") } }
+            catch (e: Exception) {
+                if (call.methodName.startsWith("health")) android.util.Log.w("NeoformHealth", call.methodName + ":" + e.javaClass.simpleName)
+                call.reject("Device operation unavailable. Reopen NEOFORM and try again.")
+            } }
     }
     private fun auth(): JSONObject = vault.read("authentication") ?: JSONObject()
     private fun authorizedHealth(): Boolean {
@@ -145,6 +153,7 @@ class NeoformNativePlugin : Plugin() {
         requireHealth(); val at = epoch; val s = vault.read("health-sharma")
         healthJob = currentCoroutineContext()[Job]
         val permissions = health.granted()
+        synchronized(this@NeoformNativePlugin) {
         requireHealth(); check(at == epoch)
         if (s != null) {
             s.put("permissions", JSONArray(permissions))
@@ -153,6 +162,7 @@ class NeoformNativePlugin : Plugin() {
             for (i in 0 until records.length()) if (records.getJSONObject(i).optString("kind") in permissions) filtered.put(records.getJSONObject(i))
             s.put("records", filtered); vault.write("health-sharma", s)
         }
+        }
         JSObject().put("snapshot", s ?: JSONObject.NULL)
     }
     @PluginMethod fun healthConnect(call: PluginCall) {
@@ -160,15 +170,27 @@ class NeoformNativePlugin : Plugin() {
         if (health.availability() != "available") { call.reject("Install or update Health Connect first."); return }
         if (healthRequest != null) { call.reject("A permission request is already open."); return }
         healthRequest = call
-        val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, HealthReader.permissions.values.toSet())
-        startActivityForResult(call, intent, "healthPermissionResult")
+        healthRequestEpoch = epoch
+        activity.runOnUiThread {
+            try {
+                if (healthRequest !== call || healthRequestEpoch != epoch || !authorizedHealth()) {
+                    healthRequest = null; call.reject("Profile changed. Reopen Health Connect."); return@runOnUiThread
+                }
+                val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, HealthReader.permissions.values.toSet())
+                startActivityForResult(call, intent, "healthPermissionResult")
+            } catch (e: Exception) { healthRequest = null; call.reject("Android could not open Health Connect permissions.") }
+        }
     }
     @ActivityCallback private fun healthPermissionResult(call: PluginCall?, result: ActivityResult) {
+        val pending = healthRequest
+        if (pending == null || pending.callbackId != call?.callbackId) return
+        val requestedEpoch = healthRequestEpoch
         healthRequest = null
+        if (requestedEpoch != epoch) { pending.reject("Profile changed. Reopen Health Connect."); return }
         if (call == null) return
-        execute(call) { requireHealth();
+        execute(call) { synchronized(this@NeoformNativePlugin) { requireHealth(); check(requestedEpoch == epoch)
             val old = vault.read("health-sharma") ?: JSONObject().put("version", 1).put("syncedAt", 0).put("records", JSONArray()).put("sources", JSONObject())
-            old.put("enabled", true); vault.write("health-sharma", old); JSObject() }
+            old.put("enabled", true); vault.write("health-sharma", old) }; JSObject() }
     }
     @PluginMethod fun healthSync(call: PluginCall) = execute(call) {
         requireHealth(); val at = epoch
@@ -181,6 +203,11 @@ class NeoformNativePlugin : Plugin() {
             vault.write("health-sharma", next)
         }
         JSObject().put("snapshot", next)
+    }
+    @PluginMethod fun healthCancel(call: PluginCall) {
+        if (!trusted()) { call.reject("Open NEOFORM first."); return }
+        synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel() }
+        activity.runOnUiThread { healthRequest?.reject("Health connection cancelled."); healthRequest = null; call.resolve() }
     }
     @PluginMethod fun healthSources(call: PluginCall) = execute(call) {
         synchronized(this@NeoformNativePlugin) {

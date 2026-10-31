@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { Native, isAndroid } from "./native";
+import { healthDeadline } from "./healthOperation";
 import { useStore } from "./store";
 import {
   normalizeHealthSnapshot,
@@ -24,6 +25,19 @@ const empty: View = {
 let view = empty,
   owner: string | null = null,
   generation = 0;
+let operation = 0;
+const stopNativeHealth = () => {
+  void Native.healthCancel().catch(() => {});
+};
+export function cancelHealthOperation() {
+  operation++;
+  stopNativeHealth();
+  publish({
+    busy: false,
+    message:
+      "Connection stopped. You can review permissions or try syncing again. Existing workout data is unchanged.",
+  });
+}
 let profileBinding: Promise<void> = Promise.resolve();
 function bindNativeProfile(profile: string | null) {
   profileBinding = profileBinding
@@ -63,19 +77,31 @@ export async function healthOperation(
 ) {
   if (!isAndroid() || owner !== "sharma") return;
   const at = generation;
+  const selectedOperation = ++operation;
+  const current = () => at === generation && selectedOperation === operation;
   publish({
     busy: true,
-    message: op === "sync" ? "Syncing on this phone…" : "Updating connection…",
+    message:
+      op === "connect"
+        ? "Opening Android health permissions…"
+        : op === "sync"
+          ? "Preparing Health Connect sync…"
+          : "Updating connection…",
   });
   try {
     if (op === "settings") {
-      await Native.openHealthSettings();
+      await healthDeadline(Native.openHealthSettings(), 10000);
       return;
     }
     if (op === "disconnect" || op === "delete") {
-      if (op === "disconnect") await Native.healthDisconnect();
-      else await Native.healthDelete();
-      if (at === generation)
+      if (op === "disconnect")
+        await healthDeadline(
+          Native.healthDisconnect(),
+          30000,
+          stopNativeHealth,
+        );
+      else await healthDeadline(Native.healthDelete(), 10000, stopNativeHealth);
+      if (current())
         publish({
           snapshot: null,
           ...(op === "disconnect" ? { permissions: [] } : {}),
@@ -86,41 +112,69 @@ export async function healthOperation(
         });
       return;
     }
-    if (op === "connect") await Native.healthConnect();
-    if (at !== generation) return;
-    const status = await Native.healthStatus();
-    if (at !== generation) return;
+    if (op === "connect")
+      await healthDeadline(Native.healthConnect(), 120000, stopNativeHealth);
+    if (!current()) return;
+    publish({ message: "Checking granted health permissions…" });
+    const status = await healthDeadline(
+      Native.healthStatus(),
+      15000,
+      stopNativeHealth,
+    );
+    if (!current()) return;
     publish(status);
+    publish({ message: "Importing available records from Health Connect…" });
     const result = sources
-      ? await Native.healthSources({ sources })
-      : await Native.healthSync();
-    if (at === generation)
+      ? await healthDeadline(
+          Native.healthSources({ sources }),
+          10000,
+          stopNativeHealth,
+        )
+      : await healthDeadline(Native.healthSync(), 60000, stopNativeHealth);
+    if (current())
       publish({
         snapshot: normalizeHealthSnapshot(result.snapshot),
         message: "Saved privately on this phone. No cloud upload.",
       });
-  } catch {
-    if (at === generation) {
+  } catch (error) {
+    if (current()) {
       // Re-check permission visibility even when a sync was interrupted by revocation.
       try {
-        const result = await Native.healthSnapshot();
-        if (at === generation)
+        const result = await healthDeadline(
+          Native.healthSnapshot(),
+          10000,
+          stopNativeHealth,
+        );
+        if (current())
           publish({
             snapshot: result.snapshot
               ? { ...normalizeHealthSnapshot(result.snapshot), clipped: true }
               : null,
           });
       } catch {
-        if (at === generation) publish({ snapshot: null });
+        if (current()) publish({ snapshot: null });
       }
-      if (at === generation)
+      if (current())
         publish({
           message:
-            "Health Connect could not update. Check permissions and source apps, then sync again. Workout logging remains available.",
+            (error as { code?: string })?.code === "HEALTH_TIMEOUT"
+              ? "Health Connect did not respond in time. The operation stopped; try Sync now again. Workout logging remains available."
+              : (error as { code?: string })?.code?.startsWith("HEALTH_READ_")
+                ? "Health Connect could not read " +
+                  ({
+                    HEALTH_READ_STEPS: "steps",
+                    HEALTH_READ_SLEEP: "sleep",
+                    HEALTH_READ_WEIGHT: "weight",
+                    HEALTH_READ_NUTRITION: "nutrition",
+                    HEALTH_READ_RESTING_HEART_RATE: "resting heart rate",
+                  }[(error as { code: string }).code] ??
+                    "a permitted data type") +
+                  ". Review its permissions and try syncing again. Workout logging remains available."
+                : "Health Connect could not update. Check permissions and source apps, then sync again. Workout logging remains available.",
         });
     }
   } finally {
-    if (at === generation) publish({ busy: false });
+    if (current()) publish({ busy: false });
   }
 }
 export function HealthLifecycle() {
@@ -170,6 +224,7 @@ export function HealthLifecycle() {
     window.addEventListener("neoform:foreground", foreground);
     return () => {
       ++generation;
+      operation++;
       owner = null;
       publish(empty);
       window.removeEventListener("neoform:foreground", foreground);

@@ -41,6 +41,7 @@ for (const width of [360, 390, 1440])
         "healthStatus",
         "healthSnapshot",
         "healthConnect",
+        "healthCancel",
         "healthSync",
         "healthSources",
         "healthDelete",
@@ -54,6 +55,7 @@ for (const width of [360, 390, 1440])
       ];
       let connected = false,
         bound: string | null = null;
+      let firstPermission = true;
       const now = Date.now();
       const records = Array.from({ length: 8 }, (_, i) => ({
         id: `health-private-fixture-${i}`,
@@ -106,6 +108,12 @@ for (const width of [360, 390, 1440])
               permissions: connected ? ["sleep"] : [],
             };
           if (method === "healthConnect") {
+            if (firstPermission) {
+              firstPermission = false;
+              return new Promise<void>((resolve) => {
+                win.__finishHealthPermission = resolve;
+              });
+            }
             connected = true;
             return {};
           }
@@ -132,6 +140,23 @@ for (const width of [360, 390, 1440])
     await expect(
       page.getByRole("button", { name: "Connect Health Connect", exact: true }),
     ).toBeEnabled();
+    await page
+      .getByRole("button", { name: "Connect Health Connect", exact: true })
+      .click();
+    await expect(
+      page.getByText("Opening Android health permissions…", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Cancel connection", exact: true })
+      .click();
+    await page.evaluate(() => (window as any).__finishHealthPermission());
+    await expect(
+      page.getByText(
+        "Connection stopped. You can review permissions or try syncing again. Existing workout data is unchanged.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.locator(".health-context")).toHaveCount(0);
     await page
       .getByRole("button", { name: "Connect Health Connect", exact: true })
       .click();
