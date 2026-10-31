@@ -78,6 +78,7 @@ export async function healthOperation(
       if (at === generation)
         publish({
           snapshot: null,
+          ...(op === "disconnect" ? { permissions: [] } : {}),
           message:
             op === "disconnect"
               ? "Disconnected. Imported data deleted from this phone."

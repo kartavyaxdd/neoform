@@ -36,6 +36,12 @@ function run(binary, args, options = {}) {
       path.join(base, "operation-error.log"),
       `${r.stdout ?? ""}\n${r.stderr ?? ""}`,
     );
+    console.error(
+      (r.stderr || r.stdout || "Android operation timed out")
+        .split("\n")
+        .slice(-30)
+        .join("\n"),
+    );
     throw Error(
       `Android QA operation failed: ${path.basename(binary)} ${args[0]}`,
     );
@@ -106,10 +112,18 @@ try {
     }
     await delay(2000);
   }
-  if (!booted)
+  if (!booted) {
+    console.error(
+      fs
+        .readFileSync(path.join(base, "emulator.log"), "utf8")
+        .split("\n")
+        .slice(-40)
+        .join("\n"),
+    );
     throw Error(
       "Isolated emulator did not boot within five minutes; inspect its QA log. No physical device was used.",
     );
+  }
   console.log(`Android API ${api} booted on owned ${serial}.`);
   run(adb, [
     "-s",
@@ -139,8 +153,10 @@ try {
   if (
     !/OK \(\d+ tests?\)/.test(result) ||
     /FAILURES|INSTRUMENTATION_FAILED/.test(result)
-  )
+  ) {
+    console.error(result);
     throw Error("Android instrumented tests failed.");
+  }
   console.log(result.match(/OK \(\d+ tests?\)/)[0]);
 } finally {
   if (emulator.exitCode === null) {

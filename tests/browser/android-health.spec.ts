@@ -159,6 +159,12 @@ for (const width of [360, 390, 1440])
       }),
     ).toBeVisible();
     await expect(page.locator(".health-context")).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "Permissions: None granted. Allow only what you want to share.",
+        { exact: true },
+      ),
+    ).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
