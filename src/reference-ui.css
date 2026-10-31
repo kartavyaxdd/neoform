@@ -3267,3 +3267,22 @@ button.exercise-prescription {
     padding: var(--space-4);
   }
 }
+/* Private Android health context uses the shared solid reading surface. */
+.health-context {
+  margin-block: 12px;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.health-context > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+.health-context p {
+  margin-block: 8px;
+}
+.native-android {
+  overscroll-behavior-y: contain;
+}

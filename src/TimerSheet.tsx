@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useStore, change } from "./store";
 import { Button } from "./ui";
 import { CountdownArc } from "./CountdownArc";
+import { isAndroid } from "./native";
 export function TimerSheet() {
   const alerts = useRestAlertState(),
     [error, setError] = useLocalState("");
@@ -185,9 +186,11 @@ export function TimerSheet() {
           )}
         </div>
         <p className="caption">
-          iPhone: open from the Home Screen. Delivery and sound depend on
-          permission, Focus and connectivity. Foreground timing remains
-          available offline.
+          {isAndroid()
+            ? "Android: lock-screen delivery can be delayed by Doze, notification permissions or battery restrictions. Sound is controlled by Android notification channels. "
+            : "iPhone: open from the Home Screen. "}
+          Delivery and sound depend on permission, Focus and connectivity.
+          Foreground timing remains available offline.
         </p>
       </section>
     </div>

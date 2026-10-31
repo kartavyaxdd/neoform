@@ -3,6 +3,8 @@ import * as D from "./domain";
 import { Rating, Pain } from "./TrainingFeedback";
 import { Button, Field } from "./ui";
 import { readinessFresh } from "./readiness";
+import { HealthSummary } from "./HealthConnectPanel";
+import { confirmHealthFactor } from "./healthConnectPolicy";
 
 const factorLabels: Record<(typeof D.readinessFactors)[number], string> = {
   "poor-sleep": "Poor sleep",
@@ -149,6 +151,11 @@ export function ReadinessSheet({
         </p>
       )}
       <div className="feedback-grid">
+        <HealthSummary
+          onConfirm={(factor) =>
+            setReport((r) => confirmHealthFactor(r, factor))
+          }
+        />
         <Rating
           label="Systemic fatigue now"
           value={report.fatigue}

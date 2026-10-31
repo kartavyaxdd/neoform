@@ -1,4 +1,6 @@
 import { deferredView } from "./deferredView";
+import { HealthConnectPanel } from "./HealthConnectPanel";
+import { isAndroid, Native, nativeShare } from "./native";
 import { persistencePresentation } from "./presentationStatus";
 
 import { ExercisePicker } from "./ExercisePicker";
@@ -492,6 +494,21 @@ export default function App() {
   } | null>(null);
   const clockActive = !!(s.draft || s.timer);
   useEffect(() => {
+    const home = () => {
+      if (page === "train" && isAndroid())
+        void Native.background().catch(() => {});
+      else setPage("train");
+    };
+    const nativeNotice = (event: Event) =>
+      setNotice((event as CustomEvent<string>).detail);
+    window.addEventListener("neoform:home", home);
+    window.addEventListener("neoform:notice", nativeNotice);
+    return () => {
+      window.removeEventListener("neoform:home", home);
+      window.removeEventListener("neoform:notice", nativeNotice);
+    };
+  }, [page]);
+  useEffect(() => {
     if (
       !store.ready ||
       !store.user ||
@@ -545,6 +562,10 @@ export default function App() {
   }, [page]);
   useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
+    if (isAndroid())
+      void Native.setTheme({ dark: s.settings.theme === "dark" }).catch(
+        () => {},
+      );
     document
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
@@ -557,17 +578,29 @@ export default function App() {
     const timer = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [clockActive]);
-  const restAlerts = useRestAlerts(s.timer, store.user?.id);
+  const restAlerts = useRestAlerts(
+    s.timer,
+    store.user?.id,
+    s.settings.timerSound,
+  );
   const expiredSound = useRef(false);
   useEffect(() => {
     if (
       s.timer &&
       !s.timer.paused &&
       tick >= s.timer.endAt &&
+      (!isAndroid() || restAlerts.available) &&
       !expiredSound.current
     ) {
       expiredSound.current = true;
-      if (s.settings.timerSound && (!restAlerts.armed || !navigator.onLine))
+      const delivered =
+        restAlerts.deliveredTimerId === s.timer.id &&
+        restAlerts.deliveredDeadline === s.timer.endAt;
+      if (
+        s.settings.timerSound &&
+        !delivered &&
+        (!restAlerts.armed || (!isAndroid() && !navigator.onLine))
+      )
         feedbackTone(false, s.settings.restChimeVolume);
     } else if (!s.timer || tick < s.timer.endAt) expiredSound.current = false;
   }, [
@@ -576,6 +609,9 @@ export default function App() {
     s.settings.timerSound,
     s.settings.restChimeVolume,
     restAlerts.armed,
+    restAlerts.available,
+    restAlerts.deliveredTimerId,
+    restAlerts.deliveredDeadline,
   ]);
   function go(p: Page) {
     setPage(p);
@@ -2920,7 +2956,25 @@ function Chart({
     </div>
   );
 }
-function download(name: string, body: string | Blob, type: string) {
+async function download(name: string, body: string | Blob, type: string) {
+  if (isAndroid()) {
+    try {
+      await nativeShare(new File([body], name, { type }), true);
+      window.dispatchEvent(
+        new CustomEvent("neoform:notice", {
+          detail: "Export saved to Android Downloads.",
+        }),
+      );
+    } catch {
+      window.dispatchEvent(
+        new CustomEvent("neoform:notice", {
+          detail:
+            "Export could not be saved. Your workout data remains on this device; try the browser export if the file is large.",
+        }),
+      );
+    }
+    return;
+  }
   const blob = body instanceof Blob ? body : new Blob([body], { type }),
     url = URL.createObjectURL(blob),
     a = document.createElement("a");
@@ -3203,6 +3257,10 @@ function Preferences({
             </div>
           </details>
           <h2 className="settings-section-title">App &amp; data</h2>
+          <details className="panel preference-group">
+            <summary>Health Connect</summary>
+            <HealthConnectPanel />
+          </details>
           <details className="panel preference-group">
             <summary>Your data, portable.</summary>
             <div className="preference-content">

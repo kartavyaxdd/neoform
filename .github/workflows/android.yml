@@ -1,0 +1,57 @@
+name: Android verification
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Install and bundle
+        run: |
+          npm ci
+          npm run typecheck
+          npm run android:sync
+      - name: Use runner JDK 21
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          chmod +x android/gradlew
+      - name: Build native app and run Kotlin tests
+        env:
+          NEOFORM_RELEASE_SHA: ${{ github.sha }}
+        run: android/gradlew -p android :app:assembleDebug :app:testDebugUnitTest --max-workers=2 --console=plain
+      # Personal release signing stays on the owner's computer, never CI.
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 36]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Prepare isolated emulator tooling
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          sudo chmod a+rw /dev/kvm
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "emulator" "system-images;android-${{ matrix.api }};google_apis;x86_64"
+      - name: Build test installation
+        run: |
+          npm ci
+          npm run android:sync
+          chmod +x android/gradlew
+          android/gradlew -p android :app:assembleDebug :app:assembleDebugAndroidTest --max-workers=2 --console=plain
+      - name: Verify encrypted storage and permission boundaries on Android
+        run: node scripts/android-emulator-qa.mjs ${{ matrix.api }}

@@ -1,6 +1,23 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { isAndroid } from "./native";
+import { HealthLifecycle } from "./healthConnect";
+if (isAndroid()) {
+  document.documentElement.classList.add("native-android");
+  window.addEventListener("neoform:android-back", () => {
+    const close = document.querySelector<HTMLButtonElement>(
+      "dialog[open] .modal-view:not([hidden]) [data-sheet-close]",
+    );
+    if (close) close.click();
+    else if (
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.matches("input,textarea,select")
+    )
+      document.activeElement.blur();
+    else window.dispatchEvent(new CustomEvent("neoform:home"));
+  });
+}
 import "./styles.css";
 import "./v2.css";
 import "./workouts.css";
@@ -27,10 +44,11 @@ class Boundary extends React.Component<
 }
 createRoot(document.getElementById("root")!).render(
   <Boundary>
+    <HealthLifecycle />
     <App />
   </Boundary>,
 );
-if ("serviceWorker" in navigator)
+if (!isAndroid() && "serviceWorker" in navigator)
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* shell still works without installation */

@@ -25,6 +25,7 @@ import {
   type HistoryMutation,
 } from "./historyTransport";
 import { canUseGemini } from "./aiCoach";
+import { appFetch } from "./native";
 type User =
   | {
       id: string;
@@ -207,7 +208,7 @@ export async function request<T = unknown>(
   if (options?.signal?.aborted) abort();
   if (bound) accountRequests.add(controller);
   try {
-    const res = await fetch("/api" + path, {
+    const res = await appFetch("/api" + path, {
       method,
       credentials: "same-origin",
       signal: controller.signal,

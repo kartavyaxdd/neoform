@@ -30,3 +30,14 @@ evidence/
 *.sqlite3
 *.sqlite3-*
 .ci-production.json
+
+# Android build products and installation-specific signing material.
+android/.gradle/
+android/.kotlin/
+android/**/build/
+android/local.properties
+android/.idea/
+*.jks
+*.keystore
+*.apk
+*.aab

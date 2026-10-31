@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { State } from "./domain";
 import { request } from "./store";
+import { isAndroid, Native } from "./native";
 type Device = {
   id: string;
   token: string;
@@ -16,6 +17,8 @@ type Status = {
   armed: boolean;
   message: string;
   deviceId?: string;
+  deliveredTimerId?: string;
+  deliveredDeadline?: number;
 };
 let state: Status = {
     available: false,
@@ -92,8 +95,27 @@ async function load(activeOwner: string) {
     armed: false,
     message: "Checking notification support…",
     deviceId: undefined,
+    deliveredTimerId: undefined,
+    deliveredDeadline: undefined,
   });
   try {
+    if (isAndroid()) {
+      const local = await Native.notificationStatus();
+      if (owner !== activeOwner) return;
+      publish({
+        available: true,
+        enabled: local.enabled && local.allowed,
+        armed: local.armed,
+        deviceId: "android-local",
+        deliveredTimerId: local.deliveredTimerId,
+        deliveredDeadline: local.deliveredDeadline,
+        message:
+          local.enabled && local.allowed
+            ? "Android rest alerts enabled. Battery restrictions can delay delivery."
+            : "Enable Android rest alerts on this phone. Foreground timing still works.",
+      });
+      return;
+    }
     if (previous && previous.owner !== activeOwner) {
       previous.allowed = false;
       await writeDevice({ ...previous });
@@ -140,6 +162,25 @@ async function operation(
   timerId?: string,
   delaySeconds?: number,
 ) {
+  if (isAndroid()) {
+    if (op === "schedule" && timerId && delaySeconds) {
+      const r = await Native.restSchedule({
+        timerId,
+        endAt: Date.now() + delaySeconds * 1000,
+        sound: true,
+      });
+      publish({
+        armed: r.armed,
+        message: r.armed
+          ? "Android alert scheduled. Battery restrictions may delay it."
+          : "Android alert not armed. Foreground timing remains available.",
+      });
+    } else {
+      await Native.restCancel();
+      publish({ armed: false });
+    }
+    return;
+  }
   const current = device;
   if (!current || current.owner !== owner) return;
   const signature = desired;
@@ -181,12 +222,17 @@ async function operation(
       });
   }
 }
-export function useRestAlerts(timer: State["timer"], activeOwner?: string) {
+export function useRestAlerts(
+  timer: State["timer"],
+  activeOwner?: string,
+  sound = true,
+) {
   const status = useRestAlertState();
   const [onlineVersion] = useSyncExternalStoreEvent();
   useEffect(() => {
     if (activeOwner) void load(activeOwner);
     else {
+      if (isAndroid()) void Native.restCancel().catch(() => {});
       if (device) {
         device.allowed = false;
         void writeDevice({ ...device }).catch(() => {});
@@ -197,6 +243,54 @@ export function useRestAlerts(timer: State["timer"], activeOwner?: string) {
     }
   }, [activeOwner]);
   useEffect(() => {
+    if (!isAndroid() || !activeOwner) return;
+    const refresh = () => {
+      void load(activeOwner);
+    };
+    window.addEventListener("neoform:foreground", refresh);
+    return () => window.removeEventListener("neoform:foreground", refresh);
+  }, [activeOwner]);
+  useEffect(() => {
+    if (isAndroid()) {
+      if (!activeOwner || !status.enabled) return;
+      const own = timer?.id === localStorage.getItem("neoform:rest-owned");
+      const next =
+        own && timer && !timer.paused && timer.endAt > Date.now()
+          ? `${timer.id}:${timer.endAt}:${sound}`
+          : "cancel";
+      if (desired === next) return;
+      desired = next;
+      queue = queue
+        .catch(() => {})
+        .then(async () => {
+          if (desired !== next || owner !== activeOwner) return;
+          publish({ armed: false });
+          if (next === "cancel" || !timer) {
+            await Native.restCancel();
+            return;
+          }
+          const result = await Native.restSchedule({
+            timerId: timer.id!,
+            endAt: timer.endAt,
+            sound,
+          });
+          if (desired === next && owner === activeOwner)
+            publish({
+              armed: result.armed,
+              message: result.armed
+                ? "Android alert scheduled, including offline. Battery restrictions may delay it."
+                : "Android alert not armed. Check notification permissions; foreground timing still works.",
+            });
+        })
+        .catch(() =>
+          publish({
+            armed: false,
+            message:
+              "Android alert unavailable. Foreground timing still works.",
+          }),
+        );
+      return;
+    }
     if (!device || device.owner !== activeOwner || !status.enabled) return;
     const own =
         timer?.id && timer.id === localStorage.getItem("neoform:rest-owned"),
@@ -240,6 +334,7 @@ export function useRestAlerts(timer: State["timer"], activeOwner?: string) {
     status.deviceId,
     status.enabled,
     onlineVersion,
+    sound,
   ]);
   return status;
 }
@@ -266,6 +361,25 @@ function useSyncExternalStoreEvent() {
   return [value, undefined] as const;
 }
 export async function enableRestAlerts() {
+  if (isAndroid()) {
+    if (!owner) throw new Error("Open your training profile first.");
+    const selectedOwner = owner;
+    const result = await Native.enableNotifications();
+    if (owner !== selectedOwner) {
+      await Native.restCancel();
+      return;
+    }
+    desired = "";
+    publish({
+      available: true,
+      enabled: result.allowed,
+      deviceId: "android-local",
+      message: result.allowed
+        ? "Android notifications enabled. Send a test alert."
+        : "Notifications denied. Enable them in Android app settings. Foreground timing still works.",
+    });
+    return;
+  }
   if (!owner || !state.available)
     throw Error(
       "Install NEOFORM on a supported device and connect to the internet first.",
@@ -328,6 +442,16 @@ export async function testRestAlert() {
   await operation("schedule", "test-" + crypto.randomUUID(), 1);
 }
 export async function disableRestAlerts() {
+  if (isAndroid()) {
+    desired = "disabled";
+    await Native.disableNotifications();
+    publish({
+      enabled: false,
+      armed: false,
+      message: "Android rest alerts disabled.",
+    });
+    return;
+  }
   desired = "disabled";
   await operation("disable");
   if (device) {

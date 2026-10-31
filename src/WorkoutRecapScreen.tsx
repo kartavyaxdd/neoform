@@ -78,8 +78,18 @@ export function WorkoutRecap({
       active = false;
     };
   }, [poster, model, includeEnergy, session.date, session.id]);
-  function download() {
+  async function download() {
     if (!file) return;
+    const { isAndroid, nativeShare } = await import("./native");
+    if (isAndroid()) {
+      try {
+        await nativeShare(file, true);
+        setMessage("PNG saved to Downloads.");
+      } catch {
+        setMessage("Could not save the PNG. Try Share instead.");
+      }
+      return;
+    }
     const url = URL.createObjectURL(file),
       a = document.createElement("a");
     a.href = url;
@@ -88,8 +98,17 @@ export function WorkoutRecap({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setMessage("PNG saved. Add it to your Instagram Story.");
   }
-  function share() {
+  async function share() {
     if (!file) return;
+    const { isAndroid, nativeShare } = await import("./native");
+    if (isAndroid()) {
+      try {
+        await nativeShare(file);
+      } catch {
+        setMessage("Could not open Android sharing. Try Save PNG.");
+      }
+      return;
+    }
     try {
       if (navigator.canShare?.({ files: [file] })) {
         void navigator.share({ files: [file] }).catch((e) => {

@@ -6,6 +6,7 @@ import { change, useStore } from "./store";
 import { demonstrationFor, videoId, watchUrl } from "./videos";
 import * as D from "./domain";
 import { rirColour } from "./rewards";
+import { isAndroid } from "./native";
 export function VideoInfo({ exercise: e }: { exercise: Exercise }) {
   const state = useStore().box.data;
   const links = state.exerciseVideos || [],
@@ -100,7 +101,13 @@ export function VideoInfo({ exercise: e }: { exercise: Exercise }) {
               ) : (
                 <button
                   className="video-poster"
-                  onClick={() => setPlaying(true)}
+                  onClick={() => {
+                    if (isAndroid())
+                      window.location.assign(
+                        `https://www.youtube.com/watch?v=${id}`,
+                      );
+                    else setPlaying(true);
+                  }}
                   aria-label="Play demonstration"
                 >
                   <img

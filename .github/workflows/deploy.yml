@@ -79,7 +79,9 @@ jobs:
       - name: Deploy using lockfile-installed Wrangler
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: node_modules/.bin/wrangler deploy --config .ci-production.json
+        run: |
+          node scripts/preserve-android-download.mjs
+          node_modules/.bin/wrangler deploy --config .ci-production.json
       - name: Verify exact public release and retained master metadata
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

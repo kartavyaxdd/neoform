@@ -347,30 +347,52 @@ try {
       ]),
     );
   if (!args.includes("--api-only")) {
-    if (args.includes("--profiles-only"))
-      // API auth/rate-limit assertions must not consume the browser fixture's
-      // login budget. This command targets only this run's owned local D1.
+    const browserEvidence = env.NEOFORM_QA_OUTPUT;
+    const groups = args.includes("--profiles-only")
+      ? (browserMatches.length
+          ? browserMatches
+          : [
+              "workspace-profiles.spec.ts",
+              "profile-gemini.spec.ts",
+              "android-health.spec.ts",
+            ]
+        ).map((name) => [name])
+      : [browserMatches];
+    for (const group of groups) {
+      if (args.includes("--profiles-only")) {
+        env.NEOFORM_QA_OUTPUT = path.join(
+          browserEvidence,
+          group[0].replace(".spec.ts", ""),
+        );
+        await mkdir(env.NEOFORM_QA_OUTPUT, { recursive: true });
+      }
+      if (args.includes("--profiles-only"))
+        // API auth/rate-limit assertions must not consume the browser fixture's
+        // login budget. Each browser suite receives its own fixture budget too.
+        // This command targets only this run's owned local D1, never production.
+        await finish(
+          launch([
+            wrangler,
+            "d1",
+            "execute",
+            db,
+            "--local",
+            "--persist-to",
+            state,
+            ...common,
+            "--command",
+            "DELETE FROM rate_limits WHERE key LIKE 'profile-%'",
+          ]),
+        );
       await finish(
         launch([
-          wrangler,
-          "d1",
-          "execute",
-          db,
-          "--local",
-          "--persist-to",
-          state,
-          ...common,
-          "--command",
-          "DELETE FROM rate_limits WHERE key LIKE 'profile-%'",
+          path.join(root, "node_modules/@playwright/test/cli.js"),
+          "test",
+          ...group,
         ]),
       );
-    await finish(
-      launch([
-        path.join(root, "node_modules/@playwright/test/cli.js"),
-        "test",
-        ...browserMatches,
-      ]),
-    );
+    }
+    env.NEOFORM_QA_OUTPUT = browserEvidence;
   }
 } finally {
   await stopChildren();

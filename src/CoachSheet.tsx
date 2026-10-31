@@ -19,6 +19,7 @@ const GeminiCoach = deferredView(() =>
 );
 import { canUseGemini, type CoachFocus } from "./aiCoach";
 import { Modal } from "./ui";
+import { HealthSummary } from "./HealthConnectPanel";
 
 export function CoachSheet({
   session: initial,
@@ -199,6 +200,7 @@ export function CoachSheet({
       )}
       <h3>{session.name}</h3>
       <p>Review targets from confirmed performance. Coaching works offline.</p>
+      <HealthSummary />
       <ChangeReviews reviews={responses} state={state} />
       {proposals
         .filter((p) => !entryId || p.entryId === entryId)
