@@ -11,17 +11,19 @@ export function browserGateFailures(report) {
           const result = test.results?.find((r) =>
             ["failed", "timedOut", "interrupted"].includes(r.status),
           );
-          const error =
-            (
-              result?.errors?.[0]?.message ??
-              result?.error?.message ??
-              "No error message"
-            )
-              .replace(/\u001b\[[0-9;]*m/g, "")
-              .split(/\r?\n/)
-              .find(Boolean) ?? "No error message";
+          const cause = result?.errors?.[0] ?? result?.error;
+          const clean = (s) => (s ?? "").replace(/\u001b\[[0-9;]*m/g, "");
+          const lines = clean(cause?.message).split(/\r?\n/);
+          const error = lines.find(Boolean) ?? "No error message";
+          const details = lines
+            .filter((l) => /^(Locator:|Expected:|Received:)/.test(l.trim()))
+            .slice(0, 3);
+          const location = clean(cause?.stack ?? cause?.message)
+            .split(/\r?\n/)
+            .find((l) => /\bat .*\.spec\.ts:\d+:\d+/.test(l));
+          if (location) details.push(location.trim());
           failures.push(
-            `${spec.file ?? "browser"}:${spec.line ?? 1} ${spec.title} — ${error}`,
+            `${spec.file ?? "browser"}:${spec.line ?? 1} ${spec.title} — ${error}${details.length ? " | " + details.join(" | ").slice(0, 1400) : ""}`,
           );
         }
       visit(suite.suites);

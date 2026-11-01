@@ -75,3 +75,40 @@ it("escapes workflow control characters and bounds diagnostic text", () => {
   expect(value).toContain("synthetic%25%0D%0A::warning::injection");
   expect(value.length).toBeLessThan(4200);
 });
+it("includes the failing locator and source line without dumping the full trace", () => {
+  const failures = browserGateFailures({
+    suites: [
+      {
+        specs: [
+          {
+            file: "profiles.spec.ts",
+            line: 5,
+            title: "profile boundary",
+            tests: [
+              {
+                status: "unexpected",
+                results: [
+                  {
+                    status: "failed",
+                    errors: [
+                      {
+                        message:
+                          "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('heading')\nExpected: visible\nReceived: hidden\nCall log:\nprivate-looking trace omitted",
+                        stack:
+                          "Error: visibility failure\n    at /workspace/tests/browser/profiles.spec.ts:116:7",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  expect(failures[0]).toContain("Locator: getByRole('heading')");
+  expect(failures[0]).toContain("Received: hidden");
+  expect(failures[0]).toContain("profiles.spec.ts:116:7");
+  expect(failures[0]).not.toContain("trace omitted");
+});

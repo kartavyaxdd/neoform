@@ -60,6 +60,8 @@ jobs:
         run: npm run security:check
       - name: Install locked Playwright Chromium
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Isolated profile access and switching gates
+        run: node scripts/qa.mjs --profiles-only
       - name: Isolated Worker D1 API and mobile browser release gates
         run: |
           set -o pipefail
@@ -67,8 +69,6 @@ jobs:
           npm run test:integration 2>&1 | tee .qa-state/ci-integration.log
       - name: Actual public workspace release gates
         run: npm run test:public
-      - name: Isolated profile access and switching gates
-        run: node scripts/qa.mjs --profiles-only
       - name: Write public nonsecret release marker
         run: node scripts/ci-production-config.mjs marker
       - name: Require existing database and encryption master

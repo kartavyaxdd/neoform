@@ -77,6 +77,25 @@ for (const width of [360, 390, 1440])
       })
       .click();
     await expect(progress).toHaveAttribute("value", "1");
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
+    let releaseUndoWrite: (() => void) | undefined;
+    let undoWriteStarted: Promise<void> | undefined;
+    if (width === 390) {
+      let started!: () => void;
+      undoWriteStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        releaseUndoWrite = resolve;
+      });
+      await page.route("**/api/storage/**", async (route) => {
+        if (["POST", "PUT"].includes(route.request().method())) {
+          started();
+          await released;
+        }
+        await route.continue();
+      });
+    }
     await page
       .getByRole("button", {
         name: "Undo Barbell back squat set 1",
@@ -95,6 +114,33 @@ for (const width of [360, 390, 1440])
       .click();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByText("Account & access", { exact: true }).click();
+    if (undoWriteStarted) {
+      await undoWriteStarted;
+      try {
+        await page
+          .getByRole("button", { name: "Lock & switch profile", exact: true })
+          .click();
+        await expect(
+          page.getByText(
+            "Sync or export pending changes before switching profiles.",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        expect((await page.request.get("/api/me")).status()).toBe(200);
+        await expect(
+          page.getByRole("button", {
+            name: "Lock & switch profile",
+            exact: true,
+          }),
+        ).toBeVisible();
+      } finally {
+        releaseUndoWrite!();
+        await page.unrouteAll({ behavior: "wait" });
+      }
+    }
+    // Successful switching requires the Undo journal to finish syncing.
+    // The store deliberately refuses to hide pending edits during a switch.
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
     await page
       .getByRole("button", { name: "Lock & switch profile", exact: true })
       .click();
