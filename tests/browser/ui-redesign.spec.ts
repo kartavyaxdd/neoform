@@ -40,16 +40,84 @@ for (const width of [360, 390, 1440])
       });
     };
     await capture("workout");
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        sheetMotion?: { duration: number | string; properties: string[] }[];
+      };
+      const observer = new MutationObserver(() => {
+        const view = document.querySelector(
+          "dialog[open] .modal-view:not([hidden])",
+        );
+        const animations = view?.getAnimations() ?? [];
+        if (!animations.length) return;
+        w.sheetMotion = animations.map((a) => ({
+          duration: a.effect!.getTiming().duration,
+          properties: [
+            ...new Set(
+              (a.effect as KeyframeEffect)
+                .getKeyframes()
+                .flatMap((f) => Object.keys(f))
+                .filter(
+                  (p) =>
+                    ![
+                      "offset",
+                      "computedOffset",
+                      "easing",
+                      "composite",
+                    ].includes(p),
+                ),
+            ),
+          ],
+        }));
+        observer.disconnect();
+      });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      });
+    });
     await page
       .getByRole("button", { name: "Start Full body A", exact: true })
       .click();
     await expect(page.getByRole("dialog")).toContainText("Workout preview");
-    await expect(page.getByRole("dialog")).toHaveCSS(
-      "animation-name",
-      "neo-sheet-in",
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { sheetMotion?: unknown[] }).sheetMotion
+              ?.length ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+    const motion = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            sheetMotion: { duration: number | string; properties: string[] }[];
+          }
+        ).sheetMotion,
     );
+    expect(
+      motion.every(
+        (a) =>
+          a.duration === 240 &&
+          a.properties.every((p) => ["opacity", "transform"].includes(p)),
+      ),
+    ).toBe(true);
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await expect(page.getByRole("dialog")).toHaveCSS("animation-name", "none");
+    await expect
+      .poll(() =>
+        page
+          .getByRole("dialog")
+          .evaluate(
+            (el) =>
+              el
+                .getAnimations({ subtree: true })
+                .filter((a) => a.playState === "running").length,
+          ),
+      )
+      .toBe(0);
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await expect(
       page.getByRole("button", { name: "Start workout", exact: true }),
@@ -60,10 +128,7 @@ for (const width of [360, 390, 1440])
       .click();
     // Exercise navigation can fade, but must never move the editable grid or
     // the completion hit targets while a user is tapping them.
-    await expect(page.locator(".log-exercise")).toHaveCSS(
-      "animation-name",
-      "neo-fade-in",
-    );
+    await expect(page.locator(".log-exercise")).toHaveCSS("transform", "none");
     await expect(
       page.getByLabel("Barbell back squat set 1 RIR", { exact: true }),
     ).toHaveValue("");

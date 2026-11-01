@@ -220,7 +220,15 @@ export function Modal({
           ],
       { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" },
     );
-    return () => animation.cancel();
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const stop = () => {
+      if (preference.matches) animation.cancel();
+    };
+    preference.addEventListener("change", stop);
+    return () => {
+      preference.removeEventListener("change", stop);
+      animation.cancel();
+    };
   }, [childCount, title, presentation]);
   const view = (
     <SheetContext.Provider value={{ host: root, setChildren }}>
