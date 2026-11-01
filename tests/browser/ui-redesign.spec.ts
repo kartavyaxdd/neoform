@@ -51,7 +51,7 @@ for (const width of [360, 390, 1440])
         const animations = view?.getAnimations() ?? [];
         if (!animations.length) return;
         w.sheetMotion = animations.map((a) => ({
-          duration: a.effect!.getTiming().duration,
+          duration: Number(a.effect!.getTiming().duration),
           properties: [
             ...new Set(
               (a.effect as KeyframeEffect)
