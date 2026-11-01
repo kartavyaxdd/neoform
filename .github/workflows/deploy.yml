@@ -61,7 +61,10 @@ jobs:
       - name: Install locked Playwright Chromium
         run: node node_modules/@playwright/test/cli.js install --with-deps chromium
       - name: Isolated Worker D1 API and mobile browser release gates
-        run: npm run test:integration
+        run: |
+          set -o pipefail
+          mkdir -p .qa-state
+          npm run test:integration 2>&1 | tee .qa-state/ci-integration.log
       - name: Actual public workspace release gates
         run: npm run test:public
       - name: Isolated profile access and switching gates
@@ -86,3 +89,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/ci-production-config.mjs verify
+
+      - name: Report failed gate evidence without credentials
+        if: failure()
+        run: node scripts/qa-failure-summary.mjs
