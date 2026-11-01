@@ -59,6 +59,24 @@ class HealthDeviceTest {
             }
         }
     }
+    @Test fun queuedPluginRepliesCannotOutliveRecreatedViews() {
+        repeat(3) {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                assertBundledBridge(scenario)
+                scenario.onActivity { activity ->
+                    activity.bridge.webView.evaluateJavascript("""
+                        (function(){var native=window.Capacitor.Plugins.NeoformNative;
+                        for(var i=0;i<30;i++){
+                          native.notificationStatus().catch(function(){});
+                          native.setTheme({dark:!!(i%2)}).catch(function(){});
+                        }})()
+                    """.trimIndent(),null)
+                }
+                scenario.recreate()
+                assertBundledBridge(scenario)
+            }
+        }
+    }
     @Test fun privateHealthCacheIsEncryptedAndExcludedFromBackup() {
         val name = "qa-health-${UUID.randomUUID()}"
         val vault = PrivateVault(context)

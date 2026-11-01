@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativePolicyTest {
+    @Test fun callbacksRequireTheLiveMainThread() {
+        assertTrue(NativePolicy.callbackAllowed(true,false,false,true))
+        assertFalse(NativePolicy.callbackAllowed(true,false,false,false))
+        assertFalse(NativePolicy.callbackAllowed(false,false,false,true))
+        assertFalse(NativePolicy.callbackAllowed(true,true,false,true))
+        assertFalse(NativePolicy.callbackAllowed(true,false,true,true))
+    }
     @Test fun refusesOriginAndTraversalInjection() {
         assertTrue(NativePolicy.apiPathAllowed("/api/history/sessions?cursor=abc"))
         listOf("https://evil.test/api/me", "//evil.test/api/me", "/api/../password", "/api/%2e%2e", "/api/me#other").forEach { assertFalse(NativePolicy.apiPathAllowed(it)) }

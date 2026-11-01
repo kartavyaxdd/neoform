@@ -37,3 +37,17 @@ describe("isolated Android failure evidence", () => {
     expect(() => workflowError("../evil", "x")).toThrow();
   });
 });
+it("retains a native abort cause within GitHub's short annotation preview", () => {
+  const crash =
+    "F/DEBUG: Abort message: JNI DETECTED ERROR IN APPLICATION: synthetic stale reply proxy\n" +
+    "F/DEBUG: native-frame\n".repeat(2000);
+  const evidence = deviceFailureEvidence(
+    "33",
+    crash,
+    "Current WebView package: synthetic-105\n" + "noise\n".repeat(1000),
+    "Process crashed after recreation",
+  );
+  expect(evidence.slice(0, 4000)).toContain("synthetic stale reply proxy");
+  expect(evidence.slice(0, 4000)).toContain("Process crashed after recreation");
+  expect(evidence.slice(0, 4000)).toContain("synthetic-105");
+});

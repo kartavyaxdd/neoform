@@ -40,18 +40,25 @@ class NeoformNativePlugin : Plugin() {
     private var healthRequestEpoch = 0L
     private var healthRequestBackground = false
     override fun load() { vault = PrivateVault(context); health = HealthReader(context); alarms = RestAlarms(context) }
+    private fun liveView(): Boolean = NativePolicy.callbackAllowed(scope.isActive,activity.isFinishing,activity.isDestroyed,android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+    private fun PluginCall.safeResolve(data: JSObject? = null) {
+        activity.runOnUiThread { if (liveView()) { if (data == null) resolve() else resolve(data) } }
+    }
+    private fun PluginCall.safeReject(message: String, code: String? = null) {
+        activity.runOnUiThread { if (liveView()) { if (code == null) reject(message) else reject(message,code) } }
+    }
     private fun trusted(): Boolean = bridge.localUrl.trimEnd('/') == "https://localhost" && bridge.serverUrl == null
     private fun execute(call: PluginCall, block: suspend () -> JSObject?) {
-        if (!trusted()) { call.reject("Native access is limited to bundled NEOFORM."); return }
-        scope.launch { try { call.resolve(block()) } catch (_: CancellationException) { call.reject("Operation cancelled.") }
+        if (!trusted()) { call.safeReject("Native access is limited to bundled NEOFORM."); return }
+        scope.launch { try { call.safeResolve(block()) } catch (_: CancellationException) { call.safeReject("Operation cancelled.") }
             catch (e: HealthReadException) {
                 android.util.Log.w("NeoformHealth", "healthSync:" + e.metric + ":" + e.cause?.javaClass?.simpleName)
-                call.reject("Health Connect could not read this data type. Review permissions and try syncing again.", "HEALTH_READ_" + e.metric.uppercase().replace('-', '_'))
+                call.safeReject("Health Connect could not read this data type. Review permissions and try syncing again.", "HEALTH_READ_" + e.metric.uppercase().replace('-', '_'))
             }
-            catch (_: SecurityException) { call.reject("Permission changed. Review Android permissions and sync again.") }
+            catch (_: SecurityException) { call.safeReject("Permission changed. Review Android permissions and sync again.") }
             catch (e: Exception) {
                 if (call.methodName.startsWith("health")) android.util.Log.w("NeoformHealth", call.methodName + ":" + e.javaClass.simpleName)
-                call.reject("Device operation unavailable. Reopen NEOFORM and try again.")
+                call.safeReject("Device operation unavailable. Reopen NEOFORM and try again.")
             } }
     }
     private fun auth(): JSONObject = vault.read("authentication") ?: JSONObject()
@@ -133,10 +140,10 @@ class NeoformNativePlugin : Plugin() {
         } finally { connection.disconnect(); requests.remove(id); cancelled.remove(id) }
     }
     @PluginMethod fun cancel(call: PluginCall) {
-        if (!trusted()) { call.reject("Open bundled NEOFORM first."); return }
+        if (!trusted()) { call.safeReject("Open bundled NEOFORM first."); return }
         val id = call.getString("id") ?: ""
         if (cancelled.size < 100) cancelled.add(id)
-        requests[id]?.disconnect(); call.resolve()
+        requests[id]?.disconnect(); call.safeResolve()
     }
     @PluginMethod fun bindProfile(call: PluginCall) = execute(call) {
         synchronized(this@NeoformNativePlugin) {
@@ -184,21 +191,21 @@ class NeoformNativePlugin : Plugin() {
     @PluginMethod fun healthEnableBackground(call: PluginCall) { requestHealthPermissions(call,true) }
     @PluginMethod fun healthConnect(call: PluginCall) { requestHealthPermissions(call,false) }
     private fun requestHealthPermissions(call: PluginCall, background: Boolean) {
-        if (!trusted() || !authorizedHealth()) { call.reject("Unlock Sharma first."); return }
-        if (health.availability() != "available") { call.reject("Install or update Health Connect first."); return }
-        if (healthRequest != null) { call.reject("A permission request is already open."); return }
-        if (background && !health.feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)) { call.reject("Background reads unavailable. Update Health Connect; foreground sync still works."); return }
+        if (!trusted() || !authorizedHealth()) { call.safeReject("Unlock Sharma first."); return }
+        if (health.availability() != "available") { call.safeReject("Install or update Health Connect first."); return }
+        if (healthRequest != null) { call.safeReject("A permission request is already open."); return }
+        if (background && !health.feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)) { call.safeReject("Background reads unavailable. Update Health Connect; foreground sync still works."); return }
         healthRequestBackground = background
         healthRequest = call
         healthRequestEpoch = epoch
         activity.runOnUiThread {
             try {
                 if (healthRequest !== call || healthRequestEpoch != epoch || !authorizedHealth()) {
-                    healthRequest = null; call.reject("Profile changed. Reopen Health Connect."); return@runOnUiThread
+                    healthRequest = null; call.safeReject("Profile changed. Reopen Health Connect."); return@runOnUiThread
                 }
                 val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, health.requested() + (if (background) setOf(HealthReader.backgroundPermission) else emptySet()))
                 startActivityForResult(call, intent, "healthPermissionResult")
-            } catch (e: Exception) { healthRequest = null; call.reject("Android could not open Health Connect permissions.") }
+            } catch (e: Exception) { healthRequest = null; call.safeReject("Android could not open Health Connect permissions.") }
         }
     }
     @ActivityCallback private fun healthPermissionResult(call: PluginCall?, result: ActivityResult) {
@@ -207,7 +214,7 @@ class NeoformNativePlugin : Plugin() {
         val background = healthRequestBackground
         val requestedEpoch = healthRequestEpoch
         healthRequest = null
-        if (requestedEpoch != epoch) { pending.reject("Profile changed. Reopen Health Connect."); return }
+        if (requestedEpoch != epoch) { pending.safeReject("Profile changed. Reopen Health Connect."); return }
         if (call == null) return
         execute(call) {
             val backgroundGranted = !background || health.backgroundGranted()
@@ -224,9 +231,9 @@ class NeoformNativePlugin : Plugin() {
         JSObject().put("snapshot", next)
     }
     @PluginMethod fun healthCancel(call: PluginCall) {
-        if (!trusted()) { call.reject("Open NEOFORM first."); return }
+        if (!trusted()) { call.safeReject("Open NEOFORM first."); return }
         synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel() }
-        activity.runOnUiThread { healthRequest?.reject("Health connection cancelled."); healthRequest = null; call.resolve() }
+        activity.runOnUiThread { healthRequest?.safeReject("Health connection cancelled."); healthRequest = null; call.safeResolve() }
     }
     @PluginMethod fun healthSources(call: PluginCall) = execute(call) {
         synchronized(this@NeoformNativePlugin) {
@@ -254,14 +261,14 @@ class NeoformNativePlugin : Plugin() {
             .put("deliveredTimerId", alarms.deliveredTimerId()).put("deliveredDeadline", alarms.deliveredDeadline())
     }
     @PluginMethod fun enableNotifications(call: PluginCall) {
-        if (!trusted()) { call.reject("Open NEOFORM first."); return }
+        if (!trusted()) { call.safeReject("Open NEOFORM first."); return }
         if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED)
             requestPermissionForAlias("notifications", call, "notificationPermissionResult")
-        else { alarms.enable(); call.resolve(JSObject().put("allowed", alarms.allowed())) }
+        else { alarms.enable(); call.safeResolve(JSObject().put("allowed", alarms.allowed())) }
     }
     @PermissionCallback private fun notificationPermissionResult(call: PluginCall) {
         if (alarms.allowed()) alarms.enable()
-        call.resolve(JSObject().put("allowed", alarms.allowed()))
+        call.safeResolve(JSObject().put("allowed", alarms.allowed()))
     }
     @PluginMethod fun restSchedule(call: PluginCall) = execute(call) {
         val timer = call.getString("timerId") ?: error("timer")
@@ -270,18 +277,19 @@ class NeoformNativePlugin : Plugin() {
     }
     @PluginMethod fun restCancel(call: PluginCall) = execute(call) { alarms.cancel(); JSObject() }
     @PluginMethod fun disableNotifications(call: PluginCall) = execute(call) { alarms.disable(); JSObject() }
-    @PluginMethod fun background(call: PluginCall) { activity.runOnUiThread { activity.moveTaskToBack(true); call.resolve() } }
+    @PluginMethod fun background(call: PluginCall) { activity.runOnUiThread { activity.moveTaskToBack(true); call.safeResolve() } }
     @PluginMethod fun setTheme(call: PluginCall) {
-        if (!trusted()) { call.reject("Open bundled NEOFORM first."); return }
+        if (!trusted()) { call.safeReject("Open bundled NEOFORM first."); return }
         val dark = call.getBoolean("dark", false) == true
         activity.runOnUiThread {
+            if (!liveView()) return@runOnUiThread
             val color = android.graphics.Color.parseColor(if (dark) "#0d1625" else "#eaf0f8")
             activity.window.statusBarColor = color; activity.window.navigationBarColor = color
             bridge.webView.setBackgroundColor(color)
             androidx.core.view.WindowInsetsControllerCompat(activity.window, bridge.webView).apply {
                 isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark
             }
-            call.resolve()
+            call.safeResolve()
         }
     }
     @PluginMethod fun shareFile(call: PluginCall) = execute(call) {
@@ -313,7 +321,12 @@ class NeoformNativePlugin : Plugin() {
         if (url.scheme in listOf("https", "http", "mailto")) try { activity.startActivity(Intent(Intent.ACTION_VIEW, url)) } catch (_: Exception) {}
         return true
     }
-    override fun handleOnDestroy() { scope.cancel(); requests.values.forEach { it.disconnect() } }
-    override fun handleOnResume() { bridge.triggerWindowJSEvent("neoform:foreground") }
+    override fun handleOnDestroy() {
+        synchronized(this) { epoch++; bound=false; activeProfile=null; healthRequest=null }
+        scope.cancel(); requests.values.forEach { it.disconnect() }
+    }
+    override fun handleOnResume() {
+        if (liveView()) bridge.webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('neoform:foreground'))",null)
+    }
     override fun handleOnPause() { healthJob?.cancel() }
 }
