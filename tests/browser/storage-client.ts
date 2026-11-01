@@ -20,7 +20,10 @@ function client(page: Page): HistoryRequest {
     });
     const data = await response.json();
     if (!response.ok())
-      throw Object.assign(Error(data.error), { status: response.status, data });
+      throw Object.assign(Error(data.error), {
+        status: response.status(),
+        data,
+      });
     return data as T;
   };
 }
