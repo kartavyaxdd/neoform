@@ -10,7 +10,7 @@ android {
         minSdkVersion 28
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(System.getenv('NEOFORM_ANDROID_VERSION_CODE') ?: '1')
-        versionName "1.1.0"
+        versionName new groovy.json.JsonSlurper().parse(file("$rootDir/version.json")).version
         buildConfigField 'String', 'RELEASE_SHA', '"' + (System.getenv('NEOFORM_RELEASE_SHA') ?: 'development') + '"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -26,6 +26,7 @@ android {
         }
     }
     buildFeatures { buildConfig true }
+    sourceSets { androidTest.assets.srcDir "$buildDir/generated/update-fixture" }
     kotlinOptions { jvmTarget = '21' }
 }
 

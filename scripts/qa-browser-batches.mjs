@@ -37,6 +37,7 @@ export function browserBatches(mode, focused = []) {
           "workspace-profiles.spec.ts",
           "profile-gemini.spec.ts",
           "android-health.spec.ts",
+          "app-updates.spec.ts",
         ]
       : privateBrowserSuites;
   return suites.map((name) => [name]);

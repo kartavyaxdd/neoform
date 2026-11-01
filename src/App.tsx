@@ -1,3 +1,4 @@
+import { AppUpdatePanel } from "./AppUpdatePanel";
 import { deferredView } from "./deferredView";
 import { HealthConnectPanel } from "./HealthConnectPanel";
 import { isAndroid, Native, nativeShare } from "./native";
@@ -3122,6 +3123,7 @@ function Preferences({
             </div>
           </details>
           <h2 className="settings-section-title">App &amp; data</h2>
+          <AppUpdatePanel />
           <details className="panel preference-group">
             <summary>Health Connect</summary>
             <HealthConnectPanel />

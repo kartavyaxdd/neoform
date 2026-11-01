@@ -1,0 +1,13 @@
+# Android app updates
+
+Install the APK containing this feature once over the existing NEOFORM installation. Later, use **More → App updates → Check for updates**. One tap checks the public release, downloads a newer APK, verifies it and opens Android's installer. If Android asks to allow installations from NEOFORM, enable that per-app setting and return; the same request continues to the installer. Android's final installation confirmation remains required. Cancelling or denying permission leaves the current app installed and supports retry.
+
+The displayed installed version comes from Android's PackageManager. Version codes determine whether an update exists, including builds sharing a version name. `android/version.json` is the common version-name source for the Android build and published download manifest; release version codes continue using the committed production history count.
+
+The updater uses only the fixed HTTPS NEOFORM origin and two public download paths. It rejects redirects, malformed/oversized manifests, oversized or truncated files, wrong SHA-256, package/version mismatches, different current signing certificates and downgrades. It verifies the cached APK again before installation, then uses a scoped FileProvider content URI with read-only access. Release keys, account cookies, workouts and health storage never enter the download transport. No update task runs on a schedule.
+
+Leaving the update screen cancels its pending action. Backgrounding during a download cancels the request; explicit Android permission/installer screens are allowed to complete their user-initiated flow. The final installer handoff is blocked while current workout edits lack a device-save acknowledgement. Downloads do not clear data, log out, change prescriptions or claim successful installation before Android replaces the app.
+
+Verification includes JS action ordering, cancellation, permission denial/retry, malformed replies and pending-save guards; Kotlin manifest/signature/version/integrity policy; real isolated Worker/D1 browser flows at 360/390/1440px; and Android 13/16 emulator checks. The emulator workflow builds a separate debug-signed upgrade fixture outside Git. It drives the real Android permission screen, tests denial and explicit grant, and verifies automatic continuation to the system update confirmation without installing over the test process. Personal-device installation remains a separate qualification.
+
+Android references: [publishing APKs directly](https://developer.android.com/studio/publish), [PackageManager](https://developer.android.com/reference/android/content/pm/PackageManager).

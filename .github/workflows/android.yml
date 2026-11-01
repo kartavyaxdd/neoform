@@ -52,6 +52,7 @@ jobs:
           npm ci
           npm run android:sync
           chmod +x android/gradlew
+          node scripts/android-update-fixture.mjs
           android/gradlew -p android :app:assembleDebug :app:assembleDebugAndroidTest --max-workers=2 --console=plain
       - name: Verify encrypted storage and permission boundaries on Android
         run: node scripts/android-emulator-qa.mjs ${{ matrix.api }}

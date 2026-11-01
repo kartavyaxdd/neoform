@@ -30,5 +30,6 @@ it("preserves explicitly focused suites and the public/profile gate boundaries",
     "workspace-profiles.spec.ts",
     "profile-gemini.spec.ts",
     "android-health.spec.ts",
+    "app-updates.spec.ts",
   ]);
 });

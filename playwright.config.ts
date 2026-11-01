@@ -13,6 +13,7 @@ export default defineConfig({
           "workspace-profiles.spec.ts",
           "profile-gemini.spec.ts",
           "android-health.spec.ts",
+          "app-updates.spec.ts",
         ]
       : process.env.NEOFORM_QA_MODE === "public"
         ? [
