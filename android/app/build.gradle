@@ -10,7 +10,7 @@ android {
         minSdkVersion 28
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(System.getenv('NEOFORM_ANDROID_VERSION_CODE') ?: '1')
-        versionName "1.0.0"
+        versionName "1.1.0"
         buildConfigField 'String', 'RELEASE_SHA', '"' + (System.getenv('NEOFORM_RELEASE_SHA') ?: 'development') + '"'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -37,6 +37,7 @@ repositories {
 
 dependencies {
     implementation 'androidx.health.connect:connect-client:1.1.0'
+    implementation 'androidx.work:work-runtime-ktx:2.11.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
@@ -46,6 +47,7 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    androidTestImplementation "androidx.work:work-testing:2.11.2"
     implementation project(':capacitor-cordova-android-plugins')
 }
 

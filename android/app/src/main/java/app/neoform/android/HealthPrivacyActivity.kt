@@ -19,12 +19,14 @@ class HealthPrivacyActivity : Activity() {
         content.addView(TextView(this).apply {
             textSize = 17f
             setPadding(0, 24, 0, 24)
-            text = "NEOFORM can read steps, sleep sessions, body weight, logged nutrition energy and resting heart rate when you choose to connect. Each permission is optional.\n\n" +
-                "Records stay encrypted on this phone and are visible only inside the authenticated locked Sharma profile. They are not uploaded to the shared workout workspace, cloud backups, Gemini, analytics or logs.\n\n" +
-                "Health trends can prompt an optional readiness question. Only your explicit confirmation becomes ordinary workout context. Sensor data never fills pain, fatigue or effort answers, and never silently changes training targets.\n\n" +
-                "Data is read while the app is open, up to the available preceding 30 days. NEOFORM does not write or delete source records. It requests no background, extended history or medical-record permissions. Source apps must supply the records; proprietary scores may not be available.\n\n" +
-                "You can revoke individual permissions in Health Connect at any time. In NEOFORM → More → Health Connect, Disconnect revokes this app's permissions and deletes its cache. Delete imported data removes the cache and stops import until reconnected. Neither action deletes data from your ring or source apps.\n\n" +
-                "You can use NEOFORM without Health Connect. These observations are not a medical assessment or a measured recovery score."
+            text = "NEOFORM can read steps, staged sleep, body weight, logged energy/protein, resting heart rate, optional HRV RMSSD and breathing rate, plus supported skin-temperature deviations. Each data permission is optional.\n\n" +
+                "Records, source choices, recovery estimates and health preferences stay encrypted on this phone, outside cloud workout state, existing backups, Gemini, analytics and logs. Readings are visible only inside authenticated Sharma. Separately enabled background imports can continue privately while the profile is locked; this never unlocks the profile.\n\n" +
+                "The experimental recovery index compares observations with personal baselines. It is not a medical assessment, Welltory's proprietary score, or a percentage of muscle recovery. Missing observations stay unknown. Health data never fills pain, fatigue, muscle-recovery or RIR answers.\n\n" +
+                "Automatic next-set reductions are off until explicitly enabled. They require fresh lower signals, your current check-in, reported effort, confirmed rest/execution and an independent performance-based recommendation. Only one supported upcoming load can be reduced per exercise/workout, with Undo. No sets, completed observations or future routines are rewritten.\n\n" +
+                "Foreground imports read up to 30 available days. Enable private background imports requests separate permission and schedules work every 12 hours. Android battery restrictions and source-app delays can prevent twice-daily success or fresh readings. No persistent service, health writes, extended-history or medical-record permissions are used.\n\n" +
+                "Revoke individual permissions in Health Connect at any time. More → Health Connect offers Disconnect and Delete imported data; both cancel background enrollment and clear imported records. Source-app data and workout history are preserved. Consumed adjustment guards retain ordinary workout/exercise IDs to prevent duplicate changes after reconnecting.\n\n" +
+                "You can use NEOFORM without Health Connect."
+
         })
         content.addView(Button(this).apply { text = "Done"; setOnClickListener { finish() } })
         setContentView(ScrollView(this).apply { addView(content) })

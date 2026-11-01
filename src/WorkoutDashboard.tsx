@@ -1,3 +1,4 @@
+import { RecoveryCard } from "./HealthConnectPanel";
 import { useMemo, useState } from "react";
 import { ChevronRight, CalendarDays, Trophy, ArrowUpRight } from "lucide-react";
 import * as D from "./domain";
@@ -89,6 +90,7 @@ export function WorkoutDashboard({
           <CalendarDays size={22} />
         </button>
       </header>
+      <RecoveryCard />
       {coach && (
         <button className="gemini-entry glass-card" onClick={coach}>
           <span>

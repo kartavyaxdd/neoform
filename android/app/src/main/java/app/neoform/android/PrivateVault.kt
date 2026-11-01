@@ -13,6 +13,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Private app storage, encrypted with a non-exportable Android Keystore key. Never backed up. */
 class PrivateVault(private val context: Context) {
+    companion object { private val lock = Any() }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("neoform-private-v1", null) as? SecretKey)?.let { return it }
@@ -21,7 +22,7 @@ class PrivateVault(private val context: Context) {
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    @Synchronized fun read(name: String): JSONObject? {
+    fun read(name: String): JSONObject? = synchronized(lock) {
         val file = java.io.File(context.noBackupFilesDir, "$name.enc")
         if (!file.exists()) return null
         val bytes = file.readBytes()
@@ -29,12 +30,12 @@ class PrivateVault(private val context: Context) {
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         return JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
     }
-    @Synchronized fun write(name: String, value: JSONObject) {
+    fun write(name: String, value: JSONObject) = synchronized(lock) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val file = java.io.File(context.noBackupFilesDir, "$name.enc")
         val tmp = java.io.File(context.noBackupFilesDir, "$name.tmp")
-        tmp.outputStream().use { it.write(cipher.iv + cipher.doFinal(value.toString().toByteArray(Charsets.UTF_8))); it.flush() }
+        tmp.outputStream().use { it.write(cipher.iv + cipher.doFinal(value.toString().toByteArray(Charsets.UTF_8))); it.flush(); it.fd.sync() }
         check(tmp.renameTo(file)) { "Private storage unavailable" }
     }
-    @Synchronized fun delete(name: String) { java.io.File(context.noBackupFilesDir, "$name.enc").delete() }
+    fun delete(name: String) = synchronized(lock) { java.io.File(context.noBackupFilesDir, "$name.enc").delete() }
 }

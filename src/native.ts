@@ -1,10 +1,21 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import type { AutoReduction } from "./healthTraining";
 import type { HealthKind, HealthSnapshot } from "./healthConnectPolicy";
 
 export const ANDROID_API_ORIGIN =
   "https://neoform-bca721354a.kartavya-neoform.workers.dev";
 export const isAndroid = () =>
   Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+export type HealthControls = {
+  backgroundEnabled?: boolean;
+  autoReduce?: boolean;
+  status?: string;
+  lastAttemptAt?: number;
+  lastSuccessAt?: number;
+  importFailed?: boolean;
+  reductions?: string[];
+  undo?: Omit<AutoReduction, "basis">;
+};
 type NativePlugin = {
   setTheme(o: { dark: boolean }): Promise<void>;
   background(): Promise<void>;
@@ -20,7 +31,20 @@ type NativePlugin = {
   healthStatus(): Promise<{
     availability: "available" | "install-required" | "unsupported";
     permissions: HealthKind[];
+    backgroundSupported?: boolean;
+    backgroundGranted?: boolean;
+    controls?: HealthControls;
   }>;
+  healthPreferences(o: {
+    autoReduce?: boolean;
+  }): Promise<{ controls: HealthControls }>;
+  healthReserveReduction(o: {
+    session: string;
+    entry: string;
+    undo?: Omit<AutoReduction, "basis">;
+  }): Promise<{ reserved: boolean }>;
+  healthEnableBackground(): Promise<void>;
+  healthDisableBackground(): Promise<void>;
   healthConnect(): Promise<void>;
   healthCancel(): Promise<void>;
   healthSnapshot(): Promise<{ snapshot: HealthSnapshot | null }>;

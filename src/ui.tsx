@@ -164,6 +164,7 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const viewRef = useRef<HTMLElement>(null);
   const parent = useContext(SheetContext);
   const [host, setHost] = useState<HTMLDialogElement | null>(null);
   const attach = useCallback((node: HTMLDialogElement | null) => {
@@ -198,9 +199,33 @@ export function Modal({
     if (view && !view.contains(document.activeElement))
       view.querySelector<HTMLElement>("input,select,textarea,button")?.focus();
   });
+  useLayoutEffect(() => {
+    const node = viewRef.current;
+    if (
+      childCount ||
+      !node?.animate ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    // Forms fade only: opening a sheet must never slide a field under a typing finger.
+    const form = !!node.querySelector(
+      "input,textarea,select,[contenteditable=true]",
+    );
+    const animation = node.animate(
+      form
+        ? [{ opacity: 0 }, { opacity: 1 }]
+        : [
+            { opacity: 0, transform: "translateY(10px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+      { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" },
+    );
+    return () => animation.cancel();
+  }, [childCount, title, presentation]);
   const view = (
     <SheetContext.Provider value={{ host: root, setChildren }}>
       <section
+        ref={viewRef}
         className="modal-view"
         hidden={childCount > 0}
         data-presentation={presentation}

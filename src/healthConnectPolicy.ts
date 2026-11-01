@@ -1,11 +1,14 @@
 import type { Readiness } from "./domain";
-
 export const HEALTH_KINDS = [
   "steps",
   "sleep",
   "weight",
   "nutrition",
   "resting-heart-rate",
+  "hrv-rmssd",
+  "respiratory-rate",
+  "skin-temperature",
+  "protein",
 ] as const;
 export type HealthKind = (typeof HEALTH_KINDS)[number];
 export type HealthRecord = {
@@ -17,16 +20,29 @@ export type HealthRecord = {
   endAt: number;
   day: string;
   value: number;
-  unit: "count" | "min" | "kg" | "kcal" | "bpm";
+  unit:
+    "count" | "min" | "kg" | "kcal" | "bpm" | "ms" | "breaths/min" | "°C" | "g";
+  device?: string;
+  recordingMethod?: number;
+  context?: string;
+  asleepMinutes?: number;
+  awakeMinutes?: number;
+  stageCoverage?: number;
 };
 export type HealthSnapshot = {
-  version: 1;
+  version: 1 | 2;
   syncedAt: number;
   enabled: boolean;
   permissions: HealthKind[];
   records: HealthRecord[];
   sources: Partial<Record<HealthKind, string>>;
   clipped?: boolean;
+  metricStatus?: Partial<
+    Record<
+      HealthKind,
+      "imported" | "empty" | "denied" | "unsupported" | "partial"
+    >
+  >;
 };
 export type HealthMetric = {
   kind: HealthKind;
@@ -60,6 +76,10 @@ const units = {
   weight: "kg",
   nutrition: "kcal",
   "resting-heart-rate": "bpm",
+  "hrv-rmssd": "ms",
+  "respiratory-rate": "breaths/min",
+  "skin-temperature": "°C",
+  protein: "g",
 };
 const limits = {
   steps: 200000,
@@ -67,8 +87,11 @@ const limits = {
   weight: 500,
   nutrition: 30000,
   "resting-heart-rate": 250,
+  "hrv-rmssd": 300,
+  "respiratory-rate": 100,
+  "skin-temperature": 20,
+  protein: 1500,
 };
-
 export function normalizeHealthSnapshot(
   input: HealthSnapshot,
   now = Date.now(),
@@ -90,7 +113,7 @@ export function normalizeHealthSnapshot(
         r.sourceName.length > 200 ||
         r.unit !== units[r.kind] ||
         !Number.isFinite(r.value) ||
-        r.value < 0 ||
+        (r.kind === "skin-temperature" ? r.value < -20 : r.value < 0) ||
         r.value > limits[r.kind] ||
         !Number.isFinite(r.startAt) ||
         r.startAt < 0 ||
@@ -100,7 +123,10 @@ export function normalizeHealthSnapshot(
         r.endAt < now - 31 * DAY ||
         !validDay(r.day) ||
         (r.kind === "sleep" && r.endAt - r.startAt > DAY) ||
-        ((r.kind === "weight" || r.kind === "resting-heart-rate") &&
+        ((r.kind === "weight" ||
+          r.kind === "resting-heart-rate" ||
+          r.kind === "hrv-rmssd" ||
+          r.kind === "respiratory-rate") &&
           r.value === 0) ||
         (r.kind === "steps" && r.source !== "health-connect-aggregate") ||
         seen.has(key)
@@ -111,13 +137,27 @@ export function normalizeHealthSnapshot(
     })
     .slice(0, 10000);
   return {
-    version: 1,
+    version: 2,
     enabled: input.enabled === true,
     syncedAt: input.syncedAt,
     permissions,
     records,
     sources: { ...input.sources },
     clipped: input.clipped === true || input.records.length > 10000,
+    metricStatus: Object.fromEntries(
+      HEALTH_KINDS.map((k) => [
+        k,
+        input.metricStatus?.[k] === "unsupported"
+          ? "unsupported"
+          : !permissions.includes(k)
+            ? "denied"
+            : !records.some((r) => r.kind === k)
+              ? "empty"
+              : input.clipped || input.records.length > 10000
+                ? "partial"
+                : "imported",
+      ]),
+    ),
   };
 }
 const median = (values: number[]) => {
@@ -139,7 +179,7 @@ function dailyValue(kind: HealthKind, rows: HealthRecord[]) {
     }
     return total / 60000;
   }
-  if (kind === "steps" || kind === "nutrition")
+  if (kind === "steps" || kind === "nutrition" || kind === "protein")
     return rows.reduce((n, r) => n + r.value, 0);
   if (kind === "weight")
     return [...rows].sort((a, b) => b.endAt - a.endAt)[0].value;
@@ -188,7 +228,7 @@ export function healthContext(
       sourceName: latest.sourceName,
       baseline: history.length >= 7 ? median(history) : undefined,
       observations: history.length,
-      partial: kind === "nutrition" || kind === "steps",
+      partial: kind === "nutrition" || kind === "protein" || kind === "steps",
     });
   }
   const reviews: HealthContext["reviews"] = [];

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button, Field } from "./ui";
 import {
   useHealthState,
@@ -9,18 +9,16 @@ import {
   healthContext,
   HEALTH_KINDS,
   type HealthContext,
-  type HealthKind,
 } from "./healthConnectPolicy";
 import { isAndroid } from "./native";
 import { useStore } from "./store";
-
-const labels: Record<HealthKind, string> = {
-  steps: "Steps",
-  sleep: "Sleep session time",
-  weight: "Body weight",
-  nutrition: "Logged calories",
-  "resting-heart-rate": "Resting heart rate",
-};
+import {
+  selectedHealthRows,
+  healthLabels,
+  recoveryEstimate,
+  recoveryTrend,
+} from "./healthRecovery";
+const labels = healthLabels;
 const metricValue = (value: number, unit: string) =>
   `${Math.round(value * 10) / 10} ${unit}`;
 export function HealthSummary({
@@ -53,12 +51,15 @@ export function HealthSummary({
               ? ` · prior median ${metricValue(m.baseline, m.unit)} (${m.observations} days)`
               : " · building your baseline"}
           </span>
+          {m.kind === "sleep" && (
+            <SleepStages snapshot={view.snapshot!} day={m.day} />
+          )}
         </p>
       ))}
       <p className="caption">
-        Descriptive observations, not a recovery score. Sleep session time may
-        include awake time. Nutrition may omit unlogged meals. Baselines need
-        seven prior days within 21 days from the same source.
+        Descriptive observations. Sleep session time may include awake time.
+        Nutrition may omit unlogged meals. Baselines need seven prior days
+        within 21 days from the same source.
       </p>
       {!context.stale &&
         context.reviews.map((f) => (
@@ -114,9 +115,9 @@ export function HealthConnectPanel() {
   return (
     <div className="preference-content" aria-busy={v.busy}>
       <p>
-        Read-only access to steps, sleep, weight, nutrition and resting heart
-        rate. Imported records stay encrypted on this phone, outside cloud sync,
-        backups and Gemini.
+        Read-only health signals, including optional HRV (RMSSD), breathing rate
+        and supported skin-temperature trends. Imported records stay encrypted
+        on this phone, outside cloud sync, backups and Gemini.
       </p>
       <p role="status">{v.message}</p>
       {v.busy && (
@@ -171,10 +172,109 @@ export function HealthConnectPanel() {
               ? new Date(v.snapshot.syncedAt).toLocaleString()
               : "Not yet synced"}
             {v.snapshot.clipped
-              ? " · partial import; narrow your source data before using trends"
+              ? " · import reached its safety limit; recovery guidance is unavailable"
               : ""}
           </p>
+          <RecoveryCard />
           <HealthSummary />
+          <details>
+            <summary>Data quality &amp; source freshness</summary>
+            {HEALTH_KINDS.map((kind) => {
+              const rows = selectedHealthRows(v.snapshot!, kind);
+              const latest = rows.reduce((at, r) => Math.max(at, r.endAt), 0);
+              return (
+                <p className="caption" key={kind}>
+                  <strong>{labels[kind]}</strong> ·{" "}
+                  {v.snapshot!.metricStatus?.[kind] ??
+                    (!v.permissions.includes(kind)
+                      ? "denied"
+                      : rows.length
+                        ? "imported"
+                        : "empty")}
+                  <br />
+                  {latest
+                    ? `Latest source observation: ${new Date(latest).toLocaleString()}${Date.now() - latest > 86400000 ? " · stale for recovery scoring" : ""}`
+                    : "No records from the selected source"}
+                </p>
+              );
+            })}
+          </details>
+          <section
+            className="health-sync-status"
+            aria-label="Health sync status"
+          >
+            <h3>Automatic imports</h3>
+            <p>
+              {v.controls?.backgroundEnabled
+                ? "Every 12 hours · Android may delay delivery"
+                : "Foreground sync only"}
+            </p>
+            <p className="caption">
+              Background:{" "}
+              {!v.backgroundSupported
+                ? "Unavailable on this provider; update Health Connect"
+                : !v.backgroundGranted
+                  ? "Permission required"
+                  : v.controls?.backgroundEnabled
+                    ? "Enabled, including while Sharma is locked"
+                    : "Available · disabled"}
+            </p>
+            <p className="caption">
+              Last attempt:{" "}
+              {v.controls?.lastAttemptAt
+                ? new Date(v.controls.lastAttemptAt).toLocaleString()
+                : "Not recorded"}
+              <br />
+              Last successful import:{" "}
+              {(v.controls?.lastSuccessAt ?? v.snapshot.syncedAt)
+                ? new Date(
+                    v.controls?.lastSuccessAt ?? v.snapshot.syncedAt,
+                  ).toLocaleString()
+                : "Not yet"}
+              <br />
+              Status: {v.controls?.status ?? "Foreground only"}
+            </p>
+            <p className="caption">
+              Importing successfully does not mean your ring or source app has
+              uploaded new readings. Source observation dates are shown below.
+              Imports stay private even while locked.
+            </p>
+            <Button
+              disabled={
+                v.busy ||
+                (!v.backgroundSupported && !v.controls?.backgroundEnabled)
+              }
+              onClick={() =>
+                void healthOperation(
+                  v.controls?.backgroundEnabled
+                    ? "stop-background"
+                    : "background",
+                )
+              }
+            >
+              {v.controls?.backgroundEnabled
+                ? "Disable background imports"
+                : "Enable private background imports"}
+            </Button>
+            <label className="check-line">
+              <input
+                type="checkbox"
+                disabled={v.busy}
+                checked={v.controls?.autoReduce === true}
+                onChange={(e) =>
+                  void healthOperation(
+                    e.target.checked ? "auto-on" : "auto-off",
+                  )
+                }
+              />
+              Automatic next-set load reductions
+            </label>
+            <p className="caption">
+              Requires lower recovery signals, your current check-in, reported
+              effort and confirmed usual rest/execution. At most once per
+              exercise. Never changes your routine or adds sets.
+            </p>
+          </section>
           <details>
             <summary>Data sources</summary>
             {HEALTH_KINDS.filter((k) => k !== "steps").map((k) => {
@@ -238,5 +338,132 @@ export function HealthConnectPanel() {
         </>
       )}
     </div>
+  );
+}
+export function RecoveryCard() {
+  const [trendOpen, setTrendOpen] = useState(false);
+  const v = useHealthState();
+  const estimate = useMemo(() => recoveryEstimate(v.snapshot), [v.snapshot]);
+  if (!isAndroid() || !v.snapshot?.enabled) return null;
+  return (
+    <section
+      className="recovery-card"
+      aria-label="Recovery estimate"
+      data-band={estimate.band}
+    >
+      <div className="recovery-heading">
+        <strong>Recovery estimate</strong>
+        <b>{estimate.score === null ? "—" : `${estimate.score}/100`}</b>
+      </div>
+      <p>
+        {estimate.score === null
+          ? estimate.reason
+          : `${{ usual: "Usual signals", caution: "Caution", lower: "Lower signals", unknown: "Unknown" }[estimate.band]} · ${estimate.confidence} data confidence`}
+      </p>
+      {estimate.band === "lower" && (
+        <p className="caption">
+          Check how you actually feel in Readiness. Health readings alone cannot
+          change a set.
+        </p>
+      )}
+      <details>
+        <summary>Why this estimate?</summary>
+        <p className="caption">
+          Experimental NEOFORM index, not a percentage of muscle recovery or
+          Welltory’s score. A usual baseline is not proof of good health. Sleep
+          needs recorded stages; at least 14 prior days and two eligible signals
+          are required. Missing data stays unknown.
+        </p>
+        {estimate.components.map((c) => (
+          <p className="caption" key={c.kind}>
+            {c.kind === "sleep" ? "Recorded asleep time" : healthLabels[c.kind]}{" "}
+            · {c.sourceName} · {c.days} baseline days · component{" "}
+            {Math.round(c.score)}/100
+            <br />
+            {c.kind === "hrv-rmssd" ? "log-RMSSD" : "Observed"}:{" "}
+            {c.value.toFixed(2)}{" "}
+            {c.kind === "sleep"
+              ? "min"
+              : c.kind === "resting-heart-rate"
+                ? "bpm"
+                : "log(ms)"}{" "}
+            · median {c.baseline.toFixed(2)} · scale {c.scale.toFixed(2)}
+            <br />
+            Observed {new Date(c.at).toLocaleString()}
+          </p>
+        ))}
+        <p className="caption">
+          Adverse deviations use median/MAD with minimum scales of 45 min sleep,
+          3 bpm resting HR and 0.10 log-RMSSD. Weights: sleep 40%, HRV 35%,
+          resting HR 25%, renormalized for available signals. Scores below 50
+          indicate lower signals; 50–74 caution; 75–100 usual. Coverage
+          confidence is not predictive validation.
+        </p>
+        <details onToggle={(e) => setTrendOpen(e.currentTarget.open)}>
+          <summary>Private seven-day trend</summary>
+          {trendOpen && <RecoveryHistory />}
+        </details>
+      </details>
+    </section>
+  );
+}
+function RecoveryHistory() {
+  const v = useHealthState();
+  const trend = useMemo(() => recoveryTrend(v.snapshot), [v.snapshot]);
+  return (
+    <div className="recovery-trend">
+      {trend.length ? (
+        trend.map((r) => (
+          <p key={r.at}>
+            <span>{new Date(r.at).toLocaleDateString()}</span>
+            <meter
+              min="0"
+              max="100"
+              value={r.score!}
+              aria-label={`Recovery estimate ${r.score}`}
+            />
+            <b>{r.score}</b>
+          </p>
+        ))
+      ) : (
+        <p className="caption">Not enough historical data yet.</p>
+      )}
+    </div>
+  );
+}
+
+function SleepStages({
+  snapshot,
+  day,
+}: {
+  snapshot: import("./healthConnectPolicy").HealthSnapshot;
+  day: string;
+}) {
+  const row = selectedHealthRows(snapshot, "sleep")
+    .filter((r) => r.day === day)
+    .sort((a, b) => b.endAt - a.endAt)[0];
+  if (
+    !row ||
+    !Number.isFinite(row.asleepMinutes) ||
+    !Number.isFinite(row.awakeMinutes) ||
+    !row.stageCoverage
+  )
+    return (
+      <>
+        <br />
+        <span className="caption">
+          Stages unavailable · session time is not confirmed asleep time.
+        </span>
+      </>
+    );
+  return (
+    <>
+      <br />
+      <span className="caption">
+        Latest session stages: asleep {Math.round(row.asleepMinutes!)} min ·
+        awake {Math.round(row.awakeMinutes!)} min ·{" "}
+        {Math.round(row.stageCoverage * 100)}% stage coverage
+      </span>
+    </>
   );
 }

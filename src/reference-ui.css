@@ -3286,3 +3286,101 @@ button.exercise-prescription {
 .native-android {
   overscroll-behavior-y: contain;
 }
+.recovery-card {
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--panel, var(--glass));
+  border: 1px solid var(--line);
+  margin-block: 12px;
+  contain: layout;
+}
+.recovery-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.recovery-heading > b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.recovery-card p {
+  margin-block: 8px;
+}
+.recovery-card summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.recovery-card[data-band="lower"] .recovery-heading > b {
+  color: var(--ink);
+}
+.recovery-trend p {
+  display: grid;
+  grid-template-columns: 1fr 2fr 32px;
+  gap: 12px;
+  align-items: center;
+}
+.recovery-trend meter {
+  width: 100%;
+}
+.health-sync-status {
+  padding-block: 12px;
+  border-block: 1px solid var(--line);
+}
+.auto-next-set {
+  position: fixed;
+  z-index: 65;
+  bottom: calc(110px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(94vw, 480px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-shadow);
+  font-size: 13px;
+}
+.auto-next-set button {
+  flex-shrink: 0;
+  min-height: 44px;
+}
+/* Android keeps glass on stationary chrome. Moving/scrolling content stays cheap to composite. */
+html.native-android
+  :where(
+    .log-exercise,
+    .activity-card,
+    .grouped,
+    .body-card,
+    .muscle-detail,
+    .reward-progress,
+    .recap-overview,
+    .recap-records,
+    .glass-card
+  ) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.native-android :where(.modal, .bottom-nav) {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .modal-view,
+  .modal[open] {
+    will-change: auto;
+  }
+  .complete-set svg {
+    transition: transform 120ms var(--motion-ease);
+  }
+  .complete-set:active svg {
+    transform: scale(0.88);
+  }
+}

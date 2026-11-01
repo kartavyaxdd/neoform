@@ -73,8 +73,10 @@ export function NextSetSheet({
       )}
       <p className="caption">
         This check describes this review only. It does not confirm the rest of
-        your workout or fill in effort. Advice changes no rows, assigned targets
-        or set counts.
+        your workout or fill in effort. Advice is normally review-only. If you
+        enabled automatic reductions, a supported next-row load can change after
+        this confirmation, with Undo. Set counts and your future routine are
+        preserved.
       </p>
       <div className="actions wrap">
         <Button onClick={reviewTargets}>Review Targets</Button>

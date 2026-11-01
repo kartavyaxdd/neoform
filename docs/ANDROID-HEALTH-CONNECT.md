@@ -13,15 +13,17 @@ keep account headers, abort signals and epoch checks; no CORS or public authenti
 policy is relaxed. External links open outside the WebView. Release bundles reject
 remote frames/scripts. Android OS backup is disabled.
 
-Health Connect is read-only: steps, sleep sessions, weight, logged nutrition energy
-and resting heart rate. Android 13 and earlier need the separate Health Connect app.
-Availability and each permission are checked independently. The first release reads
-foreground-only, up to 30 available days; there is no historical/background permission,
-sensor subscription, health-data write, diet-target import or proprietary readiness API.
+Health Connect is read-only: steps, staged sleep, weight, logged energy/protein,
+resting heart rate, optional HRV RMSSD and respiratory rate, and supported skin-temperature deviations. Android 13 and earlier need the separate Health Connect app.
+Availability and each permission are checked independently. Imports read up to 30 available days. Foreground sync remains; separately enabled
+background imports use a 12-hour WorkManager schedule and explicit permission.
+There is no historical permission, sensor subscription, health-data write, diet-target
+import or proprietary readiness API. Current policy: [Health sync and recovery v1](HEALTH-RECOVERY-V1.md).
 
 Health records and source preferences live in an Android Keystore-encrypted,
 non-backed-up file, separate from workout state. Only the server-authenticated locked
-Sharma profile can expose them; switching/locking invalidates reads. Cloud state,
+Sharma profile can expose them; switching/locking invalidates UI reads. Separately consented background enrollment
+can continue importing privately while locked; logout revokes it. Cloud state,
 exports/backups, Gemini prompts, analytics and logs never receive records. Only a
 user-confirmed ordinary readiness factor can enter existing workout state.
 Disconnect revokes this app's permissions and removes its cache. Delete imported data
@@ -39,7 +41,8 @@ incomplete. Resting HR is not inferred from generic heart-rate samples.
 
 ## Coaching policy (original software heuristics)
 
-Metrics are descriptive, not a recovery score. Baselines are medians of at least seven
+Descriptive context retains the rules below. The separate experimental recovery index
+and explicitly enabled next-set automation are defined in [the current policy](HEALTH-RECOVERY-V1.md). Baselines are medians of at least seven
 distinct prior daily observations in the preceding 21 days from the same source.
 Unknown permissions, missing records, records older than 48 hours, future observations
 and snapshots older than 24 hours cannot support current review cues. Partial imports
@@ -53,9 +56,11 @@ optional readiness form. Saving still requires the existing explicit present-ten
 confirmation; pain/fatigue/muscle recovery and observation timestamps are not fabricated
 or cleared. During working sets readiness remains read-only.
 
-Existing performance-based coaching gates interpret confirmed context; imported data
-never assigns loads/reps/RIR/sets, clears pain vetoes, or implies good recovery. No
-calorie-deficit, growth, HRV, Welltory-score or automatic volume model is added.
+Existing performance-based coaching gates interpret confirmed context. Imports alone
+never assign targets, clear pain vetoes or imply good recovery. Optional automatic
+next-set load reductions additionally require independently confirmed performance
+and a current check-in; see the current policy. No calorie-deficit, growth,
+proprietary Welltory-score or automatic volume model is added.
 
 ## Android behaviour
 

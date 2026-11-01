@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { readData, writeData } from "./storage-client";
+import * as D from "../../src/domain";
+import { closeSheets } from "./premium-controls";
+import { liftProgressFixture } from "../lift-progress-fixture";
 import { weeklyBrowserFixture } from "../weekly-muscle-fixture";
 
 for (const width of [360, 390, 1440])
@@ -39,6 +42,10 @@ for (const width of [360, 390, 1440])
         "cancel",
         "bindProfile",
         "healthStatus",
+        "healthPreferences",
+        "healthReserveReduction",
+        "healthEnableBackground",
+        "healthDisableBackground",
         "healthSnapshot",
         "healthConnect",
         "healthCancel",
@@ -53,11 +60,16 @@ for (const width of [360, 390, 1440])
         "enableNotifications",
         "disableNotifications",
       ];
-      let connected = false,
+      let connected = sessionStorage.getItem("qa-health-connected") === "yes",
         bound: string | null = null;
       let firstPermission = true;
+      let controls = JSON.parse(
+        sessionStorage.getItem("qa-health-controls") ?? "{}",
+      );
+      const saveControls = () =>
+        sessionStorage.setItem("qa-health-controls", JSON.stringify(controls));
       const now = Date.now();
-      const records = Array.from({ length: 8 }, (_, i) => ({
+      const records = Array.from({ length: 23 }, (_, i) => ({
         id: `health-private-fixture-${i}`,
         kind: "sleep",
         source: "health-private-ring",
@@ -67,16 +79,34 @@ for (const width of [360, 390, 1440])
         day: new Date(now - i * 86400000).toISOString().slice(0, 10),
         value: i ? 480 : 240,
         unit: "min",
+        asleepMinutes: i ? 450 : 200,
+        awakeMinutes: i ? 30 : 40,
+        stageCoverage: 1,
       }));
+      for (let i = 0; i < 23; i++)
+        for (const kind of ["hrv-rmssd", "resting-heart-rate"]) {
+          const endAt = now - i * 86400000 - 2 * 3600000;
+          records.push({
+            id: `health-private-${kind}-${i}`,
+            kind,
+            source: "health-private-ring",
+            sourceName: "Synthetic ring source",
+            startAt: endAt,
+            endAt,
+            day: new Date(now - i * 86400000).toISOString().slice(0, 10),
+            value: kind === "hrv-rmssd" ? (i ? 50 : 10) : i ? 60 : 72,
+            unit: kind === "hrv-rmssd" ? "ms" : "bpm",
+          } as any);
+        }
       const snapshot = () =>
         connected
           ? {
-              version: 1,
+              version: 2,
               syncedAt: now,
               enabled: true,
               records,
               sources: {},
-              permissions: ["sleep"],
+              permissions: ["sleep", "hrv-rmssd", "resting-heart-rate"],
             }
           : null;
       win.Capacitor = {
@@ -105,8 +135,38 @@ for (const width of [360, 390, 1440])
           if (method === "healthStatus")
             return {
               availability: "available",
-              permissions: connected ? ["sleep"] : [],
+              permissions: connected
+                ? ["sleep", "hrv-rmssd", "resting-heart-rate"]
+                : [],
+              backgroundSupported: true,
+              backgroundGranted: controls.backgroundEnabled === true,
+              controls: JSON.parse(JSON.stringify(controls)),
             };
+          if (
+            method === "healthEnableBackground" ||
+            method === "healthDisableBackground"
+          ) {
+            controls.backgroundEnabled = method === "healthEnableBackground";
+            saveControls();
+            return {};
+          }
+          if (method === "healthPreferences") {
+            controls.autoReduce = o.autoReduce;
+            saveControls();
+            return { controls };
+          }
+          if (method === "healthReserveReduction") {
+            const key = `${o.session}:${o.entry}`;
+            if (
+              !controls.autoReduce ||
+              (controls.reductions ?? []).includes(key)
+            )
+              return { reserved: false };
+            controls.reductions = [...(controls.reductions ?? []), key];
+            controls.undo = o.undo;
+            saveControls();
+            return { reserved: true };
+          }
           if (method === "healthConnect") {
             if (firstPermission) {
               firstPermission = false;
@@ -115,10 +175,14 @@ for (const width of [360, 390, 1440])
               });
             }
             connected = true;
+            sessionStorage.setItem("qa-health-connected", "yes");
             return {};
           }
           if (method === "healthDelete" || method === "healthDisconnect") {
             connected = false;
+            sessionStorage.removeItem("qa-health-connected");
+            controls = {};
+            saveControls();
             return {};
           }
           if (
@@ -177,6 +241,133 @@ for (const width of [360, 390, 1440])
     expect(JSON.stringify(current)).not.toContain("health-private");
     expect(current.data.sessions).toEqual(fixture.sessions);
     expect(current.data.programs).toEqual(fixture.programs);
+    await expect(
+      page.getByRole("region", { name: "Recovery estimate", exact: true }),
+    ).toContainText("Lower signals");
+    await page
+      .getByRole("button", {
+        name: "Enable private background imports",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Disable background imports",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole("checkbox", {
+        name: "Automatic next-set load reductions",
+        exact: true,
+      })
+      .check();
+    const training = liftProgressFixture();
+    training.profile = fixture.profile;
+    const p = training.programs[0],
+      w = p.workouts[0];
+    w.exercises[0].setup = {
+      label: "QA rack",
+      execution: "Same ROM",
+      availableLoads: [45, 50, 55],
+    };
+    const session = D.startSession(
+      w.name,
+      D.prepareWorkout(w, p, D.catalog, training.sessions),
+      p,
+      w,
+    );
+    session.readiness = {
+      recordedAt: Date.now(),
+      pain: false,
+      fatigue: 3,
+      context: "changed",
+      factors: ["poor-sleep"],
+      muscles: [],
+    };
+    const entry = session.exercises[0];
+    entry.sets.forEach((t) => {
+      t.weight = 50;
+      t.prescription!.weight = 50;
+    });
+    Object.assign(entry.sets[0], {
+      done: true,
+      reps: 6,
+      rir: 0,
+      effortReported: true,
+    });
+    training.draft = session;
+    const beforeTraining = await (await readData(page)).json();
+    expect(
+      (
+        await writeData(page, { data: { ...beforeTraining, data: training } })
+      ).status(),
+    ).toBe(200);
+    await page.reload();
+    await page.getByRole("button", { name: "Workout", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Resume session", exact: true })
+      .click();
+    const input = page.getByLabel("Barbell bench press set 2 weight", {
+      exact: true,
+    });
+    await expect(input).toHaveValue("50");
+    await page
+      .getByRole("button", { name: "Live next-set guidance", exact: true })
+      .click();
+    await page
+      .getByRole("checkbox", {
+        name: "The last completed set used usual rest and the same execution.",
+        exact: true,
+      })
+      .check();
+    await closeSheets(page);
+    await expect(input).toHaveValue("45");
+    await expect(
+      page.getByRole("button", { name: "Undo load change", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".sync-status")).toHaveText("Synced");
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Undo load change", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Undo load change", exact: true })
+      .click();
+    await expect(
+      page.getByLabel("Barbell bench press set 2 weight", { exact: true }),
+    ).toHaveValue("50");
+    const afterUndo = (await (await readData(page)).json()).data;
+    expect(afterUndo.programs).toEqual(training.programs);
+    expect(afterUndo.sessions).toEqual(training.sessions);
+    await page
+      .getByRole("button", { name: "Session options", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Minimize workout", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await expect(
+      page.getByRole("region", { name: "Recovery estimate", exact: true }),
+    ).toContainText("Lower signals");
+    await page.screenshot({
+      path: `${process.env.NEOFORM_QA_OUTPUT}/android-recovery-${width}.png`,
+    });
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Toggle theme", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(
+      page.getByRole("region", { name: "Recovery estimate", exact: true }),
+    ).toContainText("Lower signals");
+    await page.screenshot({
+      path: `${process.env.NEOFORM_QA_OUTPUT}/android-recovery-dark-${width}.png`,
+      animations: "disabled",
+    });
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByText("Health Connect", { exact: true }).click();
     await page.getByRole("button", { name: "Disconnect", exact: true }).click();
     await expect(
       page.getByText("Disconnected. Imported data deleted from this phone.", {

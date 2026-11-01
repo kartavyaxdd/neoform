@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { Native, isAndroid } from "./native";
+import { Native, isAndroid, type HealthControls } from "./native";
 import { healthDeadline } from "./healthOperation";
 import { useStore } from "./store";
 import {
@@ -14,6 +14,9 @@ type View = {
   busy: boolean;
   availability: string;
   permissions: HealthKind[];
+  controls?: HealthControls;
+  backgroundSupported?: boolean;
+  backgroundGranted?: boolean;
 };
 const empty: View = {
   snapshot: null,
@@ -72,7 +75,16 @@ export function useHealthState() {
     : empty;
 }
 export async function healthOperation(
-  op: "connect" | "sync" | "disconnect" | "delete" | "settings",
+  op:
+    | "connect"
+    | "sync"
+    | "disconnect"
+    | "delete"
+    | "settings"
+    | "background"
+    | "stop-background"
+    | "auto-on"
+    | "auto-off",
   sources?: HealthSnapshot["sources"],
 ) {
   if (!isAndroid() || owner !== "sharma") return;
@@ -89,6 +101,31 @@ export async function healthOperation(
           : "Updating connection…",
   });
   try {
+    if (["background", "stop-background", "auto-on", "auto-off"].includes(op)) {
+      if (op === "background")
+        await healthDeadline(
+          Native.healthEnableBackground(),
+          120000,
+          stopNativeHealth,
+        );
+      else if (op === "stop-background")
+        await healthDeadline(Native.healthDisableBackground(), 10000);
+      else
+        await healthDeadline(
+          Native.healthPreferences({ autoReduce: op === "auto-on" }),
+          10000,
+        );
+      const status = await healthDeadline(Native.healthStatus(), 15000);
+      if (current())
+        publish({
+          ...status,
+          message:
+            op === "background"
+              ? "Background imports enabled. Android may delay scheduled work."
+              : "Health preferences saved on this phone.",
+        });
+      return;
+    }
     if (op === "settings") {
       await healthDeadline(Native.openHealthSettings(), 10000);
       return;
@@ -104,6 +141,7 @@ export async function healthOperation(
       if (current())
         publish({
           snapshot: null,
+          controls: {},
           ...(op === "disconnect" ? { permissions: [] } : {}),
           message:
             op === "disconnect"
@@ -131,8 +169,14 @@ export async function healthOperation(
           stopNativeHealth,
         )
       : await healthDeadline(Native.healthSync(), 60000, stopNativeHealth);
+    const updatedStatus = await healthDeadline(
+      Native.healthStatus(),
+      15000,
+      stopNativeHealth,
+    );
     if (current())
       publish({
+        ...updatedStatus,
         snapshot: normalizeHealthSnapshot(result.snapshot),
         message: "Saved privately on this phone. No cloud upload.",
       });
@@ -167,6 +211,9 @@ export async function healthOperation(
                     HEALTH_READ_WEIGHT: "weight",
                     HEALTH_READ_NUTRITION: "nutrition",
                     HEALTH_READ_RESTING_HEART_RATE: "resting heart rate",
+                    HEALTH_READ_HRV_RMSSD: "HRV (RMSSD)",
+                    HEALTH_READ_RESPIRATORY_RATE: "respiratory rate",
+                    HEALTH_READ_SKIN_TEMPERATURE: "skin temperature",
                   }[(error as { code: string }).code] ??
                     "a permitted data type") +
                   ". Review its permissions and try syncing again. Workout logging remains available."
@@ -191,12 +238,24 @@ export function HealthLifecycle() {
     publish(empty);
     async function refresh() {
       try {
-        await bindNativeProfile(profile);
+        await healthDeadline(
+          bindNativeProfile(profile),
+          15000,
+          stopNativeHealth,
+        );
         if (generation !== at || profile !== "sharma") return;
         owner = profile;
-        const status = await Native.healthStatus();
+        const status = await healthDeadline(
+          Native.healthStatus(),
+          15000,
+          stopNativeHealth,
+        );
         if (generation !== at) return;
-        const result = await Native.healthSnapshot();
+        const result = await healthDeadline(
+          Native.healthSnapshot(),
+          15000,
+          stopNativeHealth,
+        );
         if (generation !== at) return;
         publish({
           ...status,

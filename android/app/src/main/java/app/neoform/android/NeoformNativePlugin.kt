@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import com.getcapacitor.*
@@ -37,6 +38,7 @@ class NeoformNativePlugin : Plugin() {
     @Volatile private var healthJob: Job? = null
     private var healthRequest: PluginCall? = null
     private var healthRequestEpoch = 0L
+    private var healthRequestBackground = false
     override fun load() { vault = PrivateVault(context); health = HealthReader(context); alarms = RestAlarms(context) }
     private fun trusted(): Boolean = bridge.localUrl.trimEnd('/') == "https://localhost" && bridge.serverUrl == null
     private fun execute(call: PluginCall, block: suspend () -> JSObject?) {
@@ -66,6 +68,7 @@ class NeoformNativePlugin : Plugin() {
         val id = call.getString("id") ?: error("id")
         check(id.length <= 100 && requests.size < 24)
         val oldAuth = auth()
+        if (path == "/api/logout") HealthImports.stop(context, true)
         val authChange = path in listOf("/api/profiles/open", "/api/profiles/lock", "/api/logout", "/api/login", "/api/register")
         val at = synchronized(this@NeoformNativePlugin) {
             if (authChange) { epoch++; bound = false; activeProfile = null; healthJob?.cancel(); alarms.cancel() }
@@ -146,29 +149,46 @@ class NeoformNativePlugin : Plugin() {
         JSObject()
     }
     @PluginMethod fun healthStatus(call: PluginCall) = execute(call) {
-        requireHealth()
-        JSObject().put("availability", health.availability()).put("permissions", JSONArray(health.granted()))
+        requireHealth(); val at = epoch
+        val availability = health.availability()
+        val permissions = health.granted()
+        val supported = health.feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)
+        val granted = health.backgroundGranted()
+        synchronized(this@NeoformNativePlugin) {
+            requireHealth(); check(at == epoch)
+            JSObject().put("availability",availability).put("permissions", JSONArray(permissions))
+                .put("backgroundSupported",supported).put("backgroundGranted",granted).put("controls",HealthImports.status(context))
+        }
     }
     @PluginMethod fun healthSnapshot(call: PluginCall) = execute(call) {
-        requireHealth(); val at = epoch; val s = vault.read("health-sharma")
-        healthJob = currentCoroutineContext()[Job]
-        val permissions = health.granted()
-        synchronized(this@NeoformNativePlugin) {
-        requireHealth(); check(at == epoch)
-        if (s != null) {
-            s.put("permissions", JSONArray(permissions))
-            val filtered = JSONArray()
-            val records = s.optJSONArray("records") ?: JSONArray()
-            for (i in 0 until records.length()) if (records.getJSONObject(i).optString("kind") in permissions) filtered.put(records.getJSONObject(i))
-            s.put("records", filtered); vault.write("health-sharma", s)
-        }
-        }
-        JSObject().put("snapshot", s ?: JSONObject.NULL)
+        requireHealth(); val at = epoch; healthJob = currentCoroutineContext()[Job]
+        val s = HealthImports.snapshot(context,health) { at == epoch && authorizedHealth() }
+        JSObject().put("snapshot",s ?: JSONObject.NULL)
     }
-    @PluginMethod fun healthConnect(call: PluginCall) {
+    @PluginMethod fun healthPreferences(call: PluginCall) = execute(call) {
+        requireHealth(); val enabled = call.getBoolean("autoReduce")
+        if (enabled != null) HealthImports.setAuto(context,enabled)
+        JSObject().put("controls",HealthImports.status(context))
+    }
+    @PluginMethod fun healthReserveReduction(call: PluginCall) = execute(call) {
+        requireHealth()
+        val session = call.getString("session") ?: error("session"); val entry = call.getString("entry") ?: error("entry")
+        check(session.matches(Regex("[a-zA-Z0-9_-]{1,100}")) && entry.matches(Regex("[a-zA-Z0-9_-]{1,100}")))
+        val undo = call.getObject("undo")
+        if (undo != null) check(undo.toString().length <= 10000 && undo.optString("sessionId") == session && undo.optString("entryId") == entry)
+        JSObject().put("reserved",HealthImports.reserve(context,session,entry,undo))
+    }
+    @PluginMethod fun healthDisableBackground(call: PluginCall) = execute(call) {
+        requireHealth(); HealthImports.stop(context); JSObject()
+    }
+    @PluginMethod fun healthEnableBackground(call: PluginCall) { requestHealthPermissions(call,true) }
+    @PluginMethod fun healthConnect(call: PluginCall) { requestHealthPermissions(call,false) }
+    private fun requestHealthPermissions(call: PluginCall, background: Boolean) {
         if (!trusted() || !authorizedHealth()) { call.reject("Unlock Sharma first."); return }
         if (health.availability() != "available") { call.reject("Install or update Health Connect first."); return }
         if (healthRequest != null) { call.reject("A permission request is already open."); return }
+        if (background && !health.feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)) { call.reject("Background reads unavailable. Update Health Connect; foreground sync still works."); return }
+        healthRequestBackground = background
         healthRequest = call
         healthRequestEpoch = epoch
         activity.runOnUiThread {
@@ -176,7 +196,7 @@ class NeoformNativePlugin : Plugin() {
                 if (healthRequest !== call || healthRequestEpoch != epoch || !authorizedHealth()) {
                     healthRequest = null; call.reject("Profile changed. Reopen Health Connect."); return@runOnUiThread
                 }
-                val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, HealthReader.permissions.values.toSet())
+                val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, health.requested() + (if (background) setOf(HealthReader.backgroundPermission) else emptySet()))
                 startActivityForResult(call, intent, "healthPermissionResult")
             } catch (e: Exception) { healthRequest = null; call.reject("Android could not open Health Connect permissions.") }
         }
@@ -184,24 +204,23 @@ class NeoformNativePlugin : Plugin() {
     @ActivityCallback private fun healthPermissionResult(call: PluginCall?, result: ActivityResult) {
         val pending = healthRequest
         if (pending == null || pending.callbackId != call?.callbackId) return
+        val background = healthRequestBackground
         val requestedEpoch = healthRequestEpoch
         healthRequest = null
         if (requestedEpoch != epoch) { pending.reject("Profile changed. Reopen Health Connect."); return }
         if (call == null) return
-        execute(call) { synchronized(this@NeoformNativePlugin) { requireHealth(); check(requestedEpoch == epoch)
+        execute(call) {
+            val backgroundGranted = !background || health.backgroundGranted()
+            synchronized(this@NeoformNativePlugin) { requireHealth(); check(requestedEpoch == epoch)
             val old = vault.read("health-sharma") ?: JSONObject().put("version", 1).put("syncedAt", 0).put("records", JSONArray()).put("sources", JSONObject())
-            old.put("enabled", true); vault.write("health-sharma", old) }; JSObject() }
+            old.put("enabled", true); vault.write("health-sharma", old)
+            if (background) { check(backgroundGranted); HealthImports.enroll(context) }
+            }; JSObject() }
     }
     @PluginMethod fun healthSync(call: PluginCall) = execute(call) {
         requireHealth(); val at = epoch
         healthJob = currentCoroutineContext()[Job]
-        val old = vault.read("health-sharma"); check(old?.optBoolean("enabled") == true)
-        val next = health.read(old)
-        synchronized(this@NeoformNativePlugin) {
-            requireHealth(); check(at == epoch)
-            next.put("sources", vault.read("health-sharma")?.optJSONObject("sources") ?: JSONObject())
-            vault.write("health-sharma", next)
-        }
+        val next = HealthImports.sync(context,health,false) { at == epoch && authorizedHealth() }
         JSObject().put("snapshot", next)
     }
     @PluginMethod fun healthCancel(call: PluginCall) {
@@ -213,15 +232,15 @@ class NeoformNativePlugin : Plugin() {
         synchronized(this@NeoformNativePlugin) {
             requireHealth(); val s = vault.read("health-sharma") ?: error("Connect first")
             val sources = call.getObject("sources") ?: JSObject()
-            for (key in sources.keys()) check(key in HealthReader.permissions.keys && sources.opt(key) is String && sources.optString(key).length <= 200)
-            s.put("sources", sources); vault.write("health-sharma", s); JSObject().put("snapshot", s)
+            for (key in sources.keys()) check(key in (HealthReader.permissions.keys + "protein") && sources.opt(key) is String && sources.optString(key).length <= 200)
+            JSObject().put("snapshot", HealthImports.updateSources(context,sources))
         }
     }
     @PluginMethod fun healthDelete(call: PluginCall) = execute(call) {
-        requireHealth(); synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel(); vault.delete("health-sharma") }; JSObject()
+        requireHealth(); synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel(); HealthImports.stop(context,true) }; JSObject()
     }
     @PluginMethod fun healthDisconnect(call: PluginCall) = execute(call) {
-        requireHealth(); synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel(); vault.delete("health-sharma") }
+        requireHealth(); synchronized(this@NeoformNativePlugin) { epoch++; healthJob?.cancel(); HealthImports.stop(context,true) }
         health.disconnect(); JSObject()
     }
     @PluginMethod fun openHealthSettings(call: PluginCall) = execute(call) {

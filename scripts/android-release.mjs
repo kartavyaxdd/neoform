@@ -210,7 +210,7 @@ const apkSha256 = createHash("sha256")
   .digest("hex");
 const manifest = {
   applicationId: "app.neoform.android",
-  version: "1.0.0",
+  version: "1.1.0",
   versionCode: Number(env.NEOFORM_ANDROID_VERSION_CODE),
   sha,
   apkSha256,

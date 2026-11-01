@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { RestAlertLifecycle } from "./WorkoutClocks";
 import { isAndroid } from "./native";
 import { HealthLifecycle } from "./healthConnect";
 if (isAndroid()) {
@@ -45,6 +46,7 @@ class Boundary extends React.Component<
 createRoot(document.getElementById("root")!).render(
   <Boundary>
     <HealthLifecycle />
+    <RestAlertLifecycle />
     <App />
   </Boundary>,
 );

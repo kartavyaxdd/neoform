@@ -31,7 +31,7 @@ const GeminiCoach = deferredView(() =>
 );
 import { canUseGemini, type CoachFocus } from "./aiCoach";
 import { SubstitutionSheet } from "./SubstitutionSheet";
-import { HealthSummary } from "./HealthConnectPanel";
+import { HealthSummary, RecoveryCard } from "./HealthConnectPanel";
 export function WorkoutPreview({
   workout,
   program,
@@ -212,6 +212,7 @@ export function WorkoutPreview({
         <span>Next-workout guidance</span>
         <Button onClick={() => setReadiness(true)}>Readiness</Button>
       </div>
+      <RecoveryCard />
       <HealthSummary />
       <ChangeReviews reviews={responses} state={live} />
       {stale && (

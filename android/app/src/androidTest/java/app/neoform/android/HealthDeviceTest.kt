@@ -77,8 +77,36 @@ class HealthDeviceTest {
         assertTrue(reader.availability() in listOf("available", "install-required", "unsupported"))
         // A fresh app must never receive health permissions merely by being installed.
         assertTrue(reader.granted().isEmpty())
-        assertEquals(5, HealthReader.permissions.size)
+        assertEquals(8, HealthReader.permissions.size)
         assertTrue(HealthReader.permissions.values.none { it.contains("WRITE_") || it.contains("BACKGROUND") || it.contains("HISTORY") })
+    }
+    @Test fun backgroundEnrollmentIsPrivateDurableAndExplicitlyCancellable() {
+        val vault = PrivateVault(context)
+        try {
+            vault.write("health-sharma", JSONObject().put("enabled",true).put("records",org.json.JSONArray()))
+            HealthImports.enroll(context)
+            assertTrue(PrivateVault(context).read("health-controls-sharma")!!.optBoolean("backgroundEnabled"))
+            assertFalse(String(File(context.noBackupFilesDir,"health-controls-sharma.enc").readBytes(),Charsets.ISO_8859_1).contains("backgroundEnabled"))
+            HealthImports.setAuto(context,true)
+            val session = "qa-" + UUID.randomUUID().toString()
+            assertTrue(HealthImports.reserve(context,session,"synthetic-entry"))
+            assertFalse(HealthImports.reserve(context,session,"synthetic-entry"))
+            // A new vault/coordinator caller cannot award a second reduction after reload.
+            assertTrue(HealthImports.status(context).optJSONArray("reductions")!!.toString().contains(session))
+            HealthImports.stop(context,true)
+            assertFalse(HealthImports.status(context).optBoolean("backgroundEnabled"))
+            assertNull(vault.read("health-sharma"))
+            assertFalse(HealthImports.reserve(context,session,"synthetic-entry"))
+            HealthImports.setAuto(context,true)
+            assertFalse(HealthImports.reserve(context,session,"synthetic-entry"))
+        } finally { HealthImports.stop(context,true) }
+    }
+    @Test fun disabledBackgroundWorkerDoesNotImportWithoutConsent() = runBlocking {
+        HealthImports.stop(context,true)
+        val worker = androidx.work.testing.TestListenableWorkerBuilder<HealthImportWorker>(context).build()
+        assertEquals(androidx.work.ListenableWorker.Result.success(),worker.doWork())
+        assertNull(PrivateVault(context).read("health-sharma"))
+        assertFalse(HealthImports.status(context).optBoolean("backgroundEnabled"))
     }
     @Test fun staleOrCancelledRestAlarmsCannotQualifyForDelivery() {
         assertFalse(NativePolicy.deliverAlarm(1, 2, true, 1000, 1500))

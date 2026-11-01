@@ -1,3 +1,4 @@
+import { AutoNextSet } from "./AutoNextSet";
 import { LiveRecordBadge, recordAlreadyCelebrated } from "./RewardProgress";
 import { unlockFeedbackAudio, feedbackTone } from "./feedbackAudio";
 import { SwipeRow, ExerciseQueue, UndoRemoval } from "./WorkoutInteractions";
@@ -121,6 +122,13 @@ export function SessionLogger({
           }
         }}
       />
+      {!history && (
+        <AutoNextSet
+          entryId={current?.id}
+          review={nextSetReview}
+          blocked={!!sheet && sheet !== "Next set advice"}
+        />
+      )}
       {actionError && <p role="alert">{actionError}</p>}
       <div
         ref={tabs}

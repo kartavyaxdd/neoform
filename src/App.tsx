@@ -5,11 +5,7 @@ import { persistencePresentation } from "./presentationStatus";
 
 import { ExercisePicker } from "./ExercisePicker";
 
-import {
-  useRestAlerts,
-  claimRestTimer,
-  cancelRestAlertForSwitch,
-} from "./restAlerts";
+import { claimRestTimer, cancelRestAlertForSwitch } from "./restAlerts";
 import {
   feedbackTone,
   unlockFeedbackAudio,
@@ -19,7 +15,12 @@ import { WorkoutCelebration } from "./RewardProgress";
 import { rewards } from "./rewards";
 import { weekMonday } from "./workoutPresentation";
 import { TimerSheet } from "./TimerSheet";
-import { CountdownArc } from "./CountdownArc";
+import {
+  WorkoutDuration,
+  CompactRestButton,
+  RestFinishedBanner,
+  RestRuntime,
+} from "./WorkoutClocks";
 import { WeeklyReview } from "./WeeklyReviewSheet";
 import { WorkoutDashboard } from "./WorkoutDashboard";
 import { WorkoutPreview } from "./WorkoutPreview";
@@ -486,13 +487,11 @@ export default function App() {
       footer?: ReactNode;
       presentation?: "screen" | "sheet";
     } | null>(null),
-    [notice, setNotice] = useState(""),
-    [tick, setTick] = useState(Date.now());
+    [notice, setNotice] = useState("");
   const [celebration, setCelebration] = useState<{
     session: D.Session;
     xp: number;
   } | null>(null);
-  const clockActive = !!(s.draft || s.timer);
   useEffect(() => {
     const home = () => {
       if (page === "train" && isAndroid())
@@ -556,7 +555,7 @@ export default function App() {
         { opacity: 0, transform: "translateY(8px)" },
         { opacity: 1, transform: "translateY(0)" },
       ],
-      { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" },
+      { duration: 180, easing: "cubic-bezier(.2,.8,.2,1)" },
     );
     return () => animation.cancel();
   }, [page]);
@@ -573,46 +572,6 @@ export default function App() {
         s.settings.theme === "dark" ? "#0d1625" : "#eaf0f8",
       );
   }, [s.settings.theme]);
-  useEffect(() => {
-    if (!clockActive) return;
-    const timer = setInterval(() => setTick(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [clockActive]);
-  const restAlerts = useRestAlerts(
-    s.timer,
-    store.user?.id,
-    s.settings.timerSound,
-  );
-  const expiredSound = useRef(false);
-  useEffect(() => {
-    if (
-      s.timer &&
-      !s.timer.paused &&
-      tick >= s.timer.endAt &&
-      (!isAndroid() || restAlerts.available) &&
-      !expiredSound.current
-    ) {
-      expiredSound.current = true;
-      const delivered =
-        restAlerts.deliveredTimerId === s.timer.id &&
-        restAlerts.deliveredDeadline === s.timer.endAt;
-      if (
-        s.settings.timerSound &&
-        !delivered &&
-        (!restAlerts.armed || (!isAndroid() && !navigator.onLine))
-      )
-        feedbackTone(false, s.settings.restChimeVolume);
-    } else if (!s.timer || tick < s.timer.endAt) expiredSound.current = false;
-  }, [
-    tick,
-    s.timer,
-    s.settings.timerSound,
-    s.settings.restChimeVolume,
-    restAlerts.armed,
-    restAlerts.available,
-    restAlerts.deliveredTimerId,
-    restAlerts.deliveredDeadline,
-  ]);
   function go(p: Page) {
     setPage(p);
     localStorage.setItem("neoform:page", p);
@@ -1051,7 +1010,6 @@ export default function App() {
   const thisWeek = new Date();
   thisWeek.setHours(0, 0, 0, 0);
   thisWeek.setDate(thisWeek.getDate() - ((thisWeek.getDay() + 6) % 7));
-  const seconds = D.restRemaining(s.timer, Date.now());
   const persistence = persistencePresentation(
     store.status,
     deviceSaveAcknowledged(),
@@ -1167,18 +1125,7 @@ export default function App() {
               )}
             </div>
           )}
-          {s.timer && !s.timer.paused && tick >= s.timer.endAt && (
-            <div className="rest-finished-banner" role="status">
-              <b>Rest finished</b>
-              <span>Start when you’re ready.</span>
-              <button
-                className="btn"
-                onClick={() => change((d) => ({ ...d, timer: null }))}
-              >
-                Ready
-              </button>
-            </div>
-          )}
+          <RestFinishedBanner />
           {celebration && (
             <WorkoutCelebration
               session={celebration.session}
@@ -1423,37 +1370,12 @@ export default function App() {
                   >
                     <MoreHorizontal size={21} />
                   </button>
-                  <span aria-label="Workout duration">
-                    {duration(Math.max(0, (tick - s.draft.startedAt) / 1000))}
-                  </span>
-                  <button
-                    className="slim-rest"
-                    aria-label="Rest timer controls"
-                    aria-description={
-                      s.timer?.paused
-                        ? "Rest timer paused"
-                        : s.timer && seconds === 0
-                          ? "Rest timer finished. Start when ready."
-                          : "Rest time remaining"
-                    }
-                    data-paused={s.timer?.paused || undefined}
-                    onClick={() =>
+                  <WorkoutDuration startedAt={s.draft.startedAt} />
+                  <CompactRestButton
+                    open={() =>
                       setModal({ title: "Rest timer", content: <TimerSheet /> })
                     }
-                  >
-                    {s.timer ? (
-                      <CountdownArc
-                        seconds={seconds}
-                        total={s.timer.remaining}
-                      />
-                    ) : (
-                      <Clock size={16} />
-                    )}
-                    {s.timer && !s.timer.paused && seconds === 0
-                      ? "Rest done"
-                      : duration(seconds)}
-                    {s.timer?.paused && <span aria-hidden="true">Ⅱ</span>}
-                  </button>
+                  />
                   <Button variant="primary" onClick={finish}>
                     Finish session
                   </Button>
@@ -1754,64 +1676,7 @@ export default function App() {
           </button>
         ))}
       </nav>
-      {s.timer && (
-        <div className="rest-timer" role="region" aria-label="Rest timer">
-          <CountdownArc seconds={seconds} total={s.timer.remaining} />
-          <div>
-            <small>
-              {seconds <= 0
-                ? "READY WHEN YOU ARE"
-                : s.timer.paused
-                  ? "REST PAUSED"
-                  : "RECOVER & RESET"}
-            </small>
-            <b>{duration(seconds)}</b>
-          </div>
-          <button
-            className="icon-button"
-            aria-label={s.timer.paused ? "Resume rest" : "Pause rest"}
-            onClick={() =>
-              change((s) => ({
-                ...s,
-                timer: s.timer
-                  ? {
-                      ...s.timer,
-                      paused: !s.timer.paused,
-                      remaining: seconds,
-                      endAt: Date.now() + seconds * 1000,
-                    }
-                  : null,
-              }))
-            }
-          >
-            {s.timer.paused ? <Play size={18} /> : <Pause size={18} />}
-          </button>
-          <button
-            className="timer-add"
-            onClick={() =>
-              change((s) => ({
-                ...s,
-                timer: s.timer
-                  ? {
-                      ...s.timer,
-                      remaining: Math.min(3600, seconds + 30),
-                      endAt: Date.now() + Math.min(3600, seconds + 30) * 1000,
-                    }
-                  : null,
-              }))
-            }
-          >
-            +30s
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Skip rest"
-            onClick={() => change((s) => ({ ...s, timer: null }))}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      )}
+      <RestRuntime />
       {modal && (
         <Modal
           title={modal.title}

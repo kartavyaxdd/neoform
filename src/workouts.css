@@ -937,13 +937,13 @@
     animation: neo-check var(--motion-control) var(--motion-ease);
   }
   .modal[open] {
-    animation: neo-sheet-in var(--motion-sheet) var(--motion-ease);
+    animation: none; /* Shared sheet frame owns interruptible motion. */
   }
   .modal[open]::backdrop {
     animation: neo-fade-in var(--motion-content) ease;
   }
   .modal-view:not([hidden]) {
-    animation: neo-fade-in var(--motion-content) ease;
+    animation: none;
   }
   details[open] > :not(summary) {
     animation: neo-fade-in var(--motion-content) ease;
