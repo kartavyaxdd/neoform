@@ -9,9 +9,18 @@ export async function fixture(page: Page) {
   await page
     .getByLabel("Password", { exact: true })
     .fill("synthetic-v2-passphrase-2026");
+  const registration = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/register" &&
+      r.request().method() === "POST",
+  );
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
+  expect(
+    (await registration).status(),
+    "Synthetic account registration must succeed before onboarding",
+  ).toBe(201);
   await page.getByLabel("Your name", { exact: true }).fill("V2 QA");
   await page.getByRole("button", { name: "Build my workspace" }).click();
   await expect(page.locator(".sync-status")).toHaveText("Synced");

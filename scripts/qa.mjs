@@ -1,3 +1,4 @@
+import { browserBatches } from "./qa-browser-batches.mjs";
 import { spawn } from "node:child_process";
 import { createServer, createConnection } from "node:net";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -348,28 +349,19 @@ try {
     );
   if (!args.includes("--api-only")) {
     const browserEvidence = env.NEOFORM_QA_OUTPUT;
-    const groups = args.includes("--profiles-only")
-      ? (browserMatches.length
-          ? browserMatches
-          : [
-              "workspace-profiles.spec.ts",
-              "profile-gemini.spec.ts",
-              "android-health.spec.ts",
-            ]
-        ).map((name) => [name])
-      : [browserMatches];
+    const groups = browserBatches(env.NEOFORM_QA_MODE, browserMatches);
     for (const group of groups) {
-      if (args.includes("--profiles-only")) {
+      if (env.NEOFORM_QA_MODE !== "public") {
         env.NEOFORM_QA_OUTPUT = path.join(
           browserEvidence,
           group[0].replace(".spec.ts", ""),
         );
         await mkdir(env.NEOFORM_QA_OUTPUT, { recursive: true });
       }
-      if (args.includes("--profiles-only"))
-        // API auth/rate-limit assertions must not consume the browser fixture's
-        // login budget. Each browser suite receives its own fixture budget too.
-        // This command targets only this run's owned local D1, never production.
+      if (env.NEOFORM_QA_MODE !== "public")
+        // API assertions and unrelated suites must not consume each other's
+        // authentication budget. Production limits stay unchanged; this targets
+        // only this run's newly created local D1. Individual-suite limits remain.
         await finish(
           launch([
             wrangler,
@@ -381,7 +373,9 @@ try {
             state,
             ...common,
             "--command",
-            "DELETE FROM rate_limits WHERE key LIKE 'profile-%'",
+            env.NEOFORM_QA_MODE === "profiles"
+              ? "DELETE FROM rate_limits WHERE key LIKE 'profile-%'"
+              : "DELETE FROM rate_limits WHERE key LIKE 'ip:%' OR key LIKE 'email:%'",
           ]),
         );
       await finish(

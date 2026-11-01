@@ -1,3 +1,4 @@
+import { privateBrowserSuites } from "./scripts/qa-browser-batches.mjs";
 import { defineConfig } from "@playwright/test";
 import { qaTarget } from "./tests/qa-target";
 const baseURL = qaTarget();
@@ -34,34 +35,7 @@ export default defineConfig({
             "manual-swap-recovery.spec.ts",
             "premium-experience.spec.ts",
           ]
-        : [
-            "preview-guidance.spec.ts",
-            "coaching-response.spec.ts",
-            "lift-progress.spec.ts",
-            "next-set.spec.ts",
-            "ui-redesign.spec.ts",
-            "adaptive-workout.spec.ts",
-            "gym-experience.spec.ts",
-            "workout-recap.spec.ts",
-            "reference-fidelity.spec.ts",
-            "program-layout.spec.ts",
-            "planning.spec.ts",
-            "weekly-muscles.spec.ts",
-            "glass-ui.spec.ts",
-            "exercise-swap.spec.ts",
-            "manual-swap-recovery.spec.ts",
-            "premium-experience.spec.ts",
-            "coaching.spec.ts",
-            "readiness.spec.ts",
-            "reliability.spec.ts",
-            "training-phase.spec.ts",
-            "v2-layout.spec.ts",
-            "v2-accessibility.spec.ts",
-            "mutation-queue.spec.ts",
-            "coaching-recovery.spec.ts",
-            "storage-release.spec.ts",
-            "store-races.spec.ts",
-          ],
+        : privateBrowserSuites,
   timeout: 90000,
   expect: { timeout: 12000 },
   fullyParallel: false,
